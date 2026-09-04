@@ -1,0 +1,32 @@
+{
+  "name": "@minedrop/api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NestJS-сервер Minedrop: RNG, гаманець, стрік, provably-fair.",
+  "scripts": {
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:auth": "tsx test/init-data.test.ts"
+  },
+  "dependencies": {
+    "@minedrop/engine": "1.0.0",
+    "@nestjs/common": "^11.0.10",
+    "@nestjs/core": "^11.0.10",
+    "@nestjs/platform-express": "^11.0.10",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "grammy": "^1.35.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.2",
+    "@nestjs/schematics": "^11.0.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

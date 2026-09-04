@@ -1,0 +1,241 @@
+/* ============================================================
+   CONFIG — усі цифри гри в одному місці.
+   Один і той самий файл для сервера, клієнта і симуляцій.
+
+   ВАЖЛИВО: фізика рахується в КЛІТИНКАХ, не в пікселях
+   (1 одиниця = 1 блок). Тому гра однаково поводиться
+   на будь-якому розмірі екрана.
+
+   Так само важливо: крок симуляції ФІКСОВАНИЙ (SIM_DT). Раніше
+   фізику годували dt від requestAnimationFrame, і результат залежав
+   від фреймрейту — тепер сервер і клієнт крокують однаково.
+   ============================================================ */
+
+import type { BlockDef, BlockId, Tier } from './types';
+
+/* Крок фізики. Не міняти, не перерахувавши баланс:
+   від нього залежить кожна траєкторія, а отже й RTP. */
+export const SIM_DT = 1 / 120;
+
+export const CONFIG = {
+  cols: 10,               // ширина шахти в блоках
+  /* Розмір блоку — cell = clamp(ширина_екрана / cols, minCell, maxCell).
+     При 10 колонках підлога 54px на вузькому телефоні (320-430px)
+     давала fieldW > ширини екрана — поле не влазило й крайні
+     колонки просто зрізалися канвасом. Підлога знижена настільки,
+     щоб на будь-якому реальному екрані cell рахувався від ширини,
+     а не впирався в неї: 320 / 10 = 32 — усе ще вище підлоги.
+     Стеля теж знижена — камера ніби відсунута далі, видно більше
+     шахти одразу, а не кілька великих блоків впритул. */
+  maxCell: 100,           // стеля розміру блоку (px). Постав 9999 — поле завжди на всю ширину
+  minCell: 28,
+
+  startBalance: 3000,     // dev
+  bets: [10, 25, 50, 100, 250],
+  payoutK: 610,           // дільник виплати. Підбирається sim/final.ts (з bootstrap CI)
+  maxWinX: 5000,          // стеля виграшу за раунд, у ставках. Без неї ланцюг
+                          // множників у бонусці розганяється в нескінченність
+
+  /* ---- рулетка ----
+     ОДИН прокрут на ставку — як у справжньому 777: потягнув, побачив
+     результат. Кірка випала -> гра; не випала -> ставка згоріла одразу,
+     без повторних спроб.
+
+     УВАГА: при spinsPerBet=1 шанс кірки за СТАВКУ дорівнює шансу за
+     ПРОКРУТ (тепер це одне й те саме число). Раніше (spinsPerBet=7)
+     кірка була за ставку в ~71% випадків при тому самому nothingWeight,
+     бо це 7 незалежних шансів поспіль. Зараз із тим самим nothingWeight=84
+     кірка випадає лише в ~16% ставок — суттєво рідше. Це напряму тягне
+     за собою:
+       - нижчий RTP (менше виграшних ставок узагалі);
+       - стрік bonus.streak=12 стає практично недосяжним (0.16^12 —
+         астрономічно рідко), бо він і рахувався на ~71%-ний шанс.
+     Якщо потрібно повернути схожу частоту кірок — знизь nothingWeight
+     (наприклад, до ~2, щоб кірка була ~89% і компенсувала втрату
+     7 попередніх шансів; підбирай через sim/final.ts і sim/balance.ts). */
+  spinsPerBet: 1,
+  nothingWeight: 84,      // вага «пусто». Кірки разом важать 16 -> ~16% за прокрут (= за ставку)
+  /* Рулетка виглядає як класичний однорядний слот («777»): ОДНА
+     вертикальна стрічка символів, у вікні видно три — над, на лінії
+     виплати (по центру, з рамкою) і під. Це не три окремі барабани
+     поруч (тоді був би горизонтальний рядок символів) — символ, що
+     вирішує результат, завжди один, просто у вікні видно сусідів
+     по стрічці, як у справжньому апараті. На шанси це не впливає:
+     вирішує все той самий один прокрут із reelTable(). */
+  reel: {
+    spinMs: 620,          // тривалість одного прокруту — швидко
+    gapMs: 170,           // пауза між прокрутами
+    stripLen: 22,
+    targetIndex: 17,
+    visible: 3,           // скільки символів видно у вікні: над / на лінії / під
+    widthRatio: 1,        // квадратна комірка-символ, як у класичному слоті
+    riseMs: 550,          // за скільки рулетка їде вгору, коли випала кірка
+  },
+
+  /* ---- БОНУСНА ГРА ----
+     Вмикається, коли кірка випала streak ставок ПІДРЯД,
+     або купується за buyCost ставок.
+     Рулетка сама крутить spins разів, і скільки кірок випало —
+     стільки й падає в шахту ОДНОЧАСНО. У бонусній шахті є блоки
+     з множниками: вони множать НАКОПИЧЕНИЙ на той момент виграш. */
+  bonus: {
+    spins: 15,
+    guarantee: 1,         // мінімум стільки кірок (інакше останній прокрут форситься)
+    spinMs: 260,          // прокрути в бонусці швидші
+    gapMs: 55,
+    buyCost: 70,          // ціна купівлі бонуски, у ставках
+    /* Скільки ставок ПІДРЯД з кіркою вмикає бонуску.
+       УВАГА: 3 підряд тут неможливо. Кірка випадає в ~70% ставок, тому
+       стрік-3 спрацьовував би раз на 6 ставок, а бонуска ціною x70 давала б
+       RTP понад 1000%. 12 -> раз на ~211 ставок, і все сходиться в 95%.
+       Хочеш 3 — тоді треба або впасти ціну бонуски до ~x6 (buyCost: 6),
+       або опустити шанс кірки до ~2.7% за прокрут (nothingWeight: 580). */
+    streak: 12,
+    reelNothing: 14,      // у бонусці «пусто» важить менше -> кірки сиплються часто
+    tierBoost: 1.75,      // ...і зміщені до вищих рівнів (вага * boost^рівень)
+    multWeight: 0.3,      // вага блоків-множників у БОНУСНІЙ шахті
+    multWeightBase: 0.25, // ...і мінімальний шанс на них у звичайній грі
+    /* Що більший ікс — то менший шанс.
+       x25 і x100 прибрані свідомо: множники перемножуються, тому один
+       такий ікс у ланцюгу вистрілював за стелю виграшу, і кеп починав
+       нести 8+ п.п. RTP замість того, щоб бути запобіжником.
+       Хвіст будує КІЛЬКІСТЬ множників (multWeight), а не їхній розмір:
+       при multWeight 1.0 кеп зрізав 85% віддачі бонуски. */
+    multTable: [
+      { m: 2, weight: 58 },
+      { m: 3, weight: 26 },
+      { m: 5, weight: 11 },
+      { m: 10, weight: 4 },
+      { m: 15, weight: 1 },
+    ],
+    spread: 0.8,          // на скільки клітинок рознести старт кірок по висоті
+  },
+
+  /* ---- фізика (в клітинках за секунду) ---- */
+  phys: {
+    gravity: 33,
+    maxFall: 27,
+    restitution: 0.34,    // частка швидкості, що лишається після удару
+    bounceKick: 2.6,      // додатковий підкид угору при ударі
+    sideKick: 2.4,        // бічний імпульс — саме він дає рух по діагоналі
+    sideKickRand: 1.6,
+    wallBounce: 0.7,      // відскок від бічної стінки шахти
+    airDrag: 0.25,        // гальмування по горизонталі (мале, щоб діагональ жила)
+    maxSideSpeed: 9,
+    spinKick: 5,          // кутова швидкість від удару (rad/s) — перевертання.
+                          // Було 11: кірка крутилась як пропелер. Це не про
+                          // фізику удару, а суто про читабельність — при
+                          // такому спіні на телефоні незрозуміло, що там
+                          // взагалі падає.
+    spinDamp: 0.85,       // було 0.55 — обертання тепер гаситься швидше
+                          // між ударами, тому кірка встигає «влягтися»,
+                          // а не крутитись безперервно.
+    bodyR: 0.36,          // радіус тіла кірки в частках клітинки
+    substep: 0.22,        // максимальний крок інтегрування в клітинках
+    hitCooldown: 0.05,    // мінімум часу між ударами по одному блоку
+    tntBlast: 6.0,        // підкид від вибуху TNT
+    startHeight: 3,       // з якої висоти падає кірка
+    maxHits: 900,         // страховка від нескінченного раунду
+    maxSteps: 200000,     // жорстка стеля кроків симуляції на сервері
+  },
+
+  camLead: 0.42,          // де тримати кірку по вертикалі екрана під час гри
+  camIdle: 0.80,          // поки крутиться рулетка — поверхня отут (частка висоти екрана)
+  camLerp: 6,
+} as const;
+
+/* ---------- КІРКИ ----------
+   hp     — запас міцності кірки (100..400): скільки ударів вона взагалі витримає
+   dmg    — УРОН за удар: чим вища кірка, тим швидше довбає руду
+            (ударів по блоку = ceil(BLOCKS[*].tough / dmg))
+   weight — шанс випасти на прокруті (разом 16 проти nothingWeight = 84)
+*/
+export const TIERS: readonly Tier[] = [
+  { id: 'copper', name: 'Copper', weight: 6.60, hp: 100, dmg: 1, color: '#c87f5a', color2: '#8c4f34',
+    skin: '/assets/pickaxes/copper.webp', skinMagic: '/assets/pickaxes/coper_magic.webp' },
+  { id: 'lvl2', name: 'Wooden', weight: 4.30, hp: 160, dmg: 2, color: '#a9803f', color2: '#6b4a20',
+    skin: '/assets/pickaxes/lvl2.webp', skinMagic: '/assets/pickaxes/lvl2_magic.webp' },
+  { id: 'lvl3', name: 'Stone', weight: 2.70, hp: 220, dmg: 3, color: '#a8a8a8', color2: '#6e6e6e',
+    skin: '/assets/pickaxes/lvl3.png', skinMagic: '/assets/pickaxes/lvl3_magic.webp' },
+  { id: 'lvl4', name: 'Iron', weight: 1.60, hp: 280, dmg: 4, color: '#e2e2e2', color2: '#9d9d9d',
+    skin: '/assets/pickaxes/lvl4.png', skinMagic: '/assets/pickaxes/lvl4_magic.gif' },
+  { id: 'gold', name: 'Golden', weight: 0.66, hp: 340, dmg: 5, color: '#f7d13a', color2: '#c79a10',
+    skin: '/assets/pickaxes/gold.png', skinMagic: '/assets/pickaxes/gold_magic.webp' },
+  { id: 'diamond', name: 'Diamond', weight: 0.14, hp: 400, dmg: 7, color: '#57eede', color2: '#22b7a8',
+    skin: '/assets/pickaxes/diamond.png', skinMagic: '/assets/pickaxes/diamond_magic.webp' },
+];
+
+export const TIER_BY_ID: Record<string, Tier> =
+  Object.fromEntries(TIERS.map((t) => [t.id, t]));
+
+export const tierIndex = (id: string) => TIERS.findIndex((t) => t.id === id);
+
+/* Порожній результат прокруту. Іконка поки просто «Х». */
+export const NOTHING = { id: 'none', name: 'Пусто', color: '#39424f', color2: '#242b35' } as const;
+
+/* ---------- БЛОКИ ----------
+   tough — МІЦНІСТЬ блоку. Кірка знімає свій dmg за удар, блок падає
+           коли накопичений урон >= tough.
+           Земля, камінь, динаміт мають tough 1 — б'ються ЗАВЖДИ з одного
+           удару будь-якою кіркою. Міцність є тільки в руди.
+   cost  — скільки HP кірки з'їдає ОДИН удар
+   value — скільки очок дає розколотий блок (ділиться на payoutK у виплаті)
+*/
+export const BLOCKS: Record<BlockId, BlockDef> = {
+  dirt:    { id: 'dirt',    name: 'Земля',   kind: 'solid', tough: 1, cost: 3,  value: 2,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
+  stone:   { id: 'stone',   name: 'Камінь',  kind: 'solid', tough: 1, cost: 3,  value: 4,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
+  coal:    { id: 'coal',    name: 'Вугілля', kind: 'solid', tough: 2, cost: 5,  value: 8,  color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
+  iron:    { id: 'iron',    name: 'Залізо',  kind: 'solid', tough: 4, cost: 6,  value: 16, color: '#b98b6c', skin: '/assets/blocks/7.png' },
+  gold:    { id: 'gold',    name: 'Золото',  kind: 'solid', tough: 6, cost: 7,  value: 30, color: '#e8c33a', skin: '/assets/blocks/6.png' },
+  diamond: { id: 'diamond', name: 'Алмаз',   kind: 'solid', tough: 9, cost: 8,  value: 60, color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
+  tnt:     { id: 'tnt',     name: 'TNT',     kind: 'tnt',   tough: 1, cost: 20, value: 0,  color: '#d63b1f', skin: '/assets/blocks/3.jpg' },
+  magic:   { id: 'magic',   name: 'Верстак', kind: 'magic', tough: 1, cost: 0,  value: 0,  color: '#c8a165', skin: '/assets/blocks/4.png' },
+  // блок-множник. Множник (x2, x3...) лежить у самій клітинці
+  mult:    { id: 'mult',    name: 'Множник', kind: 'mult',  tough: 1, cost: 2,  value: 0,  color: '#c9a227' },
+};
+
+/* ---------- ГЕНЕРАЦІЯ ГЛИБИНИ ----------
+   Шахта нескінченна. Вага кожного блоку — функція від номера ряду.
+   ramp(r, a, b): 0 до ряду a, 1 після ряду b, лінійно між ними.
+*/
+export function ramp(r: number, a: number, b: number): number {
+  return Math.max(0, Math.min(1, (r - a) / (b - a)));
+}
+
+export function depthWeights(r: number, bonus: boolean): Record<string, number> {
+  return {
+    air:     r < 2 ? 0 : 7,
+    dirt:    70 * (1 - ramp(r, 0, 6)),
+    stone:   30 + 45 * ramp(r, 0, 6),
+    coal:    22 * ramp(r, 2, 10),
+    iron:    22 * ramp(r, 7, 20),
+    gold:    16 * ramp(r, 14, 32),
+    diamond: 12 * ramp(r, 22, 50),
+    tnt:     r < 3 ? 0 : 2.5,
+    magic:   r < 3 ? 0 : 1.4,
+    mult:    r < 2 ? 0 : (bonus ? CONFIG.bonus.multWeight : CONFIG.bonus.multWeightBase),
+  };
+}
+
+/* Таблиця прокруту рулетки: «пусто» + усі кірки.
+   null у полі tier = «пусто». */
+export interface ReelSlot { tier: Tier | null; weight: number }
+
+export function reelTable(): ReelSlot[] {
+  const table: ReelSlot[] = [{ tier: null, weight: CONFIG.nothingWeight }];
+  for (const t of TIERS) table.push({ tier: t, weight: t.weight });
+  return table;
+}
+
+/* У бонусці своя таблиця: кірки частіші й кращі */
+export function bonusReelTable(): ReelSlot[] {
+  const B = CONFIG.bonus;
+  const table: ReelSlot[] = [{ tier: null, weight: B.reelNothing }];
+  TIERS.forEach((t, i) => table.push({ tier: t, weight: t.weight * Math.pow(B.tierBoost, i) }));
+  return table;
+}
+
+/* Таблиця тільки з кірок — для гарантії в бонусці */
+export function tierOnlyTable(): ReelSlot[] {
+  return TIERS.map((t): ReelSlot => ({ tier: t, weight: t.weight }));
+}

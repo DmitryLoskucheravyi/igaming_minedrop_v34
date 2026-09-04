@@ -1,0 +1,38 @@
+{
+  "name": "minedrop",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Minedrop — падаюча кірка. Монорепо: детермінований рушій + NestJS-сервер + Next.js-клієнт.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @minedrop/engine && npm run build -w @minedrop/api && npm run build -w @minedrop/web",
+    "build:engine": "npm run build -w @minedrop/engine",
+    "dev": "npm run build:engine && concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev -w @minedrop/api",
+    "dev:web": "npm run dev -w @minedrop/web",
+    "start": "npm run start -w @minedrop/api",
+    "sim": "npm run sim -w @minedrop/engine",
+    "sim:smoke": "npm run sim:smoke -w @minedrop/engine",
+    "sim:final": "npm run sim:final -w @minedrop/engine",
+    "sim:balance": "npm run sim:balance -w @minedrop/engine",
+    "sim:fair": "npm run sim:fair -w @minedrop/engine",
+    "typecheck": "npm run typecheck -w @minedrop/engine && npm run typecheck -w @minedrop/api && npm run typecheck -w @minedrop/web",
+    "sim:e2e": "npm run sim:e2e -w @minedrop/engine",
+    "test:auth": "npm run test:auth -w @minedrop/api",
+    "tg": "node scripts/tg-dev.mjs"
+  },
+  "devDependencies": {
+    "cloudflared": "^0.7.3",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "postcss": "^8.5.28"
+  }
+}

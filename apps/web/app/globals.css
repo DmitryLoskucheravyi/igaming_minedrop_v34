@@ -1,0 +1,453 @@
+/* ============================================================
+   2D піксель-стиль: Minecraft / Terraria.
+   Ніяких закруглень і градієнтних кнопок — тільки різкі
+   фаски: світло згори-зліва, тінь знизу-справа.
+   ============================================================ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: #0a0c10;
+  color: #e6e9ee;
+  font-family: ui-monospace, "Lucida Console", "Courier New", monospace;
+  letter-spacing: .04em;
+  -webkit-font-smoothing: none;
+
+  /* Мініапс: прибираємо все, що заважає грати пальцем */
+  overscroll-behavior: none;          /* без pull-to-refresh поверх канваса */
+  touch-action: manipulation;         /* без подвійного тапу на зум */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Висота беремо в телеграма, а не з 100vh: шторку можна тягнути,
+   і при 100vh низ інтерфейсу лишається за межами екрана.
+   Поза телеграмом змінної немає — падаємо на 100dvh, потім 100vh. */
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: var(--tg-viewport-stable-height, 100dvh);
+  max-height: var(--tg-viewport-stable-height, 100dvh);
+  padding-bottom: var(--tg-safe-area-inset-bottom, 0px);
+}
+
+@supports not (height: 100dvh) {
+  .shell { height: var(--tg-viewport-stable-height, 100vh); }
+}
+.stage { position: relative; flex: 1; min-height: 0; }
+.stage canvas { display: block; width: 100%; height: 100%; }
+
+/* Загальна фаска панелі */
+.panel {
+  background: #4a4a4a;
+  border-top: 4px solid #6f6f6f;
+  border-left: 4px solid #6f6f6f;
+  border-right: 4px solid #2b2b2b;
+  border-bottom: 4px solid #2b2b2b;
+  outline: 3px solid #0d0f13;
+  padding: 6px 12px;
+}
+
+/* ============================================================
+   HUD — мобільний, дві тонкі панелі (топбар/бомбар) + висувне
+   меню-бургер + плавуча плашка статусу над полем. Усе другорядне
+   (стрік, деталі) — у меню, щоб жоден ряд не тіснив елементи один
+   в один, як було в старій версії на вузьких екранах.
+   ============================================================ */
+
+.label {
+  display: block;
+  font-size: 9px;
+  letter-spacing: .18em;
+  color: #b9c2ce;
+  font-weight: 700;
+  text-shadow: 2px 2px 0 rgba(0,0,0,.6);
+}
+
+/* ---- топбар: бургер + баланс ---- */
+.topbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  height: 52px;
+  flex: 0 0 auto;
+  background: #2c323b;
+  background-image:
+    linear-gradient(0deg, rgba(0,0,0,.35) 0 4px, transparent 4px),
+    linear-gradient(180deg, rgba(255,255,255,.10) 0 4px, transparent 4px);
+  border-bottom: 4px solid #0d0f13;
+}
+
+.burger {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 40px;
+  height: 40px;
+  background: #55606e;
+  border-top: 3px solid #77828f;
+  border-left: 3px solid #77828f;
+  border-right: 3px solid #333c47;
+  border-bottom: 3px solid #333c47;
+  outline: 2px solid #0d0f13;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.burger:hover { background: #64707f; }
+.burger span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: #e6e9ee;
+  box-shadow: 1px 1px 0 rgba(0,0,0,.5);
+}
+
+.balance-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #1b1f26;
+  border-top: 3px solid #0d0f13;
+  border-left: 3px solid #0d0f13;
+  border-right: 3px solid #3a424e;
+  border-bottom: 3px solid #3a424e;
+}
+.balance-chip .value {
+  font: 700 19px ui-monospace, monospace;
+  color: #ffd34d;
+  text-shadow: 2px 2px 0 rgba(0,0,0,.7);
+}
+
+/* ---- плавуча плашка статусу над полем ---- */
+.statusline {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  max-width: calc(100% - 24px);
+  padding: 7px 14px;
+  background: rgba(20,23,29,.88);
+  border: 2px solid #0d0f13;
+  font: 700 12px ui-monospace, monospace;
+  color: #dfe4ea;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.statusline.err { color: #ff8a7d; border-color: #6b2a24; }
+.statusline .verified { color: #5ce08a; }
+.statusline .mismatch { color: #ff6a5c; }
+
+/* ---- бомбар: степер ставки | ГРАТИ (по центру) | бонус ---- */
+.bottombar {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  flex: 0 0 auto;
+  background: #2c323b;
+  background-image:
+    linear-gradient(0deg, rgba(255,255,255,.10) 0 4px, transparent 4px);
+  border-top: 4px solid #0d0f13;
+}
+
+.betstepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+}
+.stepbtn {
+  width: 34px;
+  height: 34px;
+  font: 700 18px inherit;
+  color: #dfe4ea;
+  background: #6b6b6b;
+  border-top: 3px solid #8f8f8f;
+  border-left: 3px solid #8f8f8f;
+  border-right: 3px solid #3d3d3d;
+  border-bottom: 3px solid #3d3d3d;
+  outline: 2px solid #0d0f13;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 rgba(0,0,0,.6);
+}
+.stepbtn:hover:not(:disabled) { background: #7d7d7d; }
+.stepbtn:disabled { opacity: .4; cursor: default; }
+.betvalue {
+  min-width: 44px;
+  text-align: center;
+  font: 700 14px ui-monospace, monospace;
+  color: #ffd34d;
+  text-shadow: 1px 1px 0 rgba(0,0,0,.6);
+}
+
+/* Головна кнопка — центр нижньої панелі, домінує над рештою */
+.playbtn {
+  justify-self: center;
+  font: 800 16px inherit;
+  letter-spacing: .06em;
+  color: #08210f;
+  background: #4ec86a;
+  border-top: 4px solid #86e79b;
+  border-left: 4px solid #86e79b;
+  border-right: 4px solid #2a8544;
+  border-bottom: 4px solid #2a8544;
+  outline: 3px solid #0d0f13;
+  padding: 15px 30px;
+  min-width: 148px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-shadow: 1px 1px 0 rgba(255,255,255,.25);
+}
+.playbtn:hover:not(:disabled) { background: #5cd97a; }
+.playbtn:active:not(:disabled) {
+  border-top-color: #2a8544;
+  border-left-color: #2a8544;
+  border-right-color: #86e79b;
+  border-bottom-color: #86e79b;
+}
+.playbtn:disabled {
+  background: #5b6470;
+  color: #2a3038;
+  border-top-color: #78828f;
+  border-left-color: #78828f;
+  border-right-color: #3a424e;
+  border-bottom-color: #3a424e;
+  cursor: default;
+  text-shadow: none;
+}
+
+/* Бонус — менша кнопка збоку, не конкурує з ГРАТИ */
+.buybtn {
+  justify-self: end;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+  font-family: inherit;
+  color: #1b0a2b;
+  background: #a978e0;
+  border-top: 3px solid #cfa9f5;
+  border-left: 3px solid #cfa9f5;
+  border-right: 3px solid #6b46a0;
+  border-bottom: 3px solid #6b46a0;
+  outline: 2px solid #0d0f13;
+  padding: 8px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.buybtn-label { font: 800 11px inherit; letter-spacing: .06em; }
+.buybtn-cost { font: 700 10px inherit; opacity: .8; }
+.buybtn:hover:not(:disabled) { background: #b98cf0; }
+.buybtn:disabled {
+  background: #5b6470;
+  color: #2a3038;
+  border-top-color: #78828f;
+  border-left-color: #78828f;
+  border-right-color: #3a424e;
+  border-bottom-color: #3a424e;
+  cursor: default;
+}
+
+/* ---- висувне меню-бургер ---- */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(4,6,9,0);
+  pointer-events: none;
+  transition: background .22s ease;
+}
+.drawer-overlay.open {
+  background: rgba(4,6,9,.66);
+  pointer-events: auto;
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 82%;
+  max-width: 300px;
+  overflow-y: auto;
+  background: #2c323b;
+  border-right: 4px solid #0d0f13;
+  padding: 16px;
+  transform: translateX(-100%);
+  transition: transform .22s ease;
+}
+.drawer.open { transform: translateX(0); }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.drawer-head h2 { font: 700 15px inherit; letter-spacing: .16em; color: #ffd34d; }
+.drawer-head .x {
+  background: none; border: 0; color: #b9c2ce; font: 700 18px inherit; cursor: pointer; padding: 4px 8px;
+}
+.drawer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 2px solid #1b1f26;
+}
+.drawer-value { font: 700 17px ui-monospace, monospace; color: #ffd34d; }
+.drawer-note {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #3a2b52;
+  border-left: 3px solid #d9a3ff;
+  font: 700 12px inherit;
+  color: #d9a3ff;
+}
+.drawer-btn {
+  width: 100%;
+  margin-top: 16px;
+  font: 700 12px inherit;
+  letter-spacing: .08em;
+  color: #dfe4ea;
+  background: #55606e;
+  border-top: 3px solid #77828f;
+  border-left: 3px solid #77828f;
+  border-right: 3px solid #333c47;
+  border-bottom: 3px solid #333c47;
+  outline: 2px solid #0d0f13;
+  padding: 12px;
+  cursor: pointer;
+}
+.drawer-btn:hover { background: #64707f; }
+
+/* ---------- CANVAS ---------- */
+canvas {
+  display: block;
+  cursor: crosshair;
+  image-rendering: pixelated;
+}
+
+.loader {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: #0a0c10;
+  color: #b9c2ce;
+  font: 700 13px ui-monospace, monospace;
+  letter-spacing: .12em;
+  line-height: 1.9;
+  z-index: 10;
+}
+.loader code { color: #ffd34d; }
+
+/* ---------- ПАНЕЛЬ ЧЕСНОСТІ ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(4,6,9,.78);
+}
+.modalbox {
+  width: min(680px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: #2c323b;
+  border-top: 4px solid #4d5764;
+  border-left: 4px solid #4d5764;
+  border-right: 4px solid #171b21;
+  border-bottom: 4px solid #171b21;
+  outline: 3px solid #0d0f13;
+  padding: 16px 18px 22px;
+}
+.modalhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.modalbox h2 { font: 700 15px inherit; letter-spacing: .16em; color: #ffd34d; }
+.modalbox h3 { font: 700 12px inherit; letter-spacing: .16em; color: #b9c2ce; margin: 18px 0 8px; }
+.modalbox .x {
+  background: none; border: 0; color: #b9c2ce; font: 700 16px inherit; cursor: pointer; padding: 4px 8px;
+}
+.modalbox dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; align-items: baseline; }
+.modalbox dt { font: 700 10px inherit; letter-spacing: .1em; color: #8b95a3; }
+.modalbox dd { font-size: 11px; word-break: break-all; }
+.mono { font-family: ui-monospace, monospace; }
+.small { font-size: 10px; color: #9aa4b2; word-break: break-all; }
+.hint { font-size: 11px; line-height: 1.6; color: #8b95a3; margin: 10px 0; }
+.err { font-size: 11px; color: #ff6a5c; margin-bottom: 8px; }
+
+.row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.input {
+  flex: 1;
+  min-width: 90px;
+  background: #1b1f26;
+  color: #e6e9ee;
+  font: 700 11px inherit;
+  border-top: 3px solid #0d0f13;
+  border-left: 3px solid #0d0f13;
+  border-right: 3px solid #3a424e;
+  border-bottom: 3px solid #3a424e;
+  padding: 8px 9px;
+}
+.input.nn { flex: 0 0 84px; min-width: 0; }
+.btn {
+  font: 700 11px inherit;
+  letter-spacing: .08em;
+  color: #dfe4ea;
+  background: #6b6b6b;
+  border-top: 3px solid #8f8f8f;
+  border-left: 3px solid #8f8f8f;
+  border-right: 3px solid #3d3d3d;
+  border-bottom: 3px solid #3d3d3d;
+  outline-width: 2px;
+  padding: 8px 12px;
+}
+.btn:hover:not(:disabled) { background: #7d7d7d; }
+.btn:disabled {
+  background: #5b6470;
+  color: #2a3038;
+  border-top-color: #78828f;
+  border-left-color: #78828f;
+  border-right-color: #3a424e;
+  border-bottom-color: #3a424e;
+  cursor: default;
+}
+.btn.wide { width: 100%; margin-top: 6px; }
+
+.series {
+  border-left: 3px solid #4d5764;
+  padding: 8px 0 8px 10px;
+  margin-bottom: 10px;
+}
+.check {
+  margin-top: 10px;
+  padding: 10px;
+  border-left: 4px solid #5ce08a;
+  background: #1b1f26;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.check.bad { border-left-color: #ff6a5c; }
+.check .payout { margin-top: 6px; font: 700 15px inherit; color: #ffd34d; }
+
+/* Дизайн і так мобільний за замовчуванням (компактні панелі,
+   висувне меню для другорядного) — на ширших екранах просто
+   даємо головній кнопці й степеру трохи більше повітря. */
+@media (min-width: 560px) {
+  .playbtn { padding: 16px 40px; font-size: 17px; }
+  .bottombar { padding: 12px 20px; }
+}

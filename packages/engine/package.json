@@ -1,0 +1,28 @@
+{
+  "name": "@minedrop/engine",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Детермінована математика Minedrop: рулетка, шахта, фізика, виплати, provably-fair.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "sim": "npm run sim:smoke && npm run sim:determinism && npm run sim:final",
+    "sim:smoke": "tsx sim/smoke.ts",
+    "sim:determinism": "tsx sim/determinism.ts",
+    "sim:final": "tsx sim/final.ts",
+    "sim:balance": "tsx sim/balance.ts",
+    "sim:fair": "tsx sim/fairness.ts",
+    "sim:e2e": "tsx sim/e2e.ts",
+    "make:initdata": "tsx sim/make-initdata.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

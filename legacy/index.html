@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Minedrop</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="hud">
+  <div class="panel stat">
+    <span class="label">БАЛАНС</span>
+    <span class="value" id="balance">0</span>
+  </div>
+
+  <div class="panel betwrap">
+    <span class="label">СТАВКА</span>
+    <div id="bets"></div>
+  </div>
+
+  <div class="panel streakwrap">
+    <span class="label">СТРІК</span>
+    <span class="streak" id="streak">○○○</span>
+  </div>
+
+  <div class="msgwrap"><span class="msg" id="msg">завантаження...</span></div>
+
+  <button id="buy" class="buy">БОНУС</button>
+  <button id="spin" class="spin">КРУТИТИ</button>
+</header>
+
+<canvas id="game"></canvas>
+
+<div class="loader" id="loader"><span>ЗАВАНТАЖЕННЯ СКІНІВ…</span></div>
+
+<script src="js/config.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/world.js"></script>
+<script src="js/run.js"></script>
+<script src="js/render.js"></script>
+<script src="js/reel.js"></script>
+<script src="js/game.js"></script>
+<script>
+  const loader = document.getElementById('loader');
+  Assets.load(
+    () => { loader.remove(); Game.init(); },
+    (done, total) => { loader.firstChild.textContent = 'ЗАВАНТАЖЕННЯ СКІНІВ… ' + done + '/' + total; }
+  );
+</script>
+</body>
+</html>

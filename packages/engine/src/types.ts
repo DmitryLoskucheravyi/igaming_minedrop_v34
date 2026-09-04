@@ -1,0 +1,107 @@
+/* ============================================================
+   TYPES — спільний словник сервера і клієнта.
+   Все, що їздить по HTTP, описано тут.
+   ============================================================ */
+
+export type TierId = 'copper' | 'lvl2' | 'lvl3' | 'lvl4' | 'gold' | 'diamond';
+export type BlockId = 'dirt' | 'stone' | 'coal' | 'iron' | 'gold' | 'diamond' | 'tnt' | 'magic' | 'mult';
+export type BlockKind = 'solid' | 'tnt' | 'magic' | 'mult';
+
+export interface Tier {
+  id: TierId;
+  name: string;
+  weight: number;   // вага на рулетці
+  hp: number;       // запас міцності
+  dmg: number;      // урон за удар
+  color: string;
+  color2: string;
+  skin: string;
+  skinMagic: string;
+}
+
+export interface BlockDef {
+  id: BlockId;
+  name: string;
+  kind: BlockKind;
+  tough: number;    // міцність: скільки урону треба, щоб розколоти
+  cost: number;     // скільки HP кірки з'їдає один удар
+  value: number;    // скільки очок дає розколотий блок
+  color: string;
+  skin?: string;
+}
+
+/* Результат одного прокруту рулетки. null = «пусто» (Х). */
+export type SpinResult = TierId | null;
+
+/* Подія фізики. Клієнт вішає на них партикли, тряску і звук. */
+export type RunEvent =
+  | { t: 'break'; r: number; c: number; id: BlockId; got: number; pick: number }
+  | { t: 'crack'; r: number; c: number; id: BlockId; stage: number; of: number; pick: number }
+  | { t: 'tnt'; r: number; c: number; hit: { r: number; c: number; id: BlockId }[]; pick: number }
+  | { t: 'magic'; r: number; c: number; tier: TierId; pick: number }
+  | { t: 'mult'; r: number; c: number; m: number; before: number; total: number; pick: number }
+  | { t: 'pickdead'; x: number; y: number; tier: TierId; pick: number }
+  | { t: 'end'; reason: RunEndReason };
+
+export type RunEndReason = 'broken' | 'timeout' | 'limit';
+
+export type RoundMode = 'bet' | 'bonus-buy' | 'bonus-streak';
+
+/* Підсумок симуляції — те, що сервер порахував і що клієнт мусить
+   відтворити з того самого сида. */
+export interface RunSummary {
+  collected: number;    // сирі очки до ділення на payoutK
+  multChain: number;    // добуток спійманих Х-блоків
+  blocks: number;
+  hits: number;
+  depth: number;
+  mults: number;
+  tnts: number;
+  upgrades: number;
+  timeSec: number;
+  steps: number;
+  reason: RunEndReason;
+}
+
+export interface RoundResult {
+  roundId: string;
+  mode: RoundMode;
+  bet: number;
+  cost: number;              // скільки списано (ставка або ціна бонуски)
+
+  seed: string;              // сид раунду — з нього клієнт переграє все
+  spins: SpinResult[];       // що випало на кожному прокруті
+  tiers: TierId[];           // кірки, які пішли в шахту
+  bonusMine: boolean;        // шахта бонусна (більше Х-блоків)
+  startCols: number[];       // з яких колонок стартують кірки
+
+  sim: RunSummary;
+
+  rawPayout: number;         // виплата без стелі
+  payout: number;            // фактична виплата
+  capped: boolean;           // стеля спрацювала
+  multiplier: number;        // payout / cost
+
+  balanceBefore: number;
+  balanceAfter: number;
+
+  streakBefore: number;
+  streakAfter: number;
+  bonusPending: boolean;     // стрік добито — наступним іде бонусний раунд
+
+  fair: {
+    serverSeedHash: string;
+    clientSeed: string;
+    nonce: number;
+  };
+}
+
+export interface PlayerState {
+  playerId: string;
+  balance: number;
+  streak: number;
+  bonusPending: boolean;
+  nonce: number;
+  clientSeed: string;
+  serverSeedHash: string;
+}
