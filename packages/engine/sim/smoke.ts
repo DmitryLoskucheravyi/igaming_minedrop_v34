@@ -59,14 +59,20 @@ for (let i = 0; i < N; i++) {
     run.picks.forEach((p, k) => t(p.level >= lastLevels[k], 'рівень кірки впав'));
     lastDepth = run.depth;
 
+    // TNT (навіть від тієї самої кірки, в тому самому дотику — див. collide():
+    // удар тепер б'є ВСІ дотичні блоки одразу, і TNT серед них може своїм
+    // вибухом заднім числом прибрати клітинку, що щойно тріснула від ІНШОГО
+    // дотичного блоку цього ж кроку) могла добити довільну клітинку цього
+    // тіку — тому стан клітинки після 'crack' звіряємо лише як TNT не було.
+    const tntThisTick = run.events.some((ev) => ev.t === 'tnt');
     for (const e of run.events) {
       if (e.t === 'break' || e.t === 'magic' || e.t === 'tnt' || e.t === 'mult')
         t(mine.get(e.r, e.c) === null, 'блок не прибрався з сітки після ' + e.t);
 
       if (e.t === 'crack') {
         // при кількох кірках сусідня могла добити цей самий блок у цьому ж кроці,
-        // тому стан клітинки перевіряємо лише коли кірка одна
-        if (run.picks.length === 1) {
+        // тому стан клітинки перевіряємо лише коли кірка одна й TNT не втручався
+        if (run.picks.length === 1 && !tntThisTick) {
           const cell = mine.get(e.r, e.c);
           t(cell && !isWall(cell), 'тріщина на порожній клітинці');
           t(cell && !isWall(cell) && cell.dmg === e.stage, 'накопичений урон не збігається з подією');
@@ -86,10 +92,11 @@ for (let i = 0; i < N; i++) {
           'множник спрацював не на накопичений виграш: ' + e.before + ' x' + e.m + ' -> ' + e.total);
       }
       if (e.t === 'magic') t(run.picks.some((q) => q.enchanted), 'стіл зачарування не зачарував жодної кірки');
+      if (e.t === 'upgrade') t(run.picks.some((q) => q.enchanted), 'верстак не підвищив/не вилікував жодної кірки');
       // 'tnt' у hit — ланцюгова детонація (той TNT теж вибухне окремою подією)
       if (e.t === 'tnt') for (const h of e.hit) {
         const k = BLOCKS[h.id].kind;
-        t(k === 'solid' || k === 'magic' || k === 'tnt', 'вибух зачепив не той блок');
+        t(k === 'solid' || k === 'magic' || k === 'upgrade' || k === 'tnt', 'вибух зачепив не той блок');
       }
     }
     lastLevels = run.picks.map((p) => p.level);

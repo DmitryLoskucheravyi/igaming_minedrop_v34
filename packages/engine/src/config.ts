@@ -126,13 +126,16 @@ export const CONFIG = {
     maxFall: 20,          // було 27
     restitution: 0.34,    // частка швидкості, що лишається після удару
     bounceKick: 2.0,      // було 2.6 — менший підкид, разом з нижчою гравітацією
-    sideKick: 3.0,        // бічний імпульс — саме він дає рух по діагоналі.
-                          // Було 2.4 -> піднімали до 3.6, щоб кірка більше
-                          // чистила поле вбоки, а не падала вузькою колонкою —
-                          // 3.6 виявилось забагато, 3.0 лишає той самий ефект
-                          // помірнішим.
+    sideKick: 2.6,        // бічний імпульс — саме він дає рух по діагоналі.
+                          // Було 2.4 -> 3.6 -> 3.0: досі занадто охоче
+                          // «прилипала» до однієї стінки й тупцювала там,
+                          // замість динамічно перетинати все поле.
     sideKickRand: 1.6,
-    wallBounce: 0.7,      // відскок від бічної стінки шахти
+    wallBounce: 0.88,     // відскок від бічної стінки шахти. Було 0.7 —
+                          // занадто слабкий, кірка гасла біля стінки й не
+                          // мала енергії повернутись через усе поле, тому
+                          // осідала близько до країв. Тепер відбивається
+                          // енергійніше — рух живіший, динамічніший.
     airDrag: 0.18,        // гальмування по горизонталі. Було 0.25 -> 0.15 (для
                           // бічного руху), 0.18 — компроміс, щоб не гасло
                           // надто швидко, але й не летіло аж занадто далеко.
@@ -215,14 +218,17 @@ export const NOTHING = { id: 'none', name: 'Пусто', color: '#39424f', color
            виграємо») — payoutK свідомо НЕ перераховано у відповідь: ефект
            саме в тому, щоб виплата реально зросла, а не компенсувалась.
 
-   ВЕРСТАК проти СТОЛУ ЗАЧАРУВАННЯ: раніше один і той самий блок (magic)
-   і давав апгрейд+хіл, і так називався. Тепер це два різні блоки —
-   верстак (id magic) став звичайним блоком без ефекту (kind 'solid'),
-   а апгрейд+хіл дає ЛИШЕ стіл зачарування (id enchant, kind 'magic' —
-   назва kind лишилась стара, щоб не чіпати логіку в run.ts, семантично
-   це тепер «дає зачарування», а не буквально «магія»).
+   ВЕРСТАК проти СТОЛУ ЗАЧАРУВАННЯ — два РІЗНІ ефекти, не один:
+     - верстак (id magic, kind 'upgrade') — прямий дотик підвищує тір
+       (поки є куди рости) і лікує до максимуму; на топ-тірі (Diamond)
+       лікує ЛИШЕ ОДИН РАЗ (без цього — безкінечний безкоштовний хіл
+       у бонусці з кількома кірками, саме це раніше й ламало РТП);
+       вибух TNT просто ламає його, без жодного ефекту.
+     - стіл зачарування (id enchant, kind 'magic') — НЕ підвищує тір
+       і не лікує, лише додає +0.1 до множника виграшу цієї кірки.
 */
 export const BLOCKS: Record<BlockId, BlockDef> = {
+  grass:    { id: 'grass',    name: 'Дерн',     kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#5f8a3f', skin: '/земля_трава.jpg' },
   dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
   stone:    { id: 'stone',    name: 'Камінь',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
   coal:     { id: 'coal',     name: 'Вугілля',  kind: 'solid', tough: 2,  cost: 1, value: 2,  color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
@@ -233,7 +239,7 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 35, color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
   emerald:  { id: 'emerald',  name: 'Ізумруд',  kind: 'solid', tough: 10, cost: 1, value: 70, color: '#16c96a', skin: '/ізумруд.jpg' },
   tnt:      { id: 'tnt',      name: 'TNT',      kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/assets/blocks/3.jpg' },
-  magic:    { id: 'magic',    name: 'Верстак',           kind: 'solid', tough: 1, cost: 1, value: 0, color: '#c8a165', skin: '/assets/blocks/4.png' },
+  magic:    { id: 'magic',    name: 'Верстак',           kind: 'upgrade', tough: 1, cost: 1, value: 0, color: '#c8a165', skin: '/assets/blocks/4.png' },
   enchant:  { id: 'enchant',  name: 'Стіл зачарування',  kind: 'magic', tough: 1, cost: 1, value: 0, color: '#6c3ec9', skin: '/чарстол.jpg' },
   // блок-множник. Множник (x2, x3...) лежить у самій клітинці
   mult:     { id: 'mult',     name: 'Множник', kind: 'mult',  tough: 1, cost: 1, value: 0,  color: '#c9a227' },
@@ -252,9 +258,12 @@ export function ramp(r: number, a: number, b: number): number {
    випадковими цятками — див. ORE_VEINS і world.ts. */
 export function depthWeights(r: number, bonus: boolean): Record<string, number> {
   return {
-    air:  r < 2 ? 0 : 7,
-    dirt: 70 * (1 - ramp(r, 0, 6)),
-    stone: 30 + 45 * ramp(r, 0, 6),
+    air:   r < 2 ? 0 : 7,
+    // перший шар — суцільний дерн (трава), потім звичайна земля, і вже
+    // тоді пробивається камінь — як у майнкрафті
+    grass: r === 0 ? 100 : 0,
+    dirt:  r === 0 ? 0 : 70 * (1 - ramp(r, 0, 6)),
+    stone: r === 0 ? 0 : 30 + 45 * ramp(r, 0, 6),
     tnt:     r < 3 ? 0 : 2.5,
     magic:   r < 3 ? 0 : 0.7,   // верстак — звичайний блок без ефекту, на 30% рідше (було 1.0)
     enchant: r < 10 ? 0 : 0.15, // стіл зачарування — дуже рідкий (було r<6, вага 0.6):
@@ -289,14 +298,16 @@ export interface VeinSpec {
 
 /* Усі поклади — min щонайменше 2: жоден тип руди не з'являється
    одинокою клітинкою. */
+/* Значно збільшено за проханням («дуже мало руди») — і розмір покладів,
+   і шанс на регіон зросли приблизно вдвічі відносно попередніх значень. */
 export const ORE_VEINS: Partial<Record<BlockId, VeinSpec>> = {
-  coal:     { min: 5, max: 9, chance: (r) => 0.50 * ramp(r, 1, 3)   + 0.18 * ramp(r, 3, 150) },
-  redstone: { min: 3, max: 5, chance: (r) => 0.30 * ramp(r, 3, 8)   + 0.12 * ramp(r, 8, 200) },
-  iron:     { min: 4, max: 6, chance: (r) => 0.40 * ramp(r, 2, 6)   + 0.14 * ramp(r, 6, 200) },
-  lapis:    { min: 2, max: 4, chance: (r) => 0.18 * ramp(r, 6, 16)  + 0.08 * ramp(r, 16, 250) },
-  gold:     { min: 3, max: 4, chance: (r) => 0.25 * ramp(r, 3, 10)  + 0.11 * ramp(r, 10, 250) },
-  diamond:  { min: 2, max: 3, chance: (r) => 0.14 * ramp(r, 4, 14)  + 0.09 * ramp(r, 14, 300) },
-  emerald:  { min: 2, max: 3, chance: (r) => 0.06 * ramp(r, 20, 60) + 0.05 * ramp(r, 60, 350) },
+  coal:     { min: 7, max: 13, chance: (r) => 0.85 * ramp(r, 1, 3)  + 0.30 * ramp(r, 3, 150) },
+  redstone: { min: 5, max: 8,  chance: (r) => 0.50 * ramp(r, 2, 6)  + 0.20 * ramp(r, 6, 200) },
+  iron:     { min: 6, max: 9,  chance: (r) => 0.65 * ramp(r, 2, 6)  + 0.24 * ramp(r, 6, 200) },
+  lapis:    { min: 3, max: 6,  chance: (r) => 0.32 * ramp(r, 5, 14) + 0.15 * ramp(r, 14, 250) },
+  gold:     { min: 4, max: 6,  chance: (r) => 0.42 * ramp(r, 3, 10) + 0.18 * ramp(r, 10, 250) },
+  diamond:  { min: 3, max: 5,  chance: (r) => 0.25 * ramp(r, 4, 14) + 0.15 * ramp(r, 14, 300) },
+  emerald:  { min: 2, max: 4,  chance: (r) => 0.12 * ramp(r, 16, 50) + 0.09 * ramp(r, 50, 350) },
 };
 
 /* Таблиця прокруту рулетки: «пусто» + усі кірки.

@@ -90,6 +90,10 @@ export class Pick {
      кірки з цього моменту й далі (не заднім числом, як блок-множник):
      1-й стіл -> x1.1, 2-й -> x1.2, 3-й -> x1.3 і так далі. */
   enchantMult = 1;
+  /* Верстак на максимальному тірі (Diamond) лікує РІВНО ОДИН раз — далі
+     нічого не робить. Без цього обмеження кірка на топ-тірі отримувала
+     б безкінечний безкоштовний хіл від кожного наступного верстака. */
+  maxHealUsed = false;
 
   x: number;
   y: number;
@@ -102,8 +106,12 @@ export class Pick {
   hits = 0;
   depth = 0;
   dead = false;
-  lastHitKey: string | null = null;
-  lastHitT = -1;
+  /* Кулдаун — ОКРЕМО НА КОЖНУ клітинку (мапа, не одне останнє значення):
+     удар тепер б'є ВСІ дотичні блоки за раз (див. collide()), тому
+     "останній дотик" одним ключем більше не описує стан коректно —
+     дві різні клітинки, зачеплені в той самий момент, затирали б
+     кулдаун одна одної. */
+  lastHit = new Map<string, number>();
 
   constructor(tier: Tier, col: number, y0: number) {
     this.level = tierIndex(tier.id);
@@ -250,37 +258,64 @@ export class Run {
        ручка, що стирчить збоку чи позаду напрямку польоту, могла
        пройти крізь блок без дотику), а все тіло кірки: коло радіусом R
        навколо центру. Перевіряємо всі клітинки в 3x3 навколо центру —
-       чи їхня найближча точка ближче за R — і б'ємо найближчу тверду,
-       незалежно від того, з якого боку вона торкнулась. */
+       і б'ємо УСІ, чия найближча точка ближче за R, ОДНОЧАСНО за цей
+       крок, а не лише найближчу: якщо кірка (чи її ручка) одразу
+       торкається кількох блоків, усі мають отримати удар разом.
+       Порядок ітерації фіксований (rr потім cc за зростанням) — тому
+       детермінізм між клієнтом і сервером не ламається. */
     const cx = Math.floor(p.x), cy = Math.floor(p.y);
-    let best: { r: number; c: number; cell: Cell } | null = null;
-    let bestDist = Infinity;
-    for (let rr = cy - 1; rr <= cy + 1; rr++) {
-      for (let cc = cx - 1; cc <= cx + 1; cc++) {
+    for (let rr = cy - 1; rr <= cy + 1 && !p.dead; rr++) {
+      for (let cc = cx - 1; cc <= cx + 1 && !p.dead; cc++) {
         const cell = this.mine.get(rr, cc);
         if (!cell || isWall(cell)) continue;
         const nx = clamp(p.x, cc, cc + 1);
         const ny = clamp(p.y, rr, rr + 1);
         const d = Math.hypot(p.x - nx, p.y - ny);
-        if (d < R && d < bestDist) { bestDist = d; best = { r: rr, c: cc, cell }; }
+        if (d < R) this.impact(p, rr, cc, cell);
       }
     }
-    if (!best) return;
-    this.impact(p, best.r, best.c, best.cell);
   }
 
   private impact(p: Pick, r: number, c: number, cell: Cell): void {
-    // не даємо зарахувати кілька ударів по одній клітинці за мить
+    // не даємо зарахувати кілька ударів по ОДНІЙ й ТІЙ САМІЙ клітинці за мить
     const key = r + ',' + c;
-    if (key === p.lastHitKey && this.time - p.lastHitT < P.hitCooldown) return;
-    p.lastHitKey = key;
-    p.lastHitT = this.time;
+    const last = p.lastHit.get(key);
+    if (last !== undefined && this.time - last < P.hitCooldown) return;
+    p.lastHit.set(key, this.time);
 
     const def = BLOCKS[cell.id];
     const idx = this.picks.indexOf(p);
     const dx = p.x - (c + 0.5);
     const dy = p.y - (r + 0.5);
     const sideways = Math.abs(dx) > Math.abs(dy);
+
+    if (def.kind === 'upgrade') {
+      this.mine.clear(r, c);
+      /* Верстак: прямий дотик підвищує тір (поки є куди рости) і лікує
+         до максимуму. На топ-тірі (Diamond) — лише ОДИН додатковий хіл,
+         далі жодного ефекту (без цього кірка на топ-тірі отримувала б
+         безкінечний безкоштовний хіл від кожного наступного верстака —
+         саме це раніше ламало РТП у бонусці). Вибух TNT сюди не заходить:
+         блоки цього kind ламаються ним як звичайні, без жодного ефекту
+         (див. цикл вибуху нижче — там лише this.collected += value). */
+      if (p.level < TIERS.length - 1) {
+        p.level++;
+        p.tier = TIERS[p.level];
+        p.hpMax = p.tier.hp;
+        p.hp = p.tier.hp;
+        p.enchanted = true;
+        this.upgrades++;
+        this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: false, pick: idx });
+      } else if (!p.maxHealUsed) {
+        p.hp = p.hpMax;
+        p.maxHealUsed = true;
+        p.enchanted = true;
+        this.upgrades++;
+        this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: true, pick: idx });
+      }
+      this.bounce(p, dx, sideways, 0.7);
+      return;
+    }
 
     if (def.kind === 'magic') {
       this.mine.clear(r, c);
@@ -360,7 +395,7 @@ export class Run {
             const b = this.mine.get(rr, cc);
             if (!b || isWall(b)) continue;
             const k = BLOCKS[b.id].kind;
-            if (k !== 'solid' && k !== 'magic' && k !== 'tnt') continue;
+            if (k !== 'solid' && k !== 'magic' && k !== 'upgrade' && k !== 'tnt') continue;
             hitMap.set(key, { r: rr, c: cc, id: b.id });
           }
         }

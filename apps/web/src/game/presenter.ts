@@ -140,17 +140,22 @@ export class Presenter {
     if (e.code !== 'Space') return;
     e.preventDefault();
     /* Затиснутий пробіл (ще з моменту старту прокруту) генерує браузером
-       ПОВТОРНІ keydown з e.repeat=true, доки палець не відпустять. Кожен
-       такий повтор під час SPIN/RUNNING нічого не робив (стан не IDLE),
-       але щойно з'являвся RESULT, ПЕРШИЙ-ЛІПШИЙ повторний keydown після
-       RESULT_GRACE одразу запускав новий раунд — виглядало як «прокрут
-       сам собою». Ігноруємо повтори: реагуємо лише на СПРАВЖНє нове
-       натискання. */
+       ПОВТОРНІ keydown з e.repeat=true, доки палець не відпустять.
+       Ігноруємо повтори: реагуємо лише на СПРАВЖНє нове натискання. */
     if (e.repeat) return;
+    /* Тап/пробіл по самому ПОЛЮ після результату — це лише «подивився,
+       закрив», без наміру одразу поставити нову ставку: повертає в
+       головний екран (IDLE). Одразу почати новий раунд одним дотиком
+       може ЛИШЕ явна кнопка «ГРАТИ» (primary() з GameClient) — див.
+       коментар у primary(). */
+    if (this.state === 'RESULT') {
+      if (this.resultT >= RESULT_GRACE) this.closeResult();
+      return;
+    }
     this.primary();
   };
   private onClick = () => {
-    if (this.state === 'RESULT') this.primary();
+    if (this.state === 'RESULT' && this.resultT >= RESULT_GRACE) this.closeResult();
   };
 
   constructor(canvas: HTMLCanvasElement, onHud: (h: HudState) => void) {
@@ -217,8 +222,25 @@ export class Presenter {
       if (this.disposed) return;
       const dt = Math.min(0.04, (now - last) / 1000);
       last = now;
-      this.update(dt);
-      this.draw();
+      /* Необроблена помилка десередині update()/draw() раніше зупиняла
+         ВЕСЬ requestAnimationFrame-цикл назавжди (виняток летить крізь
+         callback, і наступний rAF просто не планується) — гра застигала
+         в тому стані, в якому впала, а busy/state лишались не-IDLE
+         НАЗАВЖДИ: степер ставки й кнопка «ГРАТИ» виглядали «зламаними»
+         без жодного повідомлення про причину. Тепер цикл переживає збій:
+         показує помилку і повертає керування в IDLE, замість тихого
+         паралічу інтерфейсу. */
+      try {
+        this.update(dt);
+        this.draw();
+      } catch (err) {
+        console.error('Presenter: помилка в кадрі, відновлюю стан', err);
+        this.busy = false;
+        this.state = 'IDLE';
+        this.error = 'Технічна помилка — онови сторінку, якщо гра не реагує';
+        this.message = this.error;
+        try { this.emit(); } catch { /* не даємо другому збою заглушити відновлення */ }
+      }
       this.raf = requestAnimationFrame(frame);
     };
     this.raf = requestAnimationFrame(frame);
@@ -232,11 +254,14 @@ export class Presenter {
     this.emit();
   }
 
-  /** Головна кнопка: завжди одразу новий раунд — навіть одразу після
+  /** ЛИШЕ кнопка «ГРАТИ»: завжди одразу новий раунд — навіть одразу після
       результату попереднього, без окремого проміжного кроку «далі».
-      Мінімальна затримка (RESULT_GRACE) — щоб залишковий/затриманий клік
-      чи утримана клавіша пробіл, що прилетіли ще з попереднього раунду,
-      не запускали наступний АВТОМАТИЧНО, щойно з'явиться результат. */
+      Тап по самому полю чи пробіл після результату так НЕ роблять —
+      вони просто закривають результат в IDLE (onClick/onKey нижче),
+      щоб випадковий дотик по екрану не ставив нову ставку самовільно.
+      Мінімальна затримка (RESULT_GRACE) — щоб залишковий/затриманий клік,
+      що прилетів ще з попереднього раунду, не спрацював АВТОМАТИЧНО,
+      щойно з'явиться результат. */
   primary(): void {
     if (this.state === 'RESULT') {
       if (this.resultT < RESULT_GRACE) return;
@@ -559,9 +584,8 @@ export class Presenter {
           text: cash > 0 ? 'БУМ! +' + fmtCash(cash) : 'БУМ!', color: '#ff8a2b', size: 0.26 });
         if (cash > 0) this.pushLog('БУМ! +' + fmtCash(cash), '#ff8a2b');
       } else if (e.t === 'magic') {
-        // подія й далі зветься 'magic' внутрішньо, але тепер її дає
-        // ЛИШЕ стіл зачарування (верстак — звичайний блок без ефекту).
-        // Більше не підвищує кірку — лише накопичує множник e.mult.
+        // подія від СТОЛУ ЗАЧАРУВАННЯ: не підвищує кірку, лише
+        // накопичує множник e.mult (верстак — окрема подія 'upgrade' нижче)
         this.burst(e.c + 0.5, e.r + 0.5, '#c46bff', 40, 2.2);
         this.shake = 16;
         this.flash = 0.4; this.flashColor = '#c46bff';
@@ -570,6 +594,17 @@ export class Presenter {
           text: 'ЗАЧАРУВАННЯ! ' + mtxt, color: '#d9a3ff', size: 0.24 });
         this.pushLog('Зачарування! ' + mtxt, '#d9a3ff');
         this.enchantMult = e.mult;
+      } else if (e.t === 'upgrade') {
+        // подія від ВЕРСТАКА: підвищує тір (поки є куди рости) і лікує;
+        // на топ-тірі — лише один додатковий хіл (healOnly), без назви тіру
+        this.burst(e.c + 0.5, e.r + 0.5, '#ffb347', 40, 2.2);
+        this.shake = 16;
+        this.flash = 0.4; this.flashColor = '#ffb347';
+        const tierName = (TIER_BY_ID[e.tier]?.name ?? e.tier).toUpperCase();
+        const label = e.healOnly ? 'ПОВНИЙ ХІЛ!' : 'ПІДВИЩЕННЯ! ' + tierName;
+        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
+          text: label, color: '#ffe0b3', size: 0.22 });
+        this.pushLog(label, '#ffe0b3');
       } else if (e.t === 'pickdead') {
         this.burst(e.x, e.y, '#8a939f', 22, 1.4);
         this.shake = Math.max(this.shake, 12);
@@ -919,6 +954,7 @@ export class Presenter {
   private drawRunningTotal(ctx: CanvasRenderingContext2D): void {
     if (!this.run || this.state !== 'RUNNING') return;
     const cash = this.run.collected * this.bet / CONFIG.payoutK;
+    if (cash <= 0) return;   // "+0" на весь екран нічого не каже — просто мовчимо, доки нема чого показати
     Render.text(ctx, '+' + fmtCash(cash), this.w / 2, 46,
       '800 20px ui-monospace, monospace', '#ffd34d');
   }
