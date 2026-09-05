@@ -72,7 +72,10 @@ export function GameClient() {
   const buy = useCallback(() => gameRef.current?.buy(), []);
   const setBet = useCallback((b: number) => gameRef.current?.setBet(b), []);
 
-  const idle = hud.state === 'IDLE' && !hud.busy;
+  // Степер заблокований лише поки триває сама анімація раунду (від
+  // прокруту до падіння кірки) — щойно з'являється RESULT (чи ми в
+  // IDLE), знову можна міняти ставку одразу, без тапу по екрану.
+  const roundInFlight = hud.state !== 'IDLE' && hud.state !== 'RESULT';
   // Робастніше за indexOf-по-точному-значенню: якщо hud.bet раптом не
   // збігається буквально з жодним значенням у hud.bets (напр. після
   // оновлення конфігу), indexOf дає -1, і Math.max(0,-1) тихо трактує
@@ -80,8 +83,8 @@ export function GameClient() {
   // просто шукаємо найближче більше/менше число, без прив'язки до
   // точного індексу.
   const bets = hud.bets;
-  const canBetDown = bets.some((b) => b < hud.bet);
-  const canBetUp = bets.some((b) => b > hud.bet);
+  const canBetDown = !roundInFlight && bets.some((b) => b < hud.bet);
+  const canBetUp = !roundInFlight && bets.some((b) => b > hud.bet);
   const betDown = useCallback(() => {
     const prev = [...bets].reverse().find((b) => b < hud.bet);
     if (prev !== undefined) setBet(prev);
@@ -142,9 +145,9 @@ export function GameClient() {
 
       <footer className="bottombar">
         <div className="betstepper">
-          <button type="button" className="stepbtn" disabled={!idle || !canBetDown} onClick={betDown}>−</button>
+          <button type="button" className="stepbtn" disabled={!canBetDown} onClick={betDown}>−</button>
           <div className="betvalue">{hud.bet}</div>
-          <button type="button" className="stepbtn" disabled={!idle || !canBetUp} onClick={betUp}>+</button>
+          <button type="button" className="stepbtn" disabled={!canBetUp} onClick={betUp}>+</button>
         </div>
 
         <button type="button" className="playbtn" disabled={!hud.canSpin} onClick={spin}>
