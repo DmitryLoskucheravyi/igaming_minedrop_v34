@@ -73,13 +73,23 @@ export function GameClient() {
   const setBet = useCallback((b: number) => gameRef.current?.setBet(b), []);
 
   const idle = hud.state === 'IDLE' && !hud.busy;
-  const betIdx = Math.max(0, hud.bets.indexOf(hud.bet));
+  // Робастніше за indexOf-по-точному-значенню: якщо hud.bet раптом не
+  // збігається буквально з жодним значенням у hud.bets (напр. після
+  // оновлення конфігу), indexOf дає -1, і Math.max(0,-1) тихо трактує
+  // це як "найменша ставка" — степер міг здаватись «заклинилим». Тут
+  // просто шукаємо найближче більше/менше число, без прив'язки до
+  // точного індексу.
+  const bets = hud.bets;
+  const canBetDown = bets.some((b) => b < hud.bet);
+  const canBetUp = bets.some((b) => b > hud.bet);
   const betDown = useCallback(() => {
-    if (betIdx > 0) setBet(hud.bets[betIdx - 1]);
-  }, [betIdx, hud.bets, setBet]);
+    const prev = [...bets].reverse().find((b) => b < hud.bet);
+    if (prev !== undefined) setBet(prev);
+  }, [bets, hud.bet, setBet]);
   const betUp = useCallback(() => {
-    if (betIdx < hud.bets.length - 1) setBet(hud.bets[betIdx + 1]);
-  }, [betIdx, hud.bets, setBet]);
+    const next = bets.find((b) => b > hud.bet);
+    if (next !== undefined) setBet(next);
+  }, [bets, hud.bet, setBet]);
 
   const openFair = useCallback(() => { setMenuOpen(false); setShowFair(true); }, []);
 
@@ -132,9 +142,9 @@ export function GameClient() {
 
       <footer className="bottombar">
         <div className="betstepper">
-          <button type="button" className="stepbtn" disabled={!idle || betIdx <= 0} onClick={betDown}>−</button>
+          <button type="button" className="stepbtn" disabled={!idle || !canBetDown} onClick={betDown}>−</button>
           <div className="betvalue">{hud.bet}</div>
-          <button type="button" className="stepbtn" disabled={!idle || betIdx >= hud.bets.length - 1} onClick={betUp}>+</button>
+          <button type="button" className="stepbtn" disabled={!idle || !canBetUp} onClick={betUp}>+</button>
         </div>
 
         <button type="button" className="playbtn" disabled={!hud.canSpin} onClick={spin}>

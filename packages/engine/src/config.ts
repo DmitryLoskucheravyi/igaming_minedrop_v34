@@ -61,9 +61,9 @@ export const CONFIG = {
      (наприклад, до ~2, щоб кірка була ~89% і компенсувала втрату
      7 попередніх шансів; підбирай через sim/final.ts і sim/balance.ts). */
   spinsPerBet: 1,
-  nothingWeight: 35,      // вага «пусто». Кірки разом важать 9.4 (Copper прибрали) ->
-                          // 9.4/44.4 ≈ 21% за прокрут (= за ставку). Було 17.6 (~35%) —
-                          // за проханням шанс випадання кірки зменшено.
+  nothingWeight: 55,      // вага «пусто». Кірки разом важать 9.4 ->
+                          // 9.4/64.4 ≈ 15% за прокрут (= за ставку). Було 35 (~21%) —
+                          // за проханням шанс випадання кірки зменшено ще раз.
   /* Рулетка виглядає як класичний однорядний слот («777»): ОДНА
      вертикальна стрічка символів, у вікні видно три — над, на лінії
      виплати (по центру, з рамкою) і під. Це не три окремі барабани
@@ -207,23 +207,36 @@ export const NOTHING = { id: 'none', name: 'Пусто', color: '#39424f', color
            TNT кірці шкоди не завдає (cost 0) — вибух безкоштовний.
    value — скільки очок дає розколотий блок (ділиться на payoutK у виплаті,
            а сама виплата множиться на bet — тому чим більша ставка, тим
-           дорожчий той самий блок). Прив'язано до КОНКРЕТНОГО прикладу:
-           залізо має давати +3 при ставці 50 — value=3 і payoutK=50
-           (як «ставка-одиниця») дають рівно це.
+           дорожчий той самий блок).
            Земля й камінь — суцільний наповнювач шахти, у виграш не йдуть
-           (value 0). Далі — логічна градація за рідкістю.
+           (value 0). Далі — логічна градація за рідкістю: вугілля <
+           редстоун < залізо < лазурит < золото < алмаз < ізумруд (найдорожчий).
+           Значення підняті приблизно вдвічі за проханням («занадто мало
+           виграємо») — payoutK свідомо НЕ перераховано у відповідь: ефект
+           саме в тому, щоб виплата реально зросла, а не компенсувалась.
+
+   ВЕРСТАК проти СТОЛУ ЗАЧАРУВАННЯ: раніше один і той самий блок (magic)
+   і давав апгрейд+хіл, і так називався. Тепер це два різні блоки —
+   верстак (id magic) став звичайним блоком без ефекту (kind 'solid'),
+   а апгрейд+хіл дає ЛИШЕ стіл зачарування (id enchant, kind 'magic' —
+   назва kind лишилась стара, щоб не чіпати логіку в run.ts, семантично
+   це тепер «дає зачарування», а не буквально «магія»).
 */
 export const BLOCKS: Record<BlockId, BlockDef> = {
-  dirt:    { id: 'dirt',    name: 'Земля',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
-  stone:   { id: 'stone',   name: 'Камінь',  kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
-  coal:    { id: 'coal',    name: 'Вугілля', kind: 'solid', tough: 2, cost: 1, value: 1,  color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
-  iron:    { id: 'iron',    name: 'Залізо',  kind: 'solid', tough: 4, cost: 1, value: 3,  color: '#b98b6c', skin: '/assets/blocks/7.png' },
-  gold:    { id: 'gold',    name: 'Золото',  kind: 'solid', tough: 6, cost: 1, value: 8,  color: '#e8c33a', skin: '/assets/blocks/6.png' },
-  diamond: { id: 'diamond', name: 'Алмаз',   kind: 'solid', tough: 9, cost: 1, value: 20, color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
-  tnt:     { id: 'tnt',     name: 'TNT',     kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/assets/blocks/3.jpg' },
-  magic:   { id: 'magic',   name: 'Верстак', kind: 'magic', tough: 1, cost: 0, value: 0,  color: '#c8a165', skin: '/assets/blocks/4.png' },
+  dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
+  stone:    { id: 'stone',    name: 'Камінь',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
+  coal:     { id: 'coal',     name: 'Вугілля',  kind: 'solid', tough: 2,  cost: 1, value: 2,  color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
+  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 3,  cost: 1, value: 5,  color: '#b3241f', skin: '/редстоун.jpg' },
+  iron:     { id: 'iron',     name: 'Залізо',   kind: 'solid', tough: 4,  cost: 1, value: 6,  color: '#b98b6c', skin: '/assets/blocks/7.png' },
+  lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 12, color: '#1f4fa8', skin: '/лазурит.jpg' },
+  gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 16, color: '#e8c33a', skin: '/assets/blocks/6.png' },
+  diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 35, color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
+  emerald:  { id: 'emerald',  name: 'Ізумруд',  kind: 'solid', tough: 10, cost: 1, value: 70, color: '#16c96a', skin: '/ізумруд.jpg' },
+  tnt:      { id: 'tnt',      name: 'TNT',      kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/assets/blocks/3.jpg' },
+  magic:    { id: 'magic',    name: 'Верстак',           kind: 'solid', tough: 1, cost: 1, value: 0, color: '#c8a165', skin: '/assets/blocks/4.png' },
+  enchant:  { id: 'enchant',  name: 'Стіл зачарування',  kind: 'magic', tough: 1, cost: 1, value: 0, color: '#6c3ec9', skin: '/чарстол.jpg' },
   // блок-множник. Множник (x2, x3...) лежить у самій клітинці
-  mult:    { id: 'mult',    name: 'Множник', kind: 'mult',  tough: 1, cost: 1, value: 0,  color: '#c9a227' },
+  mult:     { id: 'mult',     name: 'Множник', kind: 'mult',  tough: 1, cost: 1, value: 0,  color: '#c9a227' },
 };
 
 /* ---------- ГЕНЕРАЦІЯ ГЛИБИНИ ----------
@@ -242,9 +255,11 @@ export function depthWeights(r: number, bonus: boolean): Record<string, number> 
     air:  r < 2 ? 0 : 7,
     dirt: 70 * (1 - ramp(r, 0, 6)),
     stone: 30 + 45 * ramp(r, 0, 6),
-    tnt:   r < 3 ? 0 : 2.5,
-    magic: r < 5 ? 0 : 0.8,  // верстак: рідше й трохи глибше (було r<3, вага 1.4)
-    mult:  r < 2 ? 0 : (bonus ? CONFIG.bonus.multWeight : CONFIG.bonus.multWeightBase),
+    tnt:     r < 3 ? 0 : 2.5,
+    magic:   r < 3 ? 0 : 0.7,   // верстак — звичайний блок без ефекту, на 30% рідше (було 1.0)
+    enchant: r < 10 ? 0 : 0.15, // стіл зачарування — дуже рідкий (було r<6, вага 0.6):
+                                // тепер це не апгрейд, а накопичувач множника (+0.1 за стіл)
+    mult:    r < 2 ? 0 : (bonus ? CONFIG.bonus.multWeight : CONFIG.bonus.multWeightBase),
   };
 }
 
@@ -272,11 +287,16 @@ export interface VeinSpec {
   chance: (midRow: number) => number;
 }
 
+/* Усі поклади — min щонайменше 2: жоден тип руди не з'являється
+   одинокою клітинкою. */
 export const ORE_VEINS: Partial<Record<BlockId, VeinSpec>> = {
-  coal:    { min: 5, max: 9,  chance: (r) => 0.50 * ramp(r, 1, 3)  + 0.18 * ramp(r, 3, 150) },
-  iron:    { min: 4, max: 6,  chance: (r) => 0.40 * ramp(r, 2, 6)  + 0.14 * ramp(r, 6, 200) },
-  gold:    { min: 3, max: 4,  chance: (r) => 0.25 * ramp(r, 3, 10) + 0.11 * ramp(r, 10, 250) },
-  diamond: { min: 2, max: 3,  chance: (r) => 0.14 * ramp(r, 4, 14) + 0.09 * ramp(r, 14, 300) },
+  coal:     { min: 5, max: 9, chance: (r) => 0.50 * ramp(r, 1, 3)   + 0.18 * ramp(r, 3, 150) },
+  redstone: { min: 3, max: 5, chance: (r) => 0.30 * ramp(r, 3, 8)   + 0.12 * ramp(r, 8, 200) },
+  iron:     { min: 4, max: 6, chance: (r) => 0.40 * ramp(r, 2, 6)   + 0.14 * ramp(r, 6, 200) },
+  lapis:    { min: 2, max: 4, chance: (r) => 0.18 * ramp(r, 6, 16)  + 0.08 * ramp(r, 16, 250) },
+  gold:     { min: 3, max: 4, chance: (r) => 0.25 * ramp(r, 3, 10)  + 0.11 * ramp(r, 10, 250) },
+  diamond:  { min: 2, max: 3, chance: (r) => 0.14 * ramp(r, 4, 14)  + 0.09 * ramp(r, 14, 300) },
+  emerald:  { min: 2, max: 3, chance: (r) => 0.06 * ramp(r, 20, 60) + 0.05 * ramp(r, 60, 350) },
 };
 
 /* Таблиця прокруту рулетки: «пусто» + усі кірки.

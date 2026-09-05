@@ -85,7 +85,7 @@ for (let i = 0; i < N; i++) {
         t(Math.abs(e.total - e.before * e.m) < 1e-6 || Math.abs(e.total - e.before) < 1e-6,
           'множник спрацював не на накопичений виграш: ' + e.before + ' x' + e.m + ' -> ' + e.total);
       }
-      if (e.t === 'magic') t(run.picks.some((q) => q.enchanted), 'верстак не зачарував жодної кірки');
+      if (e.t === 'magic') t(run.picks.some((q) => q.enchanted), 'стіл зачарування не зачарував жодної кірки');
       // 'tnt' у hit — ланцюгова детонація (той TNT теж вибухне окремою подією)
       if (e.t === 'tnt') for (const h of e.hit) {
         const k = BLOCKS[h.id].kind;

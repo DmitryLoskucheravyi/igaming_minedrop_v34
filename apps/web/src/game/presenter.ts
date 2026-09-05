@@ -66,6 +66,8 @@ interface Popup { x: number; y: number; life: number; text: string; color: strin
 
 const MAX_TICKS_PER_FRAME = 8;   // щоб просадка кадрів не перетворилась на спіраль
 const RESULT_GRACE = 0.4;        // мін. затримка перед тим, як клік/пробіл по RESULT щось робить
+const TOAST_LIFE = 1.6;          // скільки секунд живе один push-тост живого логу
+const TOAST_MAX = 3;             // скільки тостів одночасно на екрані (старіші зникають)
 
 /* Реальна сума за блок часто менша за 1 (payoutK великий відносно ставки) —
    округлення до цілого показувало б «+0» майже на кожному блоці, хоча
@@ -119,6 +121,13 @@ export class Presenter {
   private acc = 0;
   private particles: Particle[] = [];
   private popups: Popup[] = [];
+  /* Живий лог виграшу — push-тости знизу екрана, без фону: рядок
+     виїжджає знизу вгору, тримається і зникає таким самим свайпом
+     угору. Кожен тост незалежний, life рахується від TOAST_LIFE вниз. */
+  private toasts: { text: string; color: string; life: number }[] = [];
+  /* Поточний множник зачарування — для постійного напису зверху праворуч.
+     Оновлюється подіями 'magic'; скидається на новий забіг. */
+  private enchantMult = 1;
 
   /* геометрія */
   private w = 0; private h = 0; private cell = 0;
@@ -458,6 +467,8 @@ export class Presenter {
     this.run = null;
     this.particles = [];
     this.popups = [];
+    this.toasts = [];
+    this.enchantMult = 1;
     this.camY = this.camMin;
   }
 
@@ -524,6 +535,7 @@ export class Presenter {
         if (cash > 0) {
           this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.0,
             text: '+' + fmtCash(cash), color: BLOCKS[e.id].color, size: 0.2 });
+          this.pushLog(BLOCKS[e.id].name + ' +' + fmtCash(cash), BLOCKS[e.id].color);
         }
         this.shake = Math.min(14, this.shake + 3);
       } else if (e.t === 'mult') {
@@ -532,28 +544,43 @@ export class Presenter {
         this.flash = 0.45; this.flashColor = '#ffd34d';
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.8,
           text: 'X' + e.m, color: '#ffe98a', size: 0.42 });
+        this.pushLog('Множник X' + e.m, '#ffe98a');
         haptic('hit');
       } else if (e.t === 'tnt') {
         this.burst(e.c + 0.5, e.r + 0.5, '#ff8a2b', 46, 3);
-        let sum = 0;
-        for (const h of e.hit) { this.burst(h.c + 0.5, h.r + 0.5, BLOCKS[h.id].color, 8); sum += BLOCKS[h.id].value; }
-        const cash = sum * this.bet / CONFIG.payoutK;
+        for (const h of e.hit) this.burst(h.c + 0.5, h.r + 0.5, BLOCKS[h.id].color, 8);
+        // e.got — реальна сума (вже з урахуванням зачарування), не
+        // перераховуємо з e.hit клієнтом, бо множник зачарування —
+        // рантайм-стан кірки, його нема в статичній таблиці BLOCKS
+        const cash = e.got * this.bet / CONFIG.payoutK;
         this.shake = 26;
         this.flash = 0.35; this.flashColor = '#ff7a2b';
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.3,
           text: cash > 0 ? 'БУМ! +' + fmtCash(cash) : 'БУМ!', color: '#ff8a2b', size: 0.26 });
+        if (cash > 0) this.pushLog('БУМ! +' + fmtCash(cash), '#ff8a2b');
       } else if (e.t === 'magic') {
+        // подія й далі зветься 'magic' внутрішньо, але тепер її дає
+        // ЛИШЕ стіл зачарування (верстак — звичайний блок без ефекту).
+        // Більше не підвищує кірку — лише накопичує множник e.mult.
         this.burst(e.c + 0.5, e.r + 0.5, '#c46bff', 40, 2.2);
         this.shake = 16;
         this.flash = 0.4; this.flashColor = '#c46bff';
+        const mtxt = 'X' + e.mult.toFixed(1);
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
-          text: 'ВЕРСТАК!', color: '#d9a3ff', size: 0.24 });
+          text: 'ЗАЧАРУВАННЯ! ' + mtxt, color: '#d9a3ff', size: 0.24 });
+        this.pushLog('Зачарування! ' + mtxt, '#d9a3ff');
+        this.enchantMult = e.mult;
       } else if (e.t === 'pickdead') {
         this.burst(e.x, e.y, '#8a939f', 22, 1.4);
         this.shake = Math.max(this.shake, 12);
       }
     }
     r.events.length = 0;
+  }
+
+  private pushLog(text: string, color: string): void {
+    this.toasts.push({ text, color, life: TOAST_LIFE });
+    if (this.toasts.length > TOAST_MAX) this.toasts.shift();
   }
 
   private burst(x: number, y: number, color: string, n: number, power = 1): void {
@@ -634,6 +661,10 @@ export class Presenter {
       p.life -= dt;
       if (p.life <= 0) this.popups.splice(i, 1);
     }
+    for (let i = this.toasts.length - 1; i >= 0; i--) {
+      this.toasts[i].life -= dt;
+      if (this.toasts[i].life <= 0) this.toasts.splice(i, 1);
+    }
   }
 
   /* ---------------- РОЗКЛАДКА ---------------- */
@@ -711,6 +742,9 @@ export class Presenter {
 
     this.drawTrack(ctx);
     this.drawHistory(ctx);
+    this.drawLiveLog(ctx);
+    this.drawRunningTotal(ctx);
+    this.drawEnchantMult(ctx);
     if (this.state === 'RESULT' && !this.resultEmpty) this.drawResult(ctx);
   }
 
@@ -847,6 +881,55 @@ export class Presenter {
     }
   }
 
+  /* Живий лог виграшу — push-тости знизу екрана, без фону: рядок
+     з'являється легким свайпом угору знизу, тримається і так само
+     зникає свайпом угору й розчиненням (не миготить, не займає місце
+     постійною табличкою). Новіші — ближче до самого низу. */
+  private drawLiveLog(ctx: CanvasRenderingContext2D): void {
+    const n = this.toasts.length;
+    if (!n) return;
+    const rowH = 24;
+    const baseY = this.h - 86;   // трохи вище нижньої панелі кнопок
+
+    for (let i = 0; i < n; i++) {
+      const t = this.toasts[i];
+      const rowFromBottom = n - 1 - i;
+      const progress = 1 - t.life / TOAST_LIFE;
+
+      let alpha: number, slide: number;
+      if (progress < 0.15) {                       // виїзд знизу вгору
+        const k = progress / 0.15;
+        alpha = k; slide = (1 - k) * 18;
+      } else if (progress < 0.7) {                  // тримається на місці
+        alpha = 1; slide = 0;
+      } else {                                      // зникає тим самим свайпом угору
+        const k = (progress - 0.7) / 0.3;
+        alpha = 1 - k; slide = -k * 22;
+      }
+
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      Render.text(ctx, t.text, this.w / 2, baseY - rowFromBottom * rowH + slide,
+        '800 13px ui-monospace, monospace', t.color);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* Сумарний виграш поточного забігу — постійний напис зверху по
+     центру, просто текстом (без фону). Живе, доки триває копання. */
+  private drawRunningTotal(ctx: CanvasRenderingContext2D): void {
+    if (!this.run || this.state !== 'RUNNING') return;
+    const cash = this.run.collected * this.bet / CONFIG.payoutK;
+    Render.text(ctx, '+' + fmtCash(cash), this.w / 2, 46,
+      '800 20px ui-monospace, monospace', '#ffd34d');
+  }
+
+  /* Поточний множник зачарування — постійний напис зверху праворуч,
+     просто текстом. Показує найвищий множник серед живих кірок. */
+  private drawEnchantMult(ctx: CanvasRenderingContext2D): void {
+    if (!this.run || this.state !== 'RUNNING' || this.enchantMult <= 1) return;
+    Render.text(ctx, 'X' + this.enchantMult.toFixed(1), this.w - 14, 46,
+      '800 16px ui-monospace, monospace', '#d9a3ff', 'right');
+  }
 
   private drawResult(ctx: CanvasRenderingContext2D): void {
     const round = this.round;

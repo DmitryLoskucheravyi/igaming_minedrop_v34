@@ -85,6 +85,11 @@ export class Pick {
   hpMax: number;
   hp: number;
   enchanted = false;
+  /* Стіл зачарування більше НЕ підвищує тір і не лікує — замість цього
+     кожен дотик додає +0.1 до множника, який діє на ВЕСЬ виграш ЦІЄЇ
+     кірки з цього моменту й далі (не заднім числом, як блок-множник):
+     1-й стіл -> x1.1, 2-й -> x1.2, 3-й -> x1.3 і так далі. */
+  enchantMult = 1;
 
   x: number;
   y: number;
@@ -279,22 +284,14 @@ export class Run {
 
     if (def.kind === 'magic') {
       this.mine.clear(r, c);
-      /* Апгрейд і повний хіл — лише поки є куди рости. На максимальному
-         рівні (Diamond) верстак просто ламається без ефекту: інакше
-         кірка на топ-тірі отримувала БЕЗКІНЕЧНИЙ безкоштовний хіл від
-         кожного наступного верстака — у бонусці з кількома кірками й
-         240-секундним лімітом часу це робило кірку практично безсмертною,
-         і виграш майже завжди впирався у стелю maxWinX (98% бонусок),
-         замість того щоб бути «шансом». */
-      if (p.level < TIERS.length - 1) {
-        p.level++;
-        p.tier = TIERS[p.level];
-        p.enchanted = true;
-        p.hpMax = p.tier.hp;
-        p.hp = p.tier.hp;
-        this.upgrades++;
-        this.events.push({ t: 'magic', r, c, tier: p.tier.id as TierId, pick: idx });
-      }
+      /* Стіл зачарування НЕ підвищує тір і не лікує — тільки додає
+         +0.1 до множника цієї кірки (1-й стіл -> x1.1, 2-й -> x1.2...),
+         який діє на її виграш з цього моменту й ДАЛІ, а не заднім
+         числом на вже зібране (на відміну від блока-множника нижче). */
+      p.enchantMult += 0.1;
+      p.enchanted = true;
+      this.upgrades++;
+      this.events.push({ t: 'magic', r, c, mult: p.enchantMult, pick: idx });
       this.bounce(p, dx, sideways, 0.7);
       return;
     }
@@ -377,16 +374,18 @@ export class Run {
         }
 
         const hit: { r: number; c: number; id: Cell['id'] }[] = [];
+        let got = 0;
         for (const b of candidates) {
           cleared.add(b.r + ',' + b.c);
           this.mine.clear(b.r, b.c);                       // вибух розносить одразу, без ударів
           hit.push(b);
           this.blocks++; p.blocks++;
           if (BLOCKS[b.id].kind === 'tnt') queue.push([b.r, b.c]);
-          else this.collected += BLOCKS[b.id].value;       // верстак: value 0, просто ламається
+          else got += BLOCKS[b.id].value * p.enchantMult;  // верстак: value 0, просто ламається
         }
+        this.collected += got;
 
-        this.events.push({ t: 'tnt', r: er, c: ec, hit, pick: idx });
+        this.events.push({ t: 'tnt', r: er, c: ec, hit, got, pick: idx });
       }
 
       p.vy = -P.tntBlast;
@@ -405,9 +404,10 @@ export class Run {
 
     if (cell.dmg >= def.tough) {
       this.mine.clear(r, c);
-      this.collected += def.value;
+      const got = def.value * p.enchantMult;
+      this.collected += got;
       this.blocks++; p.blocks++;
-      this.events.push({ t: 'break', r, c, id: def.id, got: def.value, pick: idx });
+      this.events.push({ t: 'break', r, c, id: def.id, got, pick: idx });
     } else {
       this.events.push({ t: 'crack', r, c, id: def.id, stage: cell.dmg, of: def.tough, pick: idx });
     }

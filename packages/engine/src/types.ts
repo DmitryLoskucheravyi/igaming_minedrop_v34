@@ -4,7 +4,9 @@
    ============================================================ */
 
 export type TierId = 'lvl2' | 'lvl3' | 'lvl4' | 'gold' | 'diamond';
-export type BlockId = 'dirt' | 'stone' | 'coal' | 'iron' | 'gold' | 'diamond' | 'tnt' | 'magic' | 'mult';
+export type BlockId =
+  | 'dirt' | 'stone' | 'coal' | 'redstone' | 'iron' | 'lapis' | 'gold' | 'diamond' | 'emerald'
+  | 'tnt' | 'magic' | 'enchant' | 'mult';
 export type BlockKind = 'solid' | 'tnt' | 'magic' | 'mult';
 
 export interface Tier {
@@ -37,8 +39,8 @@ export type SpinResult = TierId | null;
 export type RunEvent =
   | { t: 'break'; r: number; c: number; id: BlockId; got: number; pick: number }
   | { t: 'crack'; r: number; c: number; id: BlockId; stage: number; of: number; pick: number }
-  | { t: 'tnt'; r: number; c: number; hit: { r: number; c: number; id: BlockId }[]; pick: number }
-  | { t: 'magic'; r: number; c: number; tier: TierId; pick: number }
+  | { t: 'tnt'; r: number; c: number; hit: { r: number; c: number; id: BlockId }[]; got: number; pick: number }
+  | { t: 'magic'; r: number; c: number; mult: number; pick: number }
   | { t: 'mult'; r: number; c: number; m: number; before: number; total: number; pick: number }
   | { t: 'pickdead'; x: number; y: number; tier: TierId; pick: number }
   | { t: 'end'; reason: RunEndReason };
