@@ -60,15 +60,31 @@ function authHeaders(): Record<string, string> {
   return { 'x-dev-user': String(devUserId()) };
 }
 
+/* Без цього таймауту запит, обірваний згортанням мініапса (телеграм
+   призупиняє мережу у фоні), просто висів би вічно — fetch() ніколи
+   не резолвиться й не відхиляється сам. Presenter.startRound() уже
+   вміє одну повторну спробу й показ помилки при мережевому збої, але
+   без явного обриву тут той код узагалі не спрацьовує: чекає вічно,
+   а кнопка лишається disabled. */
+const REQUEST_TIMEOUT_MS = 15000;
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-      ...(init?.headers ?? {}),
-    },
-  });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, {
+      ...init,
+      signal: ac.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+        ...(init?.headers ?? {}),
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;

@@ -1,6 +1,7 @@
 /* Інваріанти фізики та логіки. npm run sim:smoke -- [забігів] */
 import { BLOCKS, CONFIG } from '../src/config';
 import { buildSetup, createRun } from '../src/round';
+import { TNT_MAX_HITS } from '../src/run';
 import { isWall } from '../src/world';
 import { seedAt } from './seeds';
 
@@ -79,12 +80,17 @@ for (let i = 0; i < N; i++) {
       if (e.t === 'mult') {
         mults++;
         t(CONFIG.bonus.multTable.some((x) => x.m === e.m), 'невідомий множник x' + e.m);
-        // множить УЖЕ накопичене, тому рахунок стрибає рівно в m разів
-        t(Math.abs(e.total - e.before * e.m) < 1e-6,
+        // множить УЖЕ накопичене рівно в m разів — АЛЕ якщо ланцюг уже
+        // впирався в MULT_CHAIN_CAP, множення пропускається (total === before)
+        t(Math.abs(e.total - e.before * e.m) < 1e-6 || Math.abs(e.total - e.before) < 1e-6,
           'множник спрацював не на накопичений виграш: ' + e.before + ' x' + e.m + ' -> ' + e.total);
       }
       if (e.t === 'magic') t(run.picks.some((q) => q.enchanted), 'верстак не зачарував жодної кірки');
-      if (e.t === 'tnt') for (const h of e.hit) t(BLOCKS[h.id].kind === 'solid', 'вибух зачепив не той блок');
+      // 'tnt' у hit — ланцюгова детонація (той TNT теж вибухне окремою подією)
+      if (e.t === 'tnt') for (const h of e.hit) {
+        const k = BLOCKS[h.id].kind;
+        t(k === 'solid' || k === 'magic' || k === 'tnt', 'вибух зачепив не той блок');
+      }
     }
     lastLevels = run.picks.map((p) => p.level);
     run.events.length = 0;
@@ -93,8 +99,8 @@ for (let i = 0; i < N; i++) {
   t(run.over, 'забіг не завершився за 100000 кроків');
   t(run.reason !== null, 'немає причини завершення');
   t(run.reason !== 'broken' || run.picks.every((p) => p.hp <= 0), 'reason=broken, але не всі кірки зламані');
-  // TNT розносить до 8 сусідів за один удар, тому blocks може перегнати hits саме на стільки
-  t(run.blocks <= run.hits + run.tnts * 8, 'розколото більше блоків, ніж дозволяють удари + вибухи');
+  // TNT розносить до TNT_MAX_HITS сусідів за один вибух, тому blocks може перегнати hits саме на стільки
+  t(run.blocks <= run.hits + run.tnts * TNT_MAX_HITS, 'розколото більше блоків, ніж дозволяють удари + вибухи');
   t(mine.rows.size < 8000, 'сітка розрослась: ' + mine.rows.size);
 
   totalHits += run.hits; totalBlocks += run.blocks;

@@ -32,7 +32,14 @@ export const CONFIG = {
 
   startBalance: 3000,     // dev
   bets: [10, 25, 50, 100, 250],
-  payoutK: 610,           // дільник виплати. Підбирається sim/final.ts (з bootstrap CI)
+  payoutK: 252,           // дільник виплати. Підбирається sim/final.ts (з bootstrap CI).
+                          // HP кірок повернули на 100-400 (довше «життя»), тому забіг
+                          // знову довший — щоб компенсувати, густоту руди зменшили
+                          // вдвічі, а payoutK перерахували під нову рівновагу (було 59
+                          // при HP 40-180). При цьому bet=50: залізо +1, золото +2,
+                          // алмаз +4 (земля/камінь — 0, як і задумано). При bet=10 з
+                          // руди щось показує лише алмаз (+1) — решта надто дешеві
+                          // відносно payoutK, поки HP лишається довгим.
   maxWinX: 5000,          // стеля виграшу за раунд, у ставках. Без неї ланцюг
                           // множників у бонусці розганяється в нескінченність
 
@@ -54,7 +61,9 @@ export const CONFIG = {
      (наприклад, до ~2, щоб кірка була ~89% і компенсувала втрату
      7 попередніх шансів; підбирай через sim/final.ts і sim/balance.ts). */
   spinsPerBet: 1,
-  nothingWeight: 84,      // вага «пусто». Кірки разом важать 16 -> ~16% за прокрут (= за ставку)
+  nothingWeight: 35,      // вага «пусто». Кірки разом важать 9.4 (Copper прибрали) ->
+                          // 9.4/44.4 ≈ 21% за прокрут (= за ставку). Було 17.6 (~35%) —
+                          // за проханням шанс випадання кірки зменшено.
   /* Рулетка виглядає як класичний однорядний слот («777»): ОДНА
      вертикальна стрічка символів, у вікні видно три — над, на лінії
      виплати (по центру, з рамкою) і під. Це не три окремі барабани
@@ -113,24 +122,31 @@ export const CONFIG = {
 
   /* ---- фізика (в клітинках за секунду) ---- */
   phys: {
-    gravity: 33,
-    maxFall: 27,
+    gravity: 26,          // було 33 — загальний рух кірки сповільнено за проханням
+    maxFall: 20,          // було 27
     restitution: 0.34,    // частка швидкості, що лишається після удару
-    bounceKick: 2.6,      // додатковий підкид угору при ударі
-    sideKick: 2.4,        // бічний імпульс — саме він дає рух по діагоналі
+    bounceKick: 2.0,      // було 2.6 — менший підкид, разом з нижчою гравітацією
+    sideKick: 3.0,        // бічний імпульс — саме він дає рух по діагоналі.
+                          // Було 2.4 -> піднімали до 3.6, щоб кірка більше
+                          // чистила поле вбоки, а не падала вузькою колонкою —
+                          // 3.6 виявилось забагато, 3.0 лишає той самий ефект
+                          // помірнішим.
     sideKickRand: 1.6,
     wallBounce: 0.7,      // відскок від бічної стінки шахти
-    airDrag: 0.25,        // гальмування по горизонталі (мале, щоб діагональ жила)
-    maxSideSpeed: 9,
-    spinKick: 5,          // кутова швидкість від удару (rad/s) — перевертання.
-                          // Було 11: кірка крутилась як пропелер. Це не про
-                          // фізику удару, а суто про читабельність — при
-                          // такому спіні на телефоні незрозуміло, що там
-                          // взагалі падає.
-    spinDamp: 0.85,       // було 0.55 — обертання тепер гаситься швидше
-                          // між ударами, тому кірка встигає «влягтися»,
-                          // а не крутитись безперервно.
-    bodyR: 0.36,          // радіус тіла кірки в частках клітинки
+    airDrag: 0.18,        // гальмування по горизонталі. Було 0.25 -> 0.15 (для
+                          // бічного руху), 0.18 — компроміс, щоб не гасло
+                          // надто швидко, але й не летіло аж занадто далеко.
+    maxSideSpeed: 10,     // було 9 -> 11, тепер трохи менше за пікове значення
+    spinKick: 3.2,        // кутова швидкість від удару (rad/s) — перевертання.
+                          // Було 5 — кірка розкручувалась надто сильно/швидко
+                          // саме як анімація, знижено за проханням.
+    spinDamp: 0.92,       // було 0.85 — обертання гаситься ще швидше,
+                          // кірка «влягається» помітно раніше після удару.
+    bodyR: 0.55,          // радіус тіла кірки в частках клітинки. Було 0.36 —
+                          // колізія ловила тільки крихітну точку в напрямку
+                          // польоту, і візуально кірка (разом з ручкою) вже
+                          // торкалась блоку, а гра ще ні. Тепер зачіпає
+                          // майже всю площу спрайту — колізія й на ручці.
     substep: 0.22,        // максимальний крок інтегрування в клітинках
     hitCooldown: 0.05,    // мінімум часу між ударами по одному блоку
     tntBlast: 6.0,        // підкид від вибуху TNT
@@ -145,21 +161,28 @@ export const CONFIG = {
 } as const;
 
 /* ---------- КІРКИ ----------
-   hp     — запас міцності кірки (100..400): скільки ударів вона взагалі витримає
+   hp     — запас міцності кірки: скільки ударів вона взагалі витримає.
+            cost блоку тепер уніфіковано (1 для будь-якого блоку, див. BLOCKS
+            нижче), тож hp напряму й є цільова кількість ударів на кірку.
+            Підняте відносно попереднього — довше «життя» кірки за проханням.
    dmg    — УРОН за удар: чим вища кірка, тим швидше довбає руду
             (ударів по блоку = ceil(BLOCKS[*].tough / dmg))
-   weight — шанс випасти на прокруті (разом 16 проти nothingWeight = 84)
+   weight — шанс випасти на прокруті (разом 16 проти nothingWeight, див. вище)
 */
+/* HP різко зменшено (100-400 -> 20-100): щоб один забіг ламав ДЕСЯТКИ
+   блоків, а не тисячі. Поки HP було величезне, будь-яка "нормальна"
+   вартість блоку тонула в діленику (payoutK мусив бути десятками тисяч,
+   щоб утримати РТП=95% при таких обсягах). Тепер забіг короткий і
+   передбачуваний, тож payoutK може лишатись маленьким і зрозумілим
+   числом, а вартість блоку — реальною цифрою на екрані. */
 export const TIERS: readonly Tier[] = [
-  { id: 'copper', name: 'Copper', weight: 6.60, hp: 100, dmg: 1, color: '#c87f5a', color2: '#8c4f34',
-    skin: '/assets/pickaxes/copper.webp', skinMagic: '/assets/pickaxes/coper_magic.webp' },
-  { id: 'lvl2', name: 'Wooden', weight: 4.30, hp: 160, dmg: 2, color: '#a9803f', color2: '#6b4a20',
+  { id: 'lvl2', name: 'Wooden', weight: 4.30, hp: 100, dmg: 2, color: '#a9803f', color2: '#6b4a20',
     skin: '/assets/pickaxes/lvl2.webp', skinMagic: '/assets/pickaxes/lvl2_magic.webp' },
-  { id: 'lvl3', name: 'Stone', weight: 2.70, hp: 220, dmg: 3, color: '#a8a8a8', color2: '#6e6e6e',
+  { id: 'lvl3', name: 'Stone', weight: 2.70, hp: 150, dmg: 3, color: '#a8a8a8', color2: '#6e6e6e',
     skin: '/assets/pickaxes/lvl3.png', skinMagic: '/assets/pickaxes/lvl3_magic.webp' },
-  { id: 'lvl4', name: 'Iron', weight: 1.60, hp: 280, dmg: 4, color: '#e2e2e2', color2: '#9d9d9d',
+  { id: 'lvl4', name: 'Iron', weight: 1.60, hp: 200, dmg: 4, color: '#e2e2e2', color2: '#9d9d9d',
     skin: '/assets/pickaxes/lvl4.png', skinMagic: '/assets/pickaxes/lvl4_magic.gif' },
-  { id: 'gold', name: 'Golden', weight: 0.66, hp: 340, dmg: 5, color: '#f7d13a', color2: '#c79a10',
+  { id: 'gold', name: 'Golden', weight: 0.66, hp: 300, dmg: 5, color: '#f7d13a', color2: '#c79a10',
     skin: '/assets/pickaxes/gold.png', skinMagic: '/assets/pickaxes/gold_magic.webp' },
   { id: 'diamond', name: 'Diamond', weight: 0.14, hp: 400, dmg: 7, color: '#57eede', color2: '#22b7a8',
     skin: '/assets/pickaxes/diamond.png', skinMagic: '/assets/pickaxes/diamond_magic.webp' },
@@ -178,20 +201,29 @@ export const NOTHING = { id: 'none', name: 'Пусто', color: '#39424f', color
            коли накопичений урон >= tough.
            Земля, камінь, динаміт мають tough 1 — б'ються ЗАВЖДИ з одного
            удару будь-якою кіркою. Міцність є тільки в руди.
-   cost  — скільки HP кірки з'їдає ОДИН удар
-   value — скільки очок дає розколотий блок (ділиться на payoutK у виплаті)
+   cost  — скільки HP кірки з'їдає ОДИН дотик, уніфіковано: 1 для будь-якого
+           блоку (раніше 3-8 залежно від блоку). tough на це не впливає —
+           руда й далі вимагає кількох ударів, просто кожен коштує так само.
+           TNT кірці шкоди не завдає (cost 0) — вибух безкоштовний.
+   value — скільки очок дає розколотий блок (ділиться на payoutK у виплаті,
+           а сама виплата множиться на bet — тому чим більша ставка, тим
+           дорожчий той самий блок). Прив'язано до КОНКРЕТНОГО прикладу:
+           залізо має давати +3 при ставці 50 — value=3 і payoutK=50
+           (як «ставка-одиниця») дають рівно це.
+           Земля й камінь — суцільний наповнювач шахти, у виграш не йдуть
+           (value 0). Далі — логічна градація за рідкістю.
 */
 export const BLOCKS: Record<BlockId, BlockDef> = {
-  dirt:    { id: 'dirt',    name: 'Земля',   kind: 'solid', tough: 1, cost: 3,  value: 2,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
-  stone:   { id: 'stone',   name: 'Камінь',  kind: 'solid', tough: 1, cost: 3,  value: 4,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
-  coal:    { id: 'coal',    name: 'Вугілля', kind: 'solid', tough: 2, cost: 5,  value: 8,  color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
-  iron:    { id: 'iron',    name: 'Залізо',  kind: 'solid', tough: 4, cost: 6,  value: 16, color: '#b98b6c', skin: '/assets/blocks/7.png' },
-  gold:    { id: 'gold',    name: 'Золото',  kind: 'solid', tough: 6, cost: 7,  value: 30, color: '#e8c33a', skin: '/assets/blocks/6.png' },
-  diamond: { id: 'diamond', name: 'Алмаз',   kind: 'solid', tough: 9, cost: 8,  value: 60, color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
-  tnt:     { id: 'tnt',     name: 'TNT',     kind: 'tnt',   tough: 1, cost: 20, value: 0,  color: '#d63b1f', skin: '/assets/blocks/3.jpg' },
-  magic:   { id: 'magic',   name: 'Верстак', kind: 'magic', tough: 1, cost: 0,  value: 0,  color: '#c8a165', skin: '/assets/blocks/4.png' },
+  dirt:    { id: 'dirt',    name: 'Земля',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
+  stone:   { id: 'stone',   name: 'Камінь',  kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
+  coal:    { id: 'coal',    name: 'Вугілля', kind: 'solid', tough: 2, cost: 1, value: 1,  color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
+  iron:    { id: 'iron',    name: 'Залізо',  kind: 'solid', tough: 4, cost: 1, value: 3,  color: '#b98b6c', skin: '/assets/blocks/7.png' },
+  gold:    { id: 'gold',    name: 'Золото',  kind: 'solid', tough: 6, cost: 1, value: 8,  color: '#e8c33a', skin: '/assets/blocks/6.png' },
+  diamond: { id: 'diamond', name: 'Алмаз',   kind: 'solid', tough: 9, cost: 1, value: 20, color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
+  tnt:     { id: 'tnt',     name: 'TNT',     kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/assets/blocks/3.jpg' },
+  magic:   { id: 'magic',   name: 'Верстак', kind: 'magic', tough: 1, cost: 0, value: 0,  color: '#c8a165', skin: '/assets/blocks/4.png' },
   // блок-множник. Множник (x2, x3...) лежить у самій клітинці
-  mult:    { id: 'mult',    name: 'Множник', kind: 'mult',  tough: 1, cost: 2,  value: 0,  color: '#c9a227' },
+  mult:    { id: 'mult',    name: 'Множник', kind: 'mult',  tough: 1, cost: 1, value: 0,  color: '#c9a227' },
 };
 
 /* ---------- ГЕНЕРАЦІЯ ГЛИБИНИ ----------
@@ -202,20 +234,50 @@ export function ramp(r: number, a: number, b: number): number {
   return Math.max(0, Math.min(1, (r - a) / (b - a)));
 }
 
+/* Фонові блоки — на клітинку незалежно, як і раніше. Руда (coal/iron/
+   gold/diamond) сюди більше НЕ входить: вона лягає покладами, а не
+   випадковими цятками — див. ORE_VEINS і world.ts. */
 export function depthWeights(r: number, bonus: boolean): Record<string, number> {
   return {
-    air:     r < 2 ? 0 : 7,
-    dirt:    70 * (1 - ramp(r, 0, 6)),
-    stone:   30 + 45 * ramp(r, 0, 6),
-    coal:    22 * ramp(r, 2, 10),
-    iron:    22 * ramp(r, 7, 20),
-    gold:    16 * ramp(r, 14, 32),
-    diamond: 12 * ramp(r, 22, 50),
-    tnt:     r < 3 ? 0 : 2.5,
-    magic:   r < 3 ? 0 : 1.4,
-    mult:    r < 2 ? 0 : (bonus ? CONFIG.bonus.multWeight : CONFIG.bonus.multWeightBase),
+    air:  r < 2 ? 0 : 7,
+    dirt: 70 * (1 - ramp(r, 0, 6)),
+    stone: 30 + 45 * ramp(r, 0, 6),
+    tnt:   r < 3 ? 0 : 2.5,
+    magic: r < 5 ? 0 : 0.8,  // верстак: рідше й трохи глибше (було r<3, вага 1.4)
+    mult:  r < 2 ? 0 : (bonus ? CONFIG.bonus.multWeight : CONFIG.bonus.multWeightBase),
   };
 }
+
+/* ---------- РУДА — ПОКЛАДАМИ, А НЕ ХАОТИЧНО ----------
+   Кожна клітинка руди незалежно — то одинокі цятки без форми. Тепер
+   шахта поділена на регіони по ORE_REGION_ROWS рядів (на всю ширину),
+   і для кожного регіону окремо вирішується: чи є в ньому поклад даного
+   типу руди, де його центр і скільки в ньому клітинок — суцільна пляма.
+
+   Розмір і частота покладу залежать від вартості руди (BLOCKS[x].value):
+   дешеве вугілля лягає великими й частими жилами, дорогий діамант —
+   рідкісними й дрібними вкрапленнями. chance(midRow) — імовірність, що
+   В ЦЬОМУ РЕГІОНІ ВЗАГАЛІ Є поклад (не на клітинку, а на регіон), і вона
+   густішає з глибиною й виходить на плато — тим самим ramp(), що й вище.
+
+   ВАЖЛИВО ДЛЯ ДЕТЕРМІНІЗМУ: regionId рахується від номера ряду
+   (floor(r / ORE_REGION_ROWS)), а сам поклад — детермінований лише від
+   (root, regionId, тип руди). Тому не має значення, який ряд регіону
+   запросили першим (world.ts.regionOreMap()). */
+export const ORE_REGION_ROWS = 6;
+
+export interface VeinSpec {
+  min: number;
+  max: number;
+  chance: (midRow: number) => number;
+}
+
+export const ORE_VEINS: Partial<Record<BlockId, VeinSpec>> = {
+  coal:    { min: 5, max: 9,  chance: (r) => 0.50 * ramp(r, 1, 3)  + 0.18 * ramp(r, 3, 150) },
+  iron:    { min: 4, max: 6,  chance: (r) => 0.40 * ramp(r, 2, 6)  + 0.14 * ramp(r, 6, 200) },
+  gold:    { min: 3, max: 4,  chance: (r) => 0.25 * ramp(r, 3, 10) + 0.11 * ramp(r, 10, 250) },
+  diamond: { min: 2, max: 3,  chance: (r) => 0.14 * ramp(r, 4, 14) + 0.09 * ramp(r, 14, 300) },
+};
 
 /* Таблиця прокруту рулетки: «пусто» + усі кірки.
    null у полі tier = «пусто». */

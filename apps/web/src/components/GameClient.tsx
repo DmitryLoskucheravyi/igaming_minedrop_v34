@@ -41,6 +41,7 @@ const EMPTY: HudState = {
   canBuy: false,
   spinLabel: 'ГРАТИ',
   busy: false,
+  resultEmpty: false,
   verified: null,
   fair: null,
   error: null,
@@ -83,8 +84,11 @@ export function GameClient() {
   const openFair = useCallback(() => { setMenuOpen(false); setShowFair(true); }, []);
 
   // тонка плашка статусу над полем: помилка — завжди, живе повідомлення —
-  // тільки поки триває раунд (у IDLE/RESULT цьому місцю нема чого сказати)
-  const statusText = hud.error ?? (hud.state !== 'IDLE' && hud.state !== 'RESULT' ? hud.message : '');
+  // тільки поки триває раунд (у IDLE цьому місцю нема чого сказати).
+  // RESULT без панелі на канвасі (нульовий виграш) — тут і тільки тут
+  // повідомлення показує сам HUD, бо полю нема чого малювати.
+  const showMessage = hud.state !== 'IDLE' && (hud.state !== 'RESULT' || hud.resultEmpty);
+  const statusText = hud.error ?? (showMessage ? hud.message : '');
 
   return (
     <div className="shell">

@@ -3,7 +3,7 @@
    Все, що їздить по HTTP, описано тут.
    ============================================================ */
 
-export type TierId = 'copper' | 'lvl2' | 'lvl3' | 'lvl4' | 'gold' | 'diamond';
+export type TierId = 'lvl2' | 'lvl3' | 'lvl4' | 'gold' | 'diamond';
 export type BlockId = 'dirt' | 'stone' | 'coal' | 'iron' | 'gold' | 'diamond' | 'tnt' | 'magic' | 'mult';
 export type BlockKind = 'solid' | 'tnt' | 'magic' | 'mult';
 

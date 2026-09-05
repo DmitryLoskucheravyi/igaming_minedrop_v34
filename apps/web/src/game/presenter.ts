@@ -44,6 +44,9 @@ export interface HudState {
   canBuy: boolean;
   spinLabel: string;
   busy: boolean;
+  /** RESULT без жодного виграшу (кірка не випала або нічого не зловила) —
+      показувати модалку "+0" нема сенсу, HUD сам скаже коротко в статусі. */
+  resultEmpty: boolean;
   /** null — ще не перевіряли; true — клієнт зійшовся з сервером */
   verified: boolean | null;
   fair: { serverSeedHash: string; clientSeed: string; nonce: number } | null;
@@ -62,6 +65,15 @@ interface Particle { x: number; y: number; vx: number; vy: number; size: number;
 interface Popup { x: number; y: number; life: number; text: string; color: string; size: number }
 
 const MAX_TICKS_PER_FRAME = 8;   // щоб просадка кадрів не перетворилась на спіраль
+const RESULT_GRACE = 0.4;        // мін. затримка перед тим, як клік/пробіл по RESULT щось робить
+
+/* Реальна сума за блок часто менша за 1 (payoutK великий відносно ставки) —
+   округлення до цілого показувало б «+0» майже на кожному блоці, хоча
+   насправді щось додається до виграшу. Тому показуємо дріб, а не ціле:
+   "+0.04", "+0.4", і лише коли він справді нульовий (земля/камінь) — нічого. */
+function fmtCash(n: number): string {
+  return n.toFixed(2).replace(/\.?0+$/, '');
+}
 
 export class Presenter {
   private canvas: HTMLCanvasElement;
@@ -69,11 +81,13 @@ export class Presenter {
   private reel = new Reel();
   private raf = 0;
   private disposed = false;
+  private resizeObserver: ResizeObserver | null = null;
 
   private state: State = 'LOADING';
   private message = 'завантаження…';
   private error: string | null = null;
   private busy = false;
+  private resultEmpty = false;
   private verified: boolean | null = null;
 
   /* серверний стан, показуємо як є */
@@ -116,10 +130,18 @@ export class Presenter {
   private onKey = (e: KeyboardEvent) => {
     if (e.code !== 'Space') return;
     e.preventDefault();
+    /* Затиснутий пробіл (ще з моменту старту прокруту) генерує браузером
+       ПОВТОРНІ keydown з e.repeat=true, доки палець не відпустять. Кожен
+       такий повтор під час SPIN/RUNNING нічого не робив (стан не IDLE),
+       але щойно з'являвся RESULT, ПЕРШИЙ-ЛІПШИЙ повторний keydown після
+       RESULT_GRACE одразу запускав новий раунд — виглядало як «прокрут
+       сам собою». Ігноруємо повтори: реагуємо лише на СПРАВЖНє нове
+       натискання. */
+    if (e.repeat) return;
     this.primary();
   };
   private onClick = () => {
-    if (this.state === 'RESULT' && this.resultT > 0.4) this.primary();
+    if (this.state === 'RESULT') this.primary();
   };
 
   constructor(canvas: HTMLCanvasElement, onHud: (h: HudState) => void) {
@@ -138,6 +160,20 @@ export class Presenter {
     window.addEventListener('resize', this.onResize);
     document.addEventListener('keydown', this.onKey);
     this.canvas.addEventListener('click', this.onClick);
+
+    /* window 'resize' у телеграм-мініапсі майже не спрацьовує:
+       шторка/висота міняється через CSS-змінну --tg-viewport-stable-height
+       (виставляє сам telegram-web-app.js), а не через зміну розміру ВІКНА.
+       Без цього канвас лишався розмальованим під СТАРИЙ (стартовий,
+       часто ще не усталений) розмір, а браузер розтягував/стискав уже
+       готову картинку під фактичний CSS-розмір — звідси й «сплюснуте,
+       видовжене» зображення на телефоні: internal canvas.width/height
+       не збігався з реальним відображеним боксом. ResizeObserver ловить
+       будь-яку зміну фактичного розміру канваса, незалежно від причини. */
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.layout());
+      this.resizeObserver.observe(this.canvas);
+    }
 
     this.decorativeMine();
     this.loop();
@@ -162,6 +198,7 @@ export class Presenter {
     window.removeEventListener('resize', this.onResize);
     document.removeEventListener('keydown', this.onKey);
     this.canvas.removeEventListener('click', this.onClick);
+    this.resizeObserver?.disconnect();
   }
 
   private loop = (): void => {
@@ -186,9 +223,19 @@ export class Presenter {
     this.emit();
   }
 
-  /** Головна кнопка: далі по результату або новий раунд */
+  /** Головна кнопка: завжди одразу новий раунд — навіть одразу після
+      результату попереднього, без окремого проміжного кроку «далі».
+      Мінімальна затримка (RESULT_GRACE) — щоб залишковий/затриманий клік
+      чи утримана клавіша пробіл, що прилетіли ще з попереднього раунду,
+      не запускали наступний АВТОМАТИЧНО, щойно з'явиться результат. */
   primary(): void {
-    if (this.state === 'RESULT') { this.closeResult(); return; }
+    if (this.state === 'RESULT') {
+      if (this.resultT < RESULT_GRACE) return;
+      const bonus = !!this.player?.bonusPending;
+      this.closeResult();
+      if (bonus || this.balance >= this.bet) void this.startRound(bonus ? 'bonus-streak' : 'bet');
+      return;
+    }
     if (this.state !== 'IDLE' || this.busy) return;
     void this.startRound(this.player?.bonusPending ? 'bonus-streak' : 'bet');
   }
@@ -378,6 +425,7 @@ export class Presenter {
 
     this.state = 'RESULT';
     this.resultT = 0;
+    this.resultEmpty = round.payout === 0;
     const net = round.payout - round.cost;
     haptic(net >= 0 ? 'win' : 'lose');
     this.message = round.mode !== 'bet'
@@ -443,10 +491,11 @@ export class Presenter {
       message: this.message,
       canSpin: (idle && (pending || this.balance >= this.bet)) || this.state === 'RESULT',
       canBuy: idle && this.balance >= buyCost && !pending,
-      spinLabel: this.state === 'RESULT'
-        ? (this.round?.bonusPending && this.round.mode === 'bet' ? 'БОНУСКА!' : 'ДАЛІ')
-        : pending ? 'БОНУСКА' : 'ГРАТИ  -' + this.bet,
+      // кнопка завжди означає ОДНУ дію — новий раунд, тому напис однаковий
+      // і в IDLE, і в RESULT (клік по результату одразу й крутить далі)
+      spinLabel: pending ? 'БОНУСКА' : 'ГРАТИ  -' + this.bet,
       busy: this.busy,
+      resultEmpty: this.resultEmpty,
       verified: this.verified,
       fair: this.round?.fair ?? (p ? { serverSeedHash: p.serverSeedHash, clientSeed: p.clientSeed, nonce: p.nonce } : null),
       error: this.error,
@@ -469,9 +518,12 @@ export class Presenter {
         this.shake = Math.min(10, this.shake + 1.6);
       } else if (e.t === 'break') {
         this.burst(e.c + 0.5, e.r + 0.5, BLOCKS[e.id].color, 12);
-        if (e.got > 0) {
+        // живий попап показує РЕАЛЬНУ суму (після ставки й payoutK), дробову
+        // за потреби — щоб цифри на екрані не брехали і не тонули в нулі
+        const cash = e.got * this.bet / CONFIG.payoutK;
+        if (cash > 0) {
           this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.0,
-            text: '+' + e.got, color: BLOCKS[e.id].color, size: 0.2 });
+            text: '+' + fmtCash(cash), color: BLOCKS[e.id].color, size: 0.2 });
         }
         this.shake = Math.min(14, this.shake + 3);
       } else if (e.t === 'mult') {
@@ -483,11 +535,13 @@ export class Presenter {
         haptic('hit');
       } else if (e.t === 'tnt') {
         this.burst(e.c + 0.5, e.r + 0.5, '#ff8a2b', 46, 3);
-        for (const h of e.hit) this.burst(h.c + 0.5, h.r + 0.5, BLOCKS[h.id].color, 8);
+        let sum = 0;
+        for (const h of e.hit) { this.burst(h.c + 0.5, h.r + 0.5, BLOCKS[h.id].color, 8); sum += BLOCKS[h.id].value; }
+        const cash = sum * this.bet / CONFIG.payoutK;
         this.shake = 26;
         this.flash = 0.35; this.flashColor = '#ff7a2b';
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.3,
-          text: 'БУМ!', color: '#ff8a2b', size: 0.26 });
+          text: cash > 0 ? 'БУМ! +' + fmtCash(cash) : 'БУМ!', color: '#ff8a2b', size: 0.26 });
       } else if (e.t === 'magic') {
         this.burst(e.c + 0.5, e.r + 0.5, '#c46bff', 40, 2.2);
         this.shake = 16;
@@ -657,7 +711,7 @@ export class Presenter {
 
     this.drawTrack(ctx);
     this.drawHistory(ctx);
-    if (this.state === 'RESULT') this.drawResult(ctx);
+    if (this.state === 'RESULT' && !this.resultEmpty) this.drawResult(ctx);
   }
 
   private get inBonus(): boolean { return !!this.round && this.round.mode !== 'bet'; }
