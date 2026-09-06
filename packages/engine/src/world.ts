@@ -40,7 +40,7 @@ const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 /* Порядок фіксований і впливає лише на те, хто «забирає» клітинку
    першим, якщо два поклади випадково перетнулись, — не на чесність
    чи детермінізм, аби порядок завжди був той самий. */
-const ORE_ORDER: BlockId[] = ['coal', 'redstone', 'iron', 'lapis', 'gold', 'diamond', 'emerald'];
+const ORE_ORDER: BlockId[] = ['coal', 'iron', 'lapis', 'redstone', 'gold', 'diamond', 'emerald'];
 const DIRS: readonly [number, number][] = [[0, 1], [0, -1], [1, 0], [-1, 0]];
 
 /* Великий зсув, щоб «номер регіону», переданий у rowRng як «номер

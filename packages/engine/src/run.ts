@@ -337,12 +337,15 @@ export class Run {
         p.hpMax = p.tier.hp;
         p.hp = p.tier.hp;
         this.upgrades++;
-        this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: false, pick: idx });
+        this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId,
+                           healOnly: false, topUp: 0, pick: idx });
       } else {
+        let topUp = 0;
         if (!p.topHealUsed) { p.hp = p.hpMax; p.topHealUsed = true; }
-        else p.hp = Math.min(p.hpMax, p.hp + CONFIG.workbench.topHeal);
+        else { topUp = Math.min(CONFIG.workbench.topHeal, p.hpMax - p.hp); p.hp += topUp; }
         this.upgrades++;
-        this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: true, pick: idx });
+        this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId,
+                           healOnly: true, topUp, pick: idx });
       }
       this.bounce(p, dx, sideways, 0.7);
       return;

@@ -33,12 +33,11 @@ export const CONFIG = {
   startBalance: 3000,     // dev
   bets: [10, 25, 50, 100, 250],
   /* Дільник виплати. Підбирається sim/final.ts під RTP 95% (послідовний
-     потік ставок із pity). Історія: 252 -> 428 -> 587 -> 222 (після:
-     частота кірки 20% + pity 8, верстак/динаміт −35/−50%, алмаз лікує
-     повністю лише 1 раз далі +50, гарантована детонація TNT у радіусі).
-     Розподіл став волатильнішим: p90 ×1.9, p99 ×17, макс ×105.
+     потік ставок із pity). Історія: 252 -> 428 -> 587 -> 222 -> 240
+     (після: Редстоун value 3 -> 15, алмаз глибший, верстак ≈0.47%).
+     Розподіл: p90 ×1.8, p95 ×6.4, p99 ×18, p99.9 ×34, макс ×86.
      Будь-яка зміна ваг/цінностей вимагає нового прогону. */
-  payoutK: 222,
+  payoutK: 240,
   /* Стеля виграшу за раунд, у ставках. Реальний максимум на поточній
      математиці ≈ x26 на 50k ставок (p99.9 ≈ x15), тому стеля майже
      ніколи не спрацьовує — це чесний запобіжник, а не маркетингове
@@ -222,10 +221,11 @@ export const NOTHING = { id: 'none', name: 'Пусто', color: '#39424f', color
            а сама виплата множиться на bet — тому чим більша ставка, тим
            дорожчий той самий блок).
            Земля й камінь — суцільний наповнювач шахти, у виграш не йдуть
-           (value 0). Далі — крута прогресія: 1 / 3 / 5 / 10 / 20 / 45 / 130.
-           Спред вугілля→ізумруд ×130 (було ×35) — щоб глибокий забіг із
-           ізумрудом реально відчувався як jackpot. payoutK підганяється
-           симуляцією під RTP 95% після кожної зміни.
+           (value 0). Прогресія за цінністю:
+             Уголь 1 < Железо 5 < Лазурит 10 < Редстоун 15 < Золото 20
+             < Алмаз 45 < Изумруд 130.
+           Спред ×130 — щоб глибокий забіг з ізумрудом відчувався як
+           jackpot. payoutK підганяється симуляцією під RTP 95%.
 
    ВЕРСТАК проти СТОЛУ ЗАЧАРУВАННЯ — два РІЗНІ ефекти:
      - верстак (id magic, kind 'upgrade') — прямий дотик підвищує тір
@@ -240,9 +240,9 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
   stone:    { id: 'stone',    name: 'Камень',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
   coal:     { id: 'coal',     name: 'Уголь',    kind: 'solid', tough: 2,  cost: 1, value: 1,   color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
-  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 3,  cost: 1, value: 3,   color: '#b3241f', skin: '/редстоун.jpg' },
   iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 5,   color: '#b98b6c', skin: '/assets/blocks/7.png' },
   lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 10,  color: '#1f4fa8', skin: '/лазурит.jpg' },
+  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 5,  cost: 1, value: 15,  color: '#b3241f', skin: '/редстоун.jpg' },
   gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 20,  color: '#e8c33a', skin: '/assets/blocks/6.png' },
   diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 45,  color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
   emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 130, color: '#16c96a', skin: '/ізумруд.jpg' },
@@ -273,7 +273,7 @@ export function depthWeights(r: number): Record<string, number> {
     dirt:  r === 0 ? 0 : 70 * (1 - ramp(r, 0, 6)),
     stone: r === 0 ? 0 : 30 + 45 * ramp(r, 0, 6),
     tnt:     r < 3 ? 0 : 1.25,   // −50%: динаміту було 2.5
-    magic:   r < 3 ? 0 : 0.45,   // −35%: верстака було 0.7. Підвищує тір кірки
+    magic:   r < 3 ? 0 : 0.40,   // верстак ≈ 0.47% фонових клітинок. Підвищує тір
     enchant: r < 10 ? 0 : 0.15,  // стіл зачарування — 3 рівні множника кірки
     mult:    r < 2 ? 0 : CONFIG.mult.weight,
   };
@@ -313,7 +313,8 @@ export const ORE_VEINS: Partial<Record<BlockId, VeinSpec>> = {
   iron:     { min: 6, max: 9,  chance: (r) => 0.65 * ramp(r, 2, 6)  + 0.24 * ramp(r, 6, 200) },
   lapis:    { min: 3, max: 6,  chance: (r) => 0.32 * ramp(r, 5, 14) + 0.15 * ramp(r, 14, 250) },
   gold:     { min: 4, max: 6,  chance: (r) => 0.42 * ramp(r, 3, 10) + 0.18 * ramp(r, 10, 250) },
-  diamond:  { min: 3, max: 5,  chance: (r) => 0.25 * ramp(r, 4, 14) + 0.15 * ramp(r, 14, 300) },
+  // алмаз глибший: з'являється з ~9 ряду (було з 4), виходить на плато до ~22
+  diamond:  { min: 3, max: 5,  chance: (r) => 0.25 * ramp(r, 9, 22) + 0.15 * ramp(r, 22, 320) },
   emerald:  { min: 2, max: 4,  chance: (r) => 0.12 * ramp(r, 16, 50) + 0.09 * ramp(r, 50, 350) },
 };
 

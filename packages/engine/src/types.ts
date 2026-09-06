@@ -42,7 +42,9 @@ export type RunEvent =
   | { t: 'tnt'; r: number; c: number; hit: { r: number; c: number; id: BlockId }[]; got: number; chain: number; pick: number }
   | { t: 'tntchain'; r: number; c: number; chain: number; mult: number; extra: number; pick: number }
   | { t: 'magic'; r: number; c: number; mult: number; lvl: number; pick: number }
-  | { t: 'upgrade'; r: number; c: number; tier: TierId; healOnly: boolean; pick: number }
+  /* healOnly=false -> підвищення тіру. healOnly=true, topUp=0 -> повний
+     хіл (1-й верстак на топ-тірі). topUp>0 -> дохіл на topUp HP. */
+  | { t: 'upgrade'; r: number; c: number; tier: TierId; healOnly: boolean; topUp: number; pick: number }
   /* m — номінал блоку (x2, x5...), active — множник вікна після цього блоку,
      secs — на скільки секунд відкрито/подовжено вікно множення */
   | { t: 'mult'; r: number; c: number; m: number; active: number; secs: number; pick: number }

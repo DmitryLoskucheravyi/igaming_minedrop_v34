@@ -623,13 +623,15 @@ export class Presenter {
           '#ffb15a', cash > 0 ? cash : undefined);
         haptic('win');
       } else if (e.t === 'upgrade') {
-        // подія від ВЕРСТАКА: підвищує тір (поки є куди рости) і лікує;
-        // на топ-тірі — лише один додатковий хіл (healOnly), без назви тіру
+        /* ВЕРСТАК: підвищення тіру / повний хіл / дохіл на topUp HP
+           (Diamond, кожен верстак після першого). */
         this.burst(e.c + 0.5, e.r + 0.5, '#ffb347', 40, 2.2);
         this.shake = 16;
         this.flash = 0.4; this.flashColor = '#ffb347';
         const tierName = (TIER_BY_ID[e.tier]?.name ?? e.tier).toUpperCase();
-        const label = e.healOnly ? 'ПОЛНЫЙ ХИЛ!' : 'ПОВЫШЕНИЕ! ' + tierName;
+        const label = e.topUp > 0 ? '+' + e.topUp + ' HP'
+          : e.healOnly ? 'ПОЛНЫЙ ХИЛ!'
+          : 'ПОВЫШЕНИЕ! ' + tierName;
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
           text: label, color: '#ffe0b3', size: 0.22 });
         this.pushLog(label, '#ffe0b3');
