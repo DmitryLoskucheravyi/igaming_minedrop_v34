@@ -56,35 +56,19 @@ export class RoundsService {
 
   private settle(rec: PlayerRecord, bet: number, mode: RoundMode): RoundResult {
     if (!CONFIG.bets.includes(bet as never)) {
-      throw new BadRequestException(`Ставка має бути однією з: ${CONFIG.bets.join(', ')}`);
-    }
-    if (mode === 'bonus-streak' && !rec.bonusPending) {
-      throw new BadRequestException('Бонуска не виграна — стрік ще не добито');
+      throw new BadRequestException(`Ставка должна быть одной из: ${CONFIG.bets.join(', ')}`);
     }
 
     const cost = roundCost(mode, bet);
-    if (rec.balance < cost) throw new BadRequestException('Недостатньо монет');
+    if (rec.balance < cost) throw new BadRequestException('Недостаточно монет');
 
     const balanceBefore = rec.balance;
-    const streakBefore = rec.streak;
-
     rec.balance -= cost;
-    if (mode === 'bonus-streak') rec.bonusPending = false;
 
     const { seed, nonce } = this.fairness.nextSeed(rec);
     const resolved = resolveRound(seed, mode, bet);
 
     rec.balance += resolved.payout;
-
-    /* Стрік рахується ТІЛЬКИ по звичайних ставках — бонусні раунди
-       його не подовжують і не обнуляють (як і в вихідній грі). */
-    if (mode === 'bet') {
-      rec.streak = resolved.setup.tiers.length ? rec.streak + 1 : 0;
-      if (rec.streak >= CONFIG.bonus.streak) {
-        rec.streak = 0;
-        rec.bonusPending = true;
-      }
-    }
 
     const result: RoundResult = {
       roundId: randomUUID(),
@@ -94,7 +78,6 @@ export class RoundsService {
       seed,
       spins: resolved.setup.spins,
       tiers: resolved.setup.tiers,
-      bonusMine: resolved.setup.bonus,
       startCols: resolved.setup.startCols,
       sim: resolved.sim,
       rawPayout: resolved.rawPayout,
@@ -103,9 +86,6 @@ export class RoundsService {
       multiplier: cost > 0 ? resolved.payout / cost : resolved.payout / bet,
       balanceBefore,
       balanceAfter: rec.balance,
-      streakBefore,
-      streakAfter: rec.streak,
-      bonusPending: rec.bonusPending,
       fair: {
         serverSeedHash: rec.serverSeedHash,
         clientSeed: rec.clientSeed,

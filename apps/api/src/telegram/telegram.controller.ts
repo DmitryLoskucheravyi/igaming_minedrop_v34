@@ -13,7 +13,7 @@ export class TelegramController {
     @Headers('x-telegram-bot-api-secret-token') secret?: string,
   ) {
     const ok = await this.bot.handleUpdate(update, secret);
-    if (!ok) throw new ForbiddenException('Апдейт не прийнято');
+    if (!ok) throw new ForbiddenException('Апдейт не принят');
     return { ok: true };
   }
 }

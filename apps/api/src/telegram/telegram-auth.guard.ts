@@ -55,14 +55,14 @@ export class TelegramAuthGuard implements CanActivate {
       const raw = header(req, 'x-dev-user') ?? '1';
       const id = Number(raw);
       if (!Number.isInteger(id) || id <= 0) {
-        throw new UnauthorizedException('x-dev-user має бути додатним цілим');
+        throw new UnauthorizedException('x-dev-user должен быть положительным целым');
       }
       req.tgUser = { id, firstName: 'dev-' + id, username: 'dev' + id };
       return true;
     }
 
     if (!initData) {
-      throw new UnauthorizedException('Немає заголовка Authorization: tma <initData>');
+      throw new UnauthorizedException('Нет заголовка Authorization: tma <initData>');
     }
 
     const res = verifyInitData(initData, this.env.botToken!, this.env.initDataMaxAgeSec);
@@ -73,7 +73,7 @@ export class TelegramAuthGuard implements CanActivate {
       let fields = '?';
       try { fields = [...new URLSearchParams(initData).keys()].sort().join(','); } catch { /* ignore */ }
       this.log.warn(`initData відхилено: ${res.reason} | поля: ${fields}`);
-      throw new UnauthorizedException('Підпис телеграма не пройшов перевірку');
+      throw new UnauthorizedException('Подпись телеграма не прошла проверку');
     }
 
     req.tgUser = res.user;
@@ -84,6 +84,6 @@ export class TelegramAuthGuard implements CanActivate {
 /** Довірений користувач із перевіреного initData */
 export const TgUser = createParamDecorator((_: unknown, ctx: ExecutionContext): TelegramUser => {
   const req = ctx.switchToHttp().getRequest<RequestWithUser>();
-  if (!req.tgUser) throw new UnauthorizedException('Запит не пройшов гард авторизації');
+  if (!req.tgUser) throw new UnauthorizedException('Запрос не прошёл гард авторизации');
   return req.tgUser;
 });

@@ -11,7 +11,7 @@
    TELEGRAM_BOT_TOKEN і це не продакшн.
    ============================================================ */
 
-import type { RoundMode, RoundResult } from '@minedrop/engine';
+import type { RoundResult } from '@minedrop/engine';
 import { devUserId, initData } from './telegram';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
@@ -19,11 +19,10 @@ const BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 export interface PublicConfig {
   bets: number[];
   spinsPerBet: number;
-  bonusSpins: number;
-  buyCost: number;
-  streak: number;
   payoutK: number;
   maxWinX: number;
+  /** курс для косметичного перерахунку балансу в USDT / зірки */
+  rates: { rubPerUsdt: number; rubPerStar: number; updatedAt: number };
 }
 
 export interface PlayerState {
@@ -31,9 +30,6 @@ export interface PlayerState {
   firstName: string;
   username: string | null;
   balance: number;
-  streak: number;
-  streakNeeded: number;
-  bonusPending: boolean;
   clientSeed: string;
   serverSeedHash: string;
   nonce: number;
@@ -109,11 +105,11 @@ export const Api = {
 
   /* Ключ ідемпотентності: у вебв'ю телеграма запит може обірватись і
      піти повторно. Без ключа це друга списана ставка. */
-  play(bet: number, mode: RoundMode, key = newKey()) {
+  play(bet: number, key = newKey()) {
     return call<{ round: RoundResult; player: PlayerState }>('/rounds/play', {
       method: 'POST',
       headers: { 'x-idempotency-key': key },
-      body: JSON.stringify({ bet, mode }),
+      body: JSON.stringify({ bet, mode: 'bet' }),
     });
   },
 

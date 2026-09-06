@@ -1,5 +1,5 @@
 import { Body, Controller, Headers, Post, UseGuards } from '@nestjs/common';
-import { IsIn, IsInt, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Min } from 'class-validator';
 import type { RoundMode } from '@minedrop/engine';
 import { RoundsService } from './rounds.service';
 import { PlayersService } from '../players/players.service';
@@ -10,8 +10,10 @@ class PlayDto {
   @IsInt() @Min(1)
   bet!: number;
 
-  @IsIn(['bet', 'bonus-buy', 'bonus-streak'])
-  mode!: RoundMode;
+  /* Бонуску прибрано — лишився єдиний режим. Поле лишаємо
+     необов'язковим для сумісності зі старим клієнтом. */
+  @IsOptional() @IsIn(['bet'])
+  mode: RoundMode = 'bet';
 }
 
 @Controller('rounds')

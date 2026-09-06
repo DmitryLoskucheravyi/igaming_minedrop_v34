@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Minedrop',
-  description: 'Падаюча кірка: рулетка, нескінченна шахта, бонусна гра. Результат рахує сервер.',
+  description: 'Падающая кирка: рулетка, бесконечная шахта, блоки-множители. Результат считает сервер.',
 };
 
 export const viewport: Viewport = {
@@ -18,7 +18,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="uk">
+    <html lang="ru">
       <head>
         {/* Має завантажитись ДО коду сторінки: з нього беруться initData
             і CSS-змінні висоти вікна. Поза телеграмом просто нічого не робить. */}

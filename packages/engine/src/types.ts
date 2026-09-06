@@ -42,19 +42,23 @@ export type RunEvent =
   | { t: 'tnt'; r: number; c: number; hit: { r: number; c: number; id: BlockId }[]; got: number; pick: number }
   | { t: 'magic'; r: number; c: number; mult: number; pick: number }
   | { t: 'upgrade'; r: number; c: number; tier: TierId; healOnly: boolean; pick: number }
-  | { t: 'mult'; r: number; c: number; m: number; before: number; total: number; pick: number }
+  /* m — номінал блоку (x2, x5...), active — множник вікна після цього блоку,
+     secs — на скільки секунд відкрито/подовжено вікно множення */
+  | { t: 'mult'; r: number; c: number; m: number; active: number; secs: number; pick: number }
   | { t: 'pickdead'; x: number; y: number; tier: TierId; pick: number }
   | { t: 'end'; reason: RunEndReason };
 
 export type RunEndReason = 'broken' | 'timeout' | 'limit';
 
-export type RoundMode = 'bet' | 'bonus-buy' | 'bonus-streak';
+/* Режим раунду. Бонуску прибрано — лишилась лише звичайна ставка.
+   Тип збережено (а не видалено) як точку розширення на майбутнє. */
+export type RoundMode = 'bet';
 
 /* Підсумок симуляції — те, що сервер порахував і що клієнт мусить
    відтворити з того самого сида. */
 export interface RunSummary {
   collected: number;    // сирі очки до ділення на payoutK
-  multChain: number;    // добуток спійманих Х-блоків
+  multChain: number;    // найбільший активний множник вікна за забіг
   blocks: number;
   hits: number;
   depth: number;
@@ -70,12 +74,11 @@ export interface RoundResult {
   roundId: string;
   mode: RoundMode;
   bet: number;
-  cost: number;              // скільки списано (ставка або ціна бонуски)
+  cost: number;              // скільки списано (= ставка)
 
   seed: string;              // сид раунду — з нього клієнт переграє все
   spins: SpinResult[];       // що випало на кожному прокруті
   tiers: TierId[];           // кірки, які пішли в шахту
-  bonusMine: boolean;        // шахта бонусна (більше Х-блоків)
   startCols: number[];       // з яких колонок стартують кірки
 
   sim: RunSummary;
@@ -88,10 +91,6 @@ export interface RoundResult {
   balanceBefore: number;
   balanceAfter: number;
 
-  streakBefore: number;
-  streakAfter: number;
-  bonusPending: boolean;     // стрік добито — наступним іде бонусний раунд
-
   fair: {
     serverSeedHash: string;
     clientSeed: string;
@@ -102,8 +101,6 @@ export interface RoundResult {
 export interface PlayerState {
   playerId: string;
   balance: number;
-  streak: number;
-  bonusPending: boolean;
   nonce: number;
   clientSeed: string;
   serverSeedHash: string;

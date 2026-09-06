@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { CONFIG } from '@minedrop/engine';
 import { PlayersService } from './players.service';
+import { RatesService } from '../rates/rates.service';
 import { TelegramAuthGuard, TgUser } from '../telegram/telegram-auth.guard';
 import type { TelegramUser } from '../telegram/init-data';
 
@@ -18,14 +19,17 @@ class HistoryQueryDto {
 @Controller('players')
 @UseGuards(TelegramAuthGuard)
 export class PlayersController {
-  constructor(private readonly players: PlayersService) {}
+  constructor(
+    private readonly players: PlayersService,
+    private readonly rates: RatesService,
+  ) {}
 
   /** Стан гравця. Перший виклик заводить його — окремої «реєстрації» немає,
       бо особу вже підтвердив телеграм. */
   @Get('me')
   me(@TgUser() user: TelegramUser) {
     const rec = this.players.findOrCreate(user);
-    return { ...this.players.publicState(rec), config: publicConfig() };
+    return { ...this.players.publicState(rec), config: publicConfig(this.rates) };
   }
 
   @Post('me/client-seed')
@@ -42,15 +46,14 @@ export class PlayersController {
 }
 
 /* Клієнт має власну копію рушія, тому конфіг йому потрібен лише
-   для перевірки, що версії правил зійшлися. */
-function publicConfig() {
+   для перевірки, що версії правил зійшлися. Плюс курс валют —
+   для косметичного перерахунку балансу в USDT / зірки. */
+function publicConfig(rates: RatesService) {
   return {
     bets: CONFIG.bets,
     spinsPerBet: CONFIG.spinsPerBet,
-    bonusSpins: CONFIG.bonus.spins,
-    buyCost: CONFIG.bonus.buyCost,
-    streak: CONFIG.bonus.streak,
     payoutK: CONFIG.payoutK,
     maxWinX: CONFIG.maxWinX,
+    rates: rates.snapshot(),
   };
 }

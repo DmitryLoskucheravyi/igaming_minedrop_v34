@@ -43,6 +43,45 @@ class AssetStore {
     return p;
   }
 
+  /* Іконки валют для попапів/тостів. Не потрібні для першого кадру
+     (екран завантаження), тому вантажаться у фоні — до першого
+     розбитого блоку встигають, а Render.money їх відсутність
+     переживає (малює лише текст). */
+  private loadCurrencies(): Promise<void[]> {
+    return Promise.all([
+      this.one('cur.RUB', '/rub.png'),
+      this.one('cur.USDT', '/usdt.png'),
+      this.one('cur.XTR', '/зірка.png'),
+    ]);
+  }
+
+  /* Одноколірні іконки (значок рубля) тонуються в колір тексту.
+     Тонована версія кешується за парою ключ+колір — кольорів мало
+     (кольори блоків + золото), тож мапа лишається крихітною. */
+  private tints = new Map<string, HTMLCanvasElement>();
+
+  tint(key: string, color: string): CanvasImageSource | null {
+    const img = this.get(key);
+    if (!img) return null;
+    const ck = key + '|' + color;
+    const hit = this.tints.get(ck);
+    if (hit) return hit;
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return img;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d');
+    if (!g) return img;
+    g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = color;
+    g.fillRect(0, 0, w, h);
+    this.tints.set(ck, c);
+    return c;
+  }
+
   private one(key: string, src: string): Promise<void> {
     const started = this.pending.get(key);
     if (started) return started;
@@ -75,8 +114,9 @@ class AssetStore {
     this.ready = true;
     if (this.missing.length) console.warn('Не знайдено скінів:', this.missing);
 
-    // важке — у фон, не чекаючи
+    // важке й другорядне — у фон, не чекаючи
     void this.loadMagic();
+    void this.loadCurrencies();
   }
 
   /** Зачаровані скіни. Помилка тут не критична — є запасний варіант. */

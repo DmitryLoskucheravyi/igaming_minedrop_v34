@@ -1,7 +1,7 @@
 /* Інваріанти фізики та логіки. npm run sim:smoke -- [забігів] */
 import { BLOCKS, CONFIG } from '../src/config';
 import { buildSetup, createRun } from '../src/round';
-import { TNT_MAX_HITS } from '../src/run';
+import { MULT_CHAIN_CAP, MULT_WINDOW_SEC, TNT_MAX_HITS } from '../src/run';
 import { isWall } from '../src/world';
 import { seedAt } from './seeds';
 
@@ -14,25 +14,18 @@ const t = (c: unknown, m: string) => {
   if (!c) { if (!seen.has(m)) { console.log('FAIL:', m); seen.add(m); } bad++; }
 };
 
-let totalHits = 0, totalBlocks = 0, mults = 0, bonusRuns = 0, empties = 0;
+let totalHits = 0, totalBlocks = 0, mults = 0, empties = 0;
 
 for (let i = 0; i < N; i++) {
-  const isBonus = i % 5 === 0;                       // кожен п'ятий забіг — бонусний
   const seed = seedAt(i);
-  const setup = buildSetup(seed, isBonus ? 'bonus-buy' : 'bet');
-  if (isBonus) bonusRuns++;
+  const setup = buildSetup(seed, 'bet');
 
   t(setup.spins.length > 0, 'рулетка не крутилась жодного разу');
-  if (!isBonus) {
-    // у звичайній ставці перша ж кірка зупиняє прокрути
-    const firstPick = setup.spins.findIndex((s) => s !== null);
-    t(firstPick === -1 || firstPick === setup.spins.length - 1,
-      'прокрути не зупинились на першій кірці');
-    t(setup.tiers.length <= 1, 'у звичайній ставці більше однієї кірки');
-  } else {
-    t(setup.spins.length === CONFIG.bonus.spins, 'у бонусці не 15 прокрутів');
-    t(setup.tiers.length >= CONFIG.bonus.guarantee, 'гарантія кірок у бонусці не спрацювала');
-  }
+  // у звичайній ставці перша ж кірка зупиняє прокрути
+  const firstPick = setup.spins.findIndex((s) => s !== null);
+  t(firstPick === -1 || firstPick === setup.spins.length - 1,
+    'прокрути не зупинились на першій кірці');
+  t(setup.tiers.length <= 1, 'у ставці більше однієї кірки');
   t(setup.tiers.length === setup.startCols.length, 'колонок не стільки, скільки кірок');
   for (const c of setup.startCols) t(c >= 0 && c < CONFIG.cols, 'стартова колонка поза шахтою');
 
@@ -85,14 +78,25 @@ for (let i = 0; i < N; i++) {
 
       if (e.t === 'mult') {
         mults++;
-        t(CONFIG.bonus.multTable.some((x) => x.m === e.m), 'невідомий множник x' + e.m);
-        // множить УЖЕ накопичене рівно в m разів — АЛЕ якщо ланцюг уже
-        // впирався в MULT_CHAIN_CAP, множення пропускається (total === before)
-        t(Math.abs(e.total - e.before * e.m) < 1e-6 || Math.abs(e.total - e.before) < 1e-6,
-          'множник спрацював не на накопичений виграш: ' + e.before + ' x' + e.m + ' -> ' + e.total);
+        t(CONFIG.mult.table.some((x) => x.m === e.m), 'невідомий множник x' + e.m);
+        // блок-множник більше не іксує накопичене — він відкриває вікно:
+        // active — активний множник вікна (>= номіналу блоку, <= стелі),
+        // secs — довжина вікна
+        t(e.secs === MULT_WINDOW_SEC, 'вікно множника не ' + MULT_WINDOW_SEC + 'с: ' + e.secs);
+        t(e.active >= e.m && e.active <= MULT_CHAIN_CAP,
+          'активний множник поза межами: ' + e.active + ' (блок x' + e.m + ')');
+        t(run.multActive === e.active && run.multWindowT > 0,
+          'стан вікна не збігається з подією');
       }
+      // стіл зачарування — ЄДИНЕ джерело магічного скіну
       if (e.t === 'magic') t(run.picks.some((q) => q.enchanted), 'стіл зачарування не зачарував жодної кірки');
-      if (e.t === 'upgrade') t(run.picks.some((q) => q.enchanted), 'верстак не підвищив/не вилікував жодної кірки');
+      // верстак підвищує тір або лікує, але enchanted НЕ чіпає
+      if (e.t === 'upgrade') {
+        const q = run.picks[e.pick];
+        t(!!q, 'подія верстака посилається на неіснуючу кірку');
+        if (q && e.healOnly) t(q.maxHealUsed, 'healOnly-апгрейд не позначив maxHealUsed');
+        if (q && !e.healOnly) t(q.level > 0, 'апгрейд тіру не підняв рівень кірки');
+      }
       // 'tnt' у hit — ланцюгова детонація (той TNT теж вибухне окремою подією)
       if (e.t === 'tnt') for (const h of e.hit) {
         const k = BLOCKS[h.id].kind;
@@ -114,7 +118,7 @@ for (let i = 0; i < N; i++) {
 }
 
 const played = N - empties;
-console.log('раундів:', N, '(бонусних:', bonusRuns + ', без кірки:', empties + ')');
+console.log('раундів:', N, '(без кірки:', empties + ')');
 console.log('ударів на забіг:', (totalHits / Math.max(1, played)).toFixed(1),
             '| розколото блоків:', (totalBlocks / Math.max(1, played)).toFixed(1),
             '| множників спіймано:', mults);

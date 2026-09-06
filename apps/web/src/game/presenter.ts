@@ -16,10 +16,14 @@
    ============================================================ */
 
 import {
-  BLOCKS, CONFIG, Mine, Run, SIM_DT, TIER_BY_ID, buildSetup, createRun, streamRoot,
-  type RoundMode, type RoundResult, type RoundSetup, type Tier,
+  BLOCKS, CONFIG, Mine, MULT_WINDOW_SEC, Run, SIM_DT, TIER_BY_ID, buildSetup, createRun, streamRoot,
+  type RoundResult, type RoundSetup, type Tier,
 } from '@minedrop/engine';
 import { Api, ApiError, type PlayerState } from '../lib/api';
+import {
+  CURRENCY_META, FALLBACK_RATES, fmtAmount, fmtWhole,
+  type CurrencyCode, type Rates,
+} from '../lib/currency';
 import { haptic, setupMiniApp } from '../lib/telegram';
 import { Assets } from './assets';
 import { FRAME_ASPECT, FRAME_INNER_BOTTOM, FRAME_INNER_LEFT, FRAME_INNER_RIGHT, FRAME_INNER_TOP, Reel } from './reel';
@@ -32,17 +36,14 @@ type State = 'LOADING' | 'IDLE' | 'SPIN' | 'RISE' | 'RUNNING' | 'DROPDONE' | 'RE
 
 export interface HudState {
   state: State;
+  /** сирий баланс у рублях (базова одиниця) — DOM форматує сам під вибрану валюту */
   balance: number;
   bet: number;
   bets: number[];
-  streak: number;
-  streakNeeded: number;
-  bonusPending: boolean;
-  buyCost: number;
   message: string;
   canSpin: boolean;
-  canBuy: boolean;
-  spinLabel: string;
+  /** курс валют із серверного config (для DOM-форматування) */
+  rates: Rates;
   busy: boolean;
   /** RESULT без жодного виграшу (кірка не випала або нічого не зловила) —
       показувати модалку "+0" нема сенсу, HUD сам скаже коротко в статусі. */
@@ -51,6 +52,9 @@ export interface HudState {
   verified: boolean | null;
   fair: { serverSeedHash: string; clientSeed: string; nonce: number } | null;
   error: string | null;
+  /** профіль гравця з телеграма: імʼя і @нік (або ID, якщо ніка нема).
+      null — стан гравця ще не приїхав із сервера. */
+  profile: { name: string; handle: string } | null;
 }
 
 interface HistoryEntry {
@@ -58,24 +62,18 @@ interface HistoryEntry {
   win: number;
   cost: number;
   x: number;
-  bonus: boolean;
 }
 
 interface Particle { x: number; y: number; vx: number; vy: number; size: number; life: number; color: string }
-interface Popup { x: number; y: number; life: number; text: string; color: string; size: number }
+/* money — сума в рублях: рядок будується на льоту під поточну валюту й
+   малюється Render.money зі значком. prefix — текст перед сумою ('+', 'БУМ! +').
+   Якщо money не задано — показуємо просто text. */
+interface Popup { x: number; y: number; life: number; text: string; color: string; size: number; money?: number; prefix?: string }
 
 const MAX_TICKS_PER_FRAME = 8;   // щоб просадка кадрів не перетворилась на спіраль
 const RESULT_GRACE = 0.4;        // мін. затримка перед тим, як клік/пробіл по RESULT щось робить
 const TOAST_LIFE = 1.6;          // скільки секунд живе один push-тост живого логу
 const TOAST_MAX = 3;             // скільки тостів одночасно на екрані (старіші зникають)
-
-/* Реальна сума за блок часто менша за 1 (payoutK великий відносно ставки) —
-   округлення до цілого показувало б «+0» майже на кожному блоці, хоча
-   насправді щось додається до виграшу. Тому показуємо дріб, а не ціле:
-   "+0.04", "+0.4", і лише коли він справді нульовий (земля/камінь) — нічого. */
-function fmtCash(n: number): string {
-  return n.toFixed(2).replace(/\.?0+$/, '');
-}
 
 export class Presenter {
   private canvas: HTMLCanvasElement;
@@ -86,7 +84,7 @@ export class Presenter {
   private resizeObserver: ResizeObserver | null = null;
 
   private state: State = 'LOADING';
-  private message = 'завантаження…';
+  private message = 'загрузка…';
   private error: string | null = null;
   private busy = false;
   private resultEmpty = false;
@@ -96,6 +94,11 @@ export class Presenter {
   private player: PlayerState | null = null;
   private balance = 0;
   private bet = 50;
+
+  /* валюта відображення (косметика): база — рублі, гравець може
+     перемкнути на USDT/зірки. Курс приходить у config.rates. */
+  private currency: CurrencyCode = 'RUB';
+  private rates: Rates = FALLBACK_RATES;
 
   /* поточний раунд */
   private round: RoundResult | null = null;
@@ -124,7 +127,7 @@ export class Presenter {
   /* Живий лог виграшу — push-тости знизу екрана, без фону: рядок
      виїжджає знизу вгору, тримається і зникає таким самим свайпом
      угору. Кожен тост незалежний, life рахується від TOAST_LIFE вниз. */
-  private toasts: { text: string; color: string; life: number }[] = [];
+  private toasts: { text: string; color: string; life: number; money?: number }[] = [];
   /* Поточний множник зачарування — для постійного напису зверху праворуч.
      Оновлюється подіями 'magic'; скидається на новий забіг. */
   private enchantMult = 1;
@@ -198,11 +201,11 @@ export class Presenter {
       const p = await Api.me();
       this.applyPlayer(p);
       this.state = 'IDLE';
-      this.message = 'Постав ставку і крути';
+      this.message = 'Сделай ставку и крути';
     } catch (e) {
       this.state = 'ERROR';
       this.error = e instanceof Error ? e.message : String(e);
-      this.message = 'Сервер недоступний';
+      this.message = 'Сервер недоступен';
     }
     this.emit();
   }
@@ -238,7 +241,7 @@ export class Presenter {
         console.error('Presenter: помилка в кадрі, відновлюю стан', err);
         this.busy = false;
         this.state = 'IDLE';
-        this.error = 'Технічна помилка — онови сторінку, якщо гра не реагує';
+        this.error = 'Техническая ошибка — обнови страницу, если игра не реагирует';
         this.message = this.error;
         try { this.emit(); } catch { /* не даємо другому збою заглушити відновлення */ }
       }
@@ -260,6 +263,28 @@ export class Presenter {
     this.emit();
   }
 
+  /** Валюта відображення. Косметика: перемальовує суми на канвасі й у HUD,
+      на баланс і математику не впливає. */
+  setCurrency(c: CurrencyCode): void {
+    this.currency = c;
+    this.emit();
+  }
+
+  /* Малює суму (в рублях) поточною валютою зі значком.
+     whole=true — велика сума (виплата, ставка): у рублях ціле;
+     whole=false — дрібна (виграш за блок): показуємо дріб. */
+  private drawMoney(
+    ctx: CanvasRenderingContext2D, rub: number, x: number, y: number,
+    font: string, color: string, align: CanvasTextAlign = 'center', prefix = '+',
+    whole = false,
+  ): void {
+    const meta = CURRENCY_META[this.currency];
+    const s = whole
+      ? fmtWhole(rub, this.currency, this.rates)
+      : fmtAmount(rub, this.currency, this.rates);
+    Render.money(ctx, prefix + s, x, y, font, color, this.currency, meta.mono, align);
+  }
+
   /** ЛИШЕ кнопка «ГРАТИ»: завжди одразу новий раунд — навіть одразу після
       результату попереднього, без окремого проміжного кроку «далі».
       Тап по самому полю чи пробіл після результату так НЕ роблять —
@@ -271,18 +296,12 @@ export class Presenter {
   primary(): void {
     if (this.state === 'RESULT') {
       if (this.resultT < RESULT_GRACE) return;
-      const bonus = !!this.player?.bonusPending;
       this.closeResult();
-      if (bonus || this.balance >= this.bet) void this.startRound(bonus ? 'bonus-streak' : 'bet');
+      if (this.balance >= this.bet) void this.startRound();
       return;
     }
     if (this.state !== 'IDLE' || this.busy) return;
-    void this.startRound(this.player?.bonusPending ? 'bonus-streak' : 'bet');
-  }
-
-  buy(): void {
-    if (this.state !== 'IDLE' || this.busy) return;
-    void this.startRound('bonus-buy');
+    void this.startRound();
   }
 
   /* ---------------- раунд ---------------- */
@@ -290,16 +309,17 @@ export class Presenter {
   private applyPlayer(p: PlayerState): void {
     this.player = p;
     this.balance = p.balance;
+    if (p.config?.rates) this.rates = p.config.rates;
     if (p.config?.bets?.length && !p.config.bets.includes(this.bet)) {
       this.bet = p.config.bets[Math.min(2, p.config.bets.length - 1)];
     }
   }
 
-  private async startRound(mode: RoundMode): Promise<void> {
+  private async startRound(): Promise<void> {
     this.busy = true;
     this.error = null;
     this.verified = null;
-    this.message = 'запит на сервер…';
+    this.message = 'запрос на сервер…';
     this.emit();
 
     /* Ключ ідемпотентності живе на всю спробу, включно з ретраєм:
@@ -309,7 +329,7 @@ export class Presenter {
     const key = roundKey();
     let res;
     try {
-      res = await Api.play(this.bet, mode, key);
+      res = await Api.play(this.bet, key);
     } catch (e) {
       if (e instanceof ApiError) {
         // сервер відповів і відмовив — ретраїти нема сенсу
@@ -321,10 +341,10 @@ export class Presenter {
       }
       // мережа впала: одна повторна спроба тим самим ключем
       try {
-        res = await Api.play(this.bet, mode, key);
+        res = await Api.play(this.bet, key);
       } catch (e2) {
         this.busy = false;
-        this.error = e2 instanceof ApiError ? e2.message : 'Сервер не відповів';
+        this.error = e2 instanceof ApiError ? e2.message : 'Сервер не ответил';
         this.message = this.error;
         this.emit();
         return;
@@ -341,65 +361,55 @@ export class Presenter {
 
     /* Розбираємо сид САМІ. Якщо сервер прислав спини, яких із цього
        сида не виходить, — це не наша гра, і про це треба сказати вголос. */
-    this.setup = buildSetup(round.seed, round.mode);
+    this.setup = buildSetup(round.seed);
     if (this.setup.spins.join() !== round.spins.join()
       || this.setup.tiers.join() !== round.tiers.join()
       || this.setup.startCols.join() !== round.startCols.join()) {
       this.verified = false;
-      this.setup = { mode: round.mode, bonus: round.bonusMine, spins: round.spins,
+      this.setup = { mode: 'bet', spins: round.spins,
                      tiers: round.tiers, startCols: round.startCols };
     }
 
-    this.reel.bonusMode = round.mode !== 'bet';
     this.spinIndex = 0;
     this.shown = [];
     this.stageTarget = 0;
     this.resultT = 0;
     this.acc = 0;
-    this.newMine(round.seed, round.bonusMine);
+    this.newMine(round.seed);
     this.nextSpin();
     this.emit();
   }
 
   private nextSpin(): void {
     const setup = this.setup!;
-    const round = this.round!;
-    const bonus = round.mode !== 'bet';
 
     if (this.spinIndex >= setup.spins.length) { this.launch(); return; }
 
     this.state = 'SPIN';
-    this.message = bonus
-      ? `БОНУС  ${this.spinIndex + 1} / ${CONFIG.bonus.spins}   кірок: ${this.shown.filter(Boolean).length}`
-      : 'Крутимо…';
+    this.message = 'Крутим…';
     this.emit();
 
     const id = setup.spins[this.spinIndex];
     const winner: ReelItem = id ? TIER_BY_ID[id] : null;
-    const ms = bonus ? CONFIG.bonus.spinMs : CONFIG.reel.spinMs;
-    const gap = bonus ? CONFIG.bonus.gapMs : CONFIG.reel.gapMs;
 
     this.reel.start(winner, (item) => {
       this.shown[this.spinIndex] = item;
       if (item) {
         this.flash = 0.25;
         this.flashColor = '#ffd34d';
-        if (!bonus) {
-          // звичайна ставка: перша ж кірка зупиняє прокрути
-          this.tier = item;
-          this.message = item.name + '! Пішли копати';
-          this.state = 'RISE';
-          this.stageTarget = 1;
-          this.emit();
-          this.wait(CONFIG.reel.riseMs / 1000, () => this.launch());
-          return;
-        }
-      } else if (!bonus) {
-        this.message = 'Пусто';
+        // перша ж кірка зупиняє прокрути
+        this.tier = item;
+        this.message = item.name + '! Пошли копать';
+        this.state = 'RISE';
+        this.stageTarget = 1;
         this.emit();
+        this.wait(CONFIG.reel.riseMs / 1000, () => this.launch());
+        return;
       }
-      this.wait(gap / 1000, () => { this.spinIndex++; this.nextSpin(); });
-    }, ms);
+      this.message = 'Пусто';
+      this.emit();
+      this.wait(CONFIG.reel.gapMs / 1000, () => { this.spinIndex++; this.nextSpin(); });
+    }, CONFIG.reel.spinMs);
   }
 
   private launch(): void {
@@ -414,7 +424,7 @@ export class Presenter {
     if (this.state !== 'RISE') {
       this.state = 'RISE';
       this.stageTarget = 1;
-      this.message = 'Кірок у шахту: ' + setup.tiers.length;
+      this.message = 'Кирок в шахту: ' + setup.tiers.length;
       this.emit();
       this.wait(CONFIG.reel.riseMs / 1000, () => this.launch());
       return;
@@ -444,7 +454,7 @@ export class Presenter {
     }
 
     this.state = 'DROPDONE';
-    this.message = `Глибина ${Math.floor(run.depth)}, блоків ${run.blocks}  →  +${round.payout}`;
+    this.message = `Глубина ${Math.floor(run.depth)}, блоков ${run.blocks}  →  +${round.payout}`;
     this.emit();
     this.wait(1.1, () => this.finishRound());
   }
@@ -459,7 +469,6 @@ export class Presenter {
       win: round.payout,
       cost: round.cost || round.bet,
       x: round.multiplier,
-      bonus: round.mode !== 'bet',
     });
     if (this.history.length > 12) this.history.pop();
 
@@ -468,10 +477,7 @@ export class Presenter {
     this.resultEmpty = round.payout === 0;
     const net = round.payout - round.cost;
     haptic(net >= 0 ? 'win' : 'lose');
-    this.message = round.mode !== 'bet'
-      ? 'БОНУСКА: +' + round.payout
-      : round.bonusPending ? 'СТРІК ДОБИТО — БОНУСКА!'
-      : net >= 0 ? 'ВИГРАШ +' + net : 'ПРОГРАШ ' + net;
+    this.message = net >= 0 ? 'ВЫИГРЫШ +' + net : 'ПРОИГРЫШ ' + net;
     this.emit();
   }
 
@@ -485,16 +491,15 @@ export class Presenter {
     this.decorativeMine();
     this.state = 'IDLE';
     this.message = this.player && this.balance < this.bet
-      ? 'Мало монет — зменш ставку'
-      : this.player?.bonusPending ? 'Бонуска чекає — тисни КРУТИТИ'
-      : 'Постав ставку і крути';
+      ? 'Мало монет — уменьши ставку'
+      : 'Сделай ставку и крути';
     this.emit();
   }
 
   /* ---------------- шахта ---------------- */
 
-  private newMine(seed: string, bonus: boolean): void {
-    this.mine = new Mine(CONFIG.cols, streamRoot(seed, 'mine'), bonus);
+  private newMine(seed: string): void {
+    this.mine = new Mine(CONFIG.cols, streamRoot(seed, 'mine'));
     this.run = null;
     this.particles = [];
     this.popups = [];
@@ -505,7 +510,7 @@ export class Presenter {
 
   /* Фон під рулеткою. Ні на що не впливає, тому сид довільний. */
   private decorativeMine(): void {
-    this.mine = new Mine(CONFIG.cols, (Math.random() * 0x7fffffff) | 0, false);
+    this.mine = new Mine(CONFIG.cols, (Math.random() * 0x7fffffff) | 0);
     this.run = null;
     this.particles = [];
     this.popups = [];
@@ -516,31 +521,27 @@ export class Presenter {
 
   private emit(): void {
     const p = this.player;
-    const cfg = p?.config;
-    const buyCost = this.bet * (cfg?.buyCost ?? CONFIG.bonus.buyCost);
     const idle = this.state === 'IDLE' && !this.busy;
-    const pending = !!p?.bonusPending;
 
     this.onHud({
       state: this.state,
-      balance: Math.round(this.balance),
+      balance: this.balance,
       bet: this.bet,
-      bets: cfg?.bets ?? [...CONFIG.bets],
-      streak: p?.streak ?? 0,
-      streakNeeded: p?.streakNeeded ?? CONFIG.bonus.streak,
-      bonusPending: pending,
-      buyCost,
+      bets: p?.config?.bets ?? [...CONFIG.bets],
       message: this.message,
-      canSpin: (idle && (pending || this.balance >= this.bet)) || this.state === 'RESULT',
-      canBuy: idle && this.balance >= buyCost && !pending,
-      // кнопка завжди означає ОДНУ дію — новий раунд, тому напис однаковий
-      // і в IDLE, і в RESULT (клік по результату одразу й крутить далі)
-      spinLabel: pending ? 'БОНУСКА' : 'ГРАТИ  -' + this.bet,
+      canSpin: (idle && this.balance >= this.bet) || this.state === 'RESULT',
+      rates: this.rates,
       busy: this.busy,
       resultEmpty: this.resultEmpty,
       verified: this.verified,
       fair: this.round?.fair ?? (p ? { serverSeedHash: p.serverSeedHash, clientSeed: p.clientSeed, nonce: p.nonce } : null),
       error: this.error,
+      profile: p
+        ? {
+            name: p.firstName?.trim() || 'Игрок',
+            handle: p.username ? '@' + p.username : 'ID ' + p.telegramId,
+          }
+        : null,
     });
   }
 
@@ -565,17 +566,19 @@ export class Presenter {
         const cash = e.got * this.bet / CONFIG.payoutK;
         if (cash > 0) {
           this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.0,
-            text: '+' + fmtCash(cash), color: BLOCKS[e.id].color, size: 0.2 });
-          this.pushLog(BLOCKS[e.id].name + ' +' + fmtCash(cash), BLOCKS[e.id].color);
+            text: '', color: BLOCKS[e.id].color, size: 0.2, money: cash });
+          this.pushLog(BLOCKS[e.id].name, BLOCKS[e.id].color, cash);
         }
         this.shake = Math.min(14, this.shake + 3);
       } else if (e.t === 'mult') {
+        // блок-множник більше не іксує зібране — відкриває вікно на e.secs
+        // секунд, поки воно активне, усе зібране множиться на e.active
         this.burst(e.c + 0.5, e.r + 0.5, '#ffd34d', 44, 2.4);
         this.shake = 22;
         this.flash = 0.45; this.flashColor = '#ffd34d';
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.8,
-          text: 'X' + e.m, color: '#ffe98a', size: 0.42 });
-        this.pushLog('Множник X' + e.m, '#ffe98a');
+          text: 'X' + e.active + ' · ' + e.secs + 'с', color: '#ffe98a', size: 0.34 });
+        this.pushLog('Множитель X' + e.active + ' на ' + e.secs + 'с', '#ffe98a');
         haptic('hit');
       } else if (e.t === 'tnt') {
         this.burst(e.c + 0.5, e.r + 0.5, '#ff8a2b', 46, 3);
@@ -587,8 +590,9 @@ export class Presenter {
         this.shake = 26;
         this.flash = 0.35; this.flashColor = '#ff7a2b';
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.3,
-          text: cash > 0 ? 'БУМ! +' + fmtCash(cash) : 'БУМ!', color: '#ff8a2b', size: 0.26 });
-        if (cash > 0) this.pushLog('БУМ! +' + fmtCash(cash), '#ff8a2b');
+          text: 'БУМ!', color: '#ff8a2b', size: 0.26,
+          money: cash > 0 ? cash : undefined, prefix: 'БУМ! +' });
+        if (cash > 0) this.pushLog('БУМ!', '#ff8a2b', cash);
       } else if (e.t === 'magic') {
         // подія від СТОЛУ ЗАЧАРУВАННЯ: не підвищує кірку, лише
         // накопичує множник e.mult (верстак — окрема подія 'upgrade' нижче)
@@ -597,8 +601,8 @@ export class Presenter {
         this.flash = 0.4; this.flashColor = '#c46bff';
         const mtxt = 'X' + e.mult.toFixed(1);
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
-          text: 'ЗАЧАРУВАННЯ! ' + mtxt, color: '#d9a3ff', size: 0.24 });
-        this.pushLog('Зачарування! ' + mtxt, '#d9a3ff');
+          text: 'ЗАЧАРОВАНИЕ! ' + mtxt, color: '#d9a3ff', size: 0.24 });
+        this.pushLog('Зачарование! ' + mtxt, '#d9a3ff');
         this.enchantMult = e.mult;
       } else if (e.t === 'upgrade') {
         // подія від ВЕРСТАКА: підвищує тір (поки є куди рости) і лікує;
@@ -607,7 +611,7 @@ export class Presenter {
         this.shake = 16;
         this.flash = 0.4; this.flashColor = '#ffb347';
         const tierName = (TIER_BY_ID[e.tier]?.name ?? e.tier).toUpperCase();
-        const label = e.healOnly ? 'ПОВНИЙ ХІЛ!' : 'ПІДВИЩЕННЯ! ' + tierName;
+        const label = e.healOnly ? 'ПОЛНЫЙ ХИЛ!' : 'ПОВЫШЕНИЕ! ' + tierName;
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
           text: label, color: '#ffe0b3', size: 0.22 });
         this.pushLog(label, '#ffe0b3');
@@ -619,8 +623,8 @@ export class Presenter {
     r.events.length = 0;
   }
 
-  private pushLog(text: string, color: string): void {
-    this.toasts.push({ text, color, life: TOAST_LIFE });
+  private pushLog(text: string, color: string, money?: number): void {
+    this.toasts.push({ text, color, life: TOAST_LIFE, money });
     if (this.toasts.length > TOAST_MAX) this.toasts.shift();
   }
 
@@ -779,30 +783,24 @@ export class Presenter {
       const riseTo = -this.itemH * CONFIG.reel.visible;
       const cy = focusY + (riseTo - focusY) * this.stage;
       this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, Math.min(1, a * 1.6));
-      if (this.round && this.round.mode !== 'bet') {
-        Render.text(ctx, 'БОНУСНА ГРА', this.w / 2, cy - this.itemH * CONFIG.reel.visible / 2 - 46,
-          '800 26px ui-monospace, monospace', '#ffd34d');
-      }
     }
 
-    this.drawTrack(ctx);
     this.drawHistory(ctx);
     this.drawLiveLog(ctx);
     this.drawRunningTotal(ctx);
+    this.drawMultWindow(ctx);
     this.drawEnchantMult(ctx);
     if (this.state === 'RESULT' && !this.resultEmpty) this.drawResult(ctx);
   }
 
-  private get inBonus(): boolean { return !!this.round && this.round.mode !== 'bet'; }
-
   private drawSky(ctx: CanvasRenderingContext2D): void {
     const horizon = this.sy(0);
     const g = ctx.createLinearGradient(0, 0, 0, Math.max(1, horizon));
-    g.addColorStop(0, this.inBonus ? '#5b3a8f' : '#4aa8f0');
-    g.addColorStop(1, this.inBonus ? '#a97fe0' : '#9fd6ff');
+    g.addColorStop(0, '#4aa8f0');
+    g.addColorStop(1, '#9fd6ff');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, this.w, Math.max(0, horizon));
-    ctx.fillStyle = this.inBonus ? '#120a1c' : '#0a0c10';
+    ctx.fillStyle = '#0a0c10';
     ctx.fillRect(0, Math.max(0, horizon), this.w, this.h - Math.max(0, horizon));
   }
 
@@ -850,8 +848,12 @@ export class Presenter {
   private drawPopups(ctx: CanvasRenderingContext2D): void {
     for (const p of this.popups) {
       ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.4));
-      Render.text(ctx, p.text, this.sx(p.x), this.sy(p.y),
-        '800 ' + Math.round(this.cell * p.size) + 'px ui-monospace, monospace', p.color);
+      const font = '800 ' + Math.round(this.cell * p.size) + 'px ui-monospace, monospace';
+      if (p.money != null) {
+        this.drawMoney(ctx, p.money, this.sx(p.x), this.sy(p.y), font, p.color, 'center', p.prefix ?? '+');
+      } else {
+        Render.text(ctx, p.text, this.sx(p.x), this.sy(p.y), font, p.color);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -859,42 +861,9 @@ export class Presenter {
   /* Стіни шахти по боках, якщо поле вужче за екран */
   private drawWalls(ctx: CanvasRenderingContext2D): void {
     if (this.fieldX <= 0) return;
-    ctx.fillStyle = this.inBonus ? '#0d0716' : '#05070a';
+    ctx.fillStyle = '#05070a';
     ctx.fillRect(0, 0, this.fieldX, this.h);
     ctx.fillRect(this.fieldX + this.fieldW, 0, this.fieldX + 2, this.h);
-  }
-
-  /* Доріжка спроб */
-  private drawTrack(ctx: CanvasRenderingContext2D): void {
-    // при одному прокруті на ставку доріжка з єдиного квадрата
-    // нічого не додає — сама рулетка вже й є цей єдиний крок
-    if (!this.round || !this.inBonus) return;
-    const n = CONFIG.bonus.spins;
-    const s = Math.min(40, (this.w - 40) / n - 7);
-    const gap = Math.min(7, s * 0.18);
-    const totalW = n * s + (n - 1) * gap;
-    const x0 = (this.w - totalW) / 2;
-    const y = 14;
-
-    Render.panel(ctx, x0 - 10, y - 8, totalW + 20, s + 16, this.inBonus ? '#4a3560' : '#2c323b', 4);
-
-    for (let i = 0; i < n; i++) {
-      const x = x0 + i * (s + gap);
-      const done = i < this.shown.length;
-      const res = this.shown[i];
-      const cur = i === this.spinIndex && this.state === 'SPIN';
-
-      Render.inset(ctx, x, y, s, s, cur ? '#4a4433' : '#1b1f26', 3);
-      if (done) {
-        if (!res) Render.cross(ctx, x + s / 2, y + s / 2, s * 0.42, 0.9);
-        else Render.pickaxe(ctx, x + s / 2, y + s / 2, s * 0.84, res, -0.5, false);
-      }
-      if (cur) {
-        ctx.strokeStyle = '#ffd34d';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x + 1.5, y + 1.5, s - 3, s - 3);
-      }
-    }
   }
 
   /* Історія ставок — колонка зліва */
@@ -904,21 +873,17 @@ export class Presenter {
     const n = Math.min(this.history.length, Math.max(2, Math.floor((this.h - y - 30) / rh) - 1));
 
     Render.panel(ctx, x, y, w, 26 + n * rh, '#2c323b', 4);
-    Render.text(ctx, 'ОСТАННІ', x + w / 2, y + 18, '700 12px ui-monospace, monospace', '#b9c2ce');
+    Render.text(ctx, 'ПОСЛЕДНИЕ', x + w / 2, y + 18, '700 12px ui-monospace, monospace', '#b9c2ce');
 
     for (let i = 0; i < n; i++) {
       const e = this.history[i];
       const ry = y + 26 + i * rh;
       const won = e.win >= e.cost;
       Render.inset(ctx, x + 6, ry + 2, w - 12, rh - 5,
-        e.bonus ? '#3a2b52' : (i === 0 ? '#1f2a22' : '#1b1f26'), 3);
+        i === 0 ? '#1f2a22' : '#1b1f26', 3);
 
       if (!e.item) Render.cross(ctx, x + 24, ry + rh / 2, 13, 0.85);
       else Render.pickaxe(ctx, x + 24, ry + rh / 2, 27, e.item, -0.5, false);
-      if (e.bonus) {
-        Render.text(ctx, 'B', x + 40, ry + rh / 2 + 5,
-          '800 11px ui-monospace, monospace', '#d9a3ff', 'left');
-      }
 
       Render.text(ctx, 'x' + e.x.toFixed(2), x + w - 12, ry + rh / 2 + 5,
         '700 14px ui-monospace, monospace',
@@ -953,8 +918,13 @@ export class Presenter {
       }
 
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
-      Render.text(ctx, t.text, this.w / 2, baseY - rowFromBottom * rowH + slide,
-        '800 13px ui-monospace, monospace', t.color);
+      const y = baseY - rowFromBottom * rowH + slide;
+      const font = '800 13px ui-monospace, monospace';
+      if (t.money != null) {
+        this.drawMoney(ctx, t.money, this.w / 2, y, font, t.color, 'center', t.text + ' +');
+      } else {
+        Render.text(ctx, t.text, this.w / 2, y, font, t.color);
+      }
     }
     ctx.globalAlpha = 1;
   }
@@ -965,8 +935,34 @@ export class Presenter {
     if (!this.run || this.state !== 'RUNNING') return;
     const cash = this.run.collected * this.bet / CONFIG.payoutK;
     if (cash <= 0) return;   // "+0" на весь екран нічого не каже — просто мовчимо, доки нема чого показати
-    Render.text(ctx, '+' + fmtCash(cash), this.w / 2, 46,
-      '800 20px ui-monospace, monospace', '#ffd34d');
+    this.drawMoney(ctx, cash, this.w / 2, 46, '800 20px ui-monospace, monospace', '#ffd34d');
+  }
+
+  /* Вікно множника: поки воно активне (run.multWindowT > 0), усе зібране
+     множиться на run.multActive. Показуємо великий "X{n}" і смужку часу,
+     що спадає, — під сумарним виграшем. Пульсує, коли лишається < 4с. */
+  private drawMultWindow(ctx: CanvasRenderingContext2D): void {
+    const run = this.run;
+    if (!run || this.state !== 'RUNNING' || run.multWindowT <= 0 || run.multActive <= 1) return;
+
+    const y = 78;
+    const frac = Math.max(0, Math.min(1, run.multWindowT / MULT_WINDOW_SEC));
+    const secs = Math.max(1, Math.ceil(run.multWindowT));
+    const urgent = run.multWindowT < 4;
+    const blink = urgent && Math.floor(run.time * 6) % 2 === 0;
+    const color = blink ? '#fff2b0' : '#ffd34d';
+
+    Render.text(ctx, 'X' + run.multActive + '   ' + secs + ' с', this.w / 2, y,
+      '800 22px ui-monospace, monospace', color);
+
+    // смужка часу, що спадає
+    const bw = Math.min(220, this.w - 80);
+    const bx = (this.w - bw) / 2;
+    const by = y + 8;
+    ctx.fillStyle = 'rgba(0,0,0,.5)';
+    ctx.fillRect(bx - 2, by - 2, bw + 4, 8);
+    ctx.fillStyle = color;
+    ctx.fillRect(bx, by, bw * frac, 4);
   }
 
   /* Поточний множник зачарування — постійний напис зверху праворуч,
@@ -985,36 +981,30 @@ export class Presenter {
     const bx = (this.w - bw) / 2, by = this.h / 2 - bh / 2;
     ctx.globalAlpha = a;
 
-    const bonusRun = round.mode !== 'bet';
-    Render.panel(ctx, bx, by, bw, bh, bonusRun ? '#4a3560' : '#2c323b', 5);
+    Render.panel(ctx, bx, by, bw, bh, '#2c323b', 5);
     const mid = bx + bw / 2;
     const spent = round.cost || round.bet;
     const net = round.payout - round.cost;
 
-    Render.text(ctx, bonusRun
-      ? `БОНУСКА  ·  КІРОК ${round.tiers.length}  ·  ${round.mode === 'bonus-buy' ? 'КУПЛЕНА' : 'ЗА СТРІК'}`
-      : `СТАВКА ${round.bet}`,
-      mid, by + 30, '700 13px ui-monospace, monospace', '#c8b4e0');
+    this.drawMoney(ctx, round.bet, mid, by + 30,
+      '700 13px ui-monospace, monospace', '#c8b4e0', 'center', 'СТАВКА ', true);
 
-    Render.text(ctx, '+' + Math.round(round.payout), mid, by + 84,
-      '800 46px ui-monospace, monospace', net >= 0 ? '#5ce08a' : '#e05c5c');
+    this.drawMoney(ctx, round.payout, mid, by + 84,
+      '800 46px ui-monospace, monospace', net >= 0 ? '#5ce08a' : '#e05c5c', 'center', '+', true);
 
     const first = round.tiers.length ? TIER_BY_ID[round.tiers[0]] : null;
     if (round.capped) {
-      Render.text(ctx, 'СТЕЛЯ ВИГРАШУ x' + CONFIG.maxWinX, mid, by + 116,
+      Render.text(ctx, 'ПОТОЛОК ВЫИГРЫША x' + CONFIG.maxWinX, mid, by + 116,
         '800 15px ui-monospace, monospace', '#ffd34d');
     } else {
-      Render.text(ctx, bonusRun
-        ? `множник X${round.sim.multChain}  ·  x${(round.payout / spent).toFixed(2)}`
-        : (first ? `${first.name}  ·  x${(round.payout / spent).toFixed(2)}`
-                 : 'кірка не випала — ставка згоріла'),
+      Render.text(ctx,
+        first ? `${first.name}  ·  x${(round.payout / spent).toFixed(2)}`
+              : 'кирка не выпала — ставка сгорела',
         mid, by + 116, '700 13px ui-monospace, monospace', '#9aa4b2');
     }
 
-    Render.text(ctx, round.bonusPending && round.mode === 'bet'
-      ? 'далі — БОНУСНА ГРА' : 'клік або пробіл — далі',
-      mid, by + 152, '700 12px ui-monospace, monospace',
-      round.bonusPending && round.mode === 'bet' ? '#ffd34d' : '#7a8595');
+    Render.text(ctx, 'клик или пробел — далее',
+      mid, by + 152, '700 12px ui-monospace, monospace', '#7a8595');
     ctx.globalAlpha = 1;
   }
 }

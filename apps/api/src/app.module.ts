@@ -4,8 +4,9 @@ import { TelegramModule } from './telegram/telegram.module';
 import { PlayersModule } from './players/players.module';
 import { FairnessModule } from './fairness/fairness.module';
 import { RoundsModule } from './rounds/rounds.module';
+import { RatesModule } from './rates/rates.module';
 
 @Module({
-  imports: [ConfigModule, TelegramModule, PlayersModule, FairnessModule, RoundsModule],
+  imports: [ConfigModule, RatesModule, TelegramModule, PlayersModule, FairnessModule, RoundsModule],
 })
 export class AppModule {}

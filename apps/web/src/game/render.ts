@@ -249,4 +249,36 @@ export const Render = {
     ctx.fillStyle = color;
     ctx.fillText(s, x, y);
   },
+
+  /* Сума + іконка валюти після неї. cur — код валюти ('RUB'|'USDT'|'XTR'),
+     значок береться з Assets (мапа 'cur.<код>'); для рубля (mono) значок
+     тонується в колір тексту, кольорові монети малюються як є. */
+  money(
+    ctx: Ctx, s: string, x: number, y: number, font: string, color: string,
+    cur: string, mono: boolean, align: CanvasTextAlign = 'center',
+  ) {
+    const px = parseInt(/(\d+)px/.exec(font)?.[1] ?? '14', 10);
+    ctx.font = font;
+    const tw = ctx.measureText(s).width;
+
+    const key = 'cur.' + cur;
+    const img = (mono ? Assets.tint(key, color) : Assets.get(key)) as
+      | HTMLImageElement | HTMLCanvasElement | null;
+    const nat = img
+      ? { w: img instanceof HTMLImageElement ? img.naturalWidth : img.width,
+          h: img instanceof HTMLImageElement ? img.naturalHeight : img.height }
+      : null;
+    const ih = Math.round(px * 1.4);
+    const iw = nat && nat.h ? ih * (nat.w / nat.h) : 0;
+    const gap = img ? px * 0.2 : 0;
+    const total = tw + gap + iw;
+
+    let left = x;
+    if (align === 'center') left = x - total / 2;
+    else if (align === 'right' || align === 'end') left = x - total;
+
+    this.text(ctx, s, left, y, font, color, 'left');
+    // значок трохи «сідає» на базову лінію тексту, вирівнюємо по центру великих літер
+    if (img && iw) ctx.drawImage(img, left + tw + gap, y - ih * 0.82, iw, ih);
+  },
 };

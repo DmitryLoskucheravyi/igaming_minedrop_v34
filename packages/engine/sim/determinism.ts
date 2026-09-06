@@ -73,7 +73,6 @@ function client(seed: string, mode: RoundMode, bet: number) {
 }
 
 const j = (o: unknown) => JSON.stringify(o);
-const modes: RoundMode[] = ['bet', 'bonus-buy'];
 
 /* Перевірка «різні сиди -> різні раунди» рахується ТІЛЬКИ по раундах
    із кіркою. «Пусто» — легітимний і, при spinsPerBet=1, ГОЛОВНИЙ
@@ -85,13 +84,12 @@ const modes: RoundMode[] = ['bet', 'bonus-buy'];
    детермінізму, а власну неправильну очікувану поведінку. */
 let distinctAll = new Set<string>();
 let distinctPlayed = new Set<string>();
-let played = 0, bonus = 0;
+let played = 0;
 
 for (let i = 0; i < N; i++) {
   const seed = seedAt(i);
-  const mode = modes[i % 2];
+  const mode = 'bet' as RoundMode;
   const bet = CONFIG.bets[i % CONFIG.bets.length];
-  if (mode !== 'bet') bonus++;
 
   const a = server(seed, mode, bet);
   const b = server(seed, mode, bet);
@@ -110,7 +108,7 @@ if (played < N * 0.05) {
   fail(`серед ${played} зіграних раундів лише ${distinctPlayed.size} унікальних — схоже, сид не впливає на фізику`);
 }
 
-console.log('раундів:', N, '| з них бонусних:', bonus, '| із кіркою:', played);
+console.log('раундів:', N, '| із кіркою:', played);
 console.log('унікальних результатів серед зіграних:', distinctPlayed.size, '/', played,
             '| разом із порожніми (не мусять бути унікальними):', distinctAll.size, '/', N);
 console.log(bad === 0 ? 'DETERMINISM OK — клієнт і сервер сходяться' : bad + ' failures');

@@ -13,7 +13,7 @@
    впливають, у сид не входять і на сервері не існують.
    ============================================================ */
 
-import { bonusReelTable, CONFIG, reelTable } from '@minedrop/engine';
+import { CONFIG, reelTable } from '@minedrop/engine';
 import { Assets } from './assets';
 import { Render, type ReelItem } from './render';
 
@@ -34,7 +34,6 @@ export class Reel {
   items: ReelItem[] = [];
   offset = 0;
   spinning = false;
-  bonusMode = false;
 
   private t = 0;
   // явний number: CONFIG оголошений as const, тому spinMs має літеральний тип
@@ -47,8 +46,8 @@ export class Reel {
   constructor() { this.idle(); }
 
   /* Декоративна комірка — тільки для стрічки, що проноситься повз */
-  private filler(bonus = false): ReelItem {
-    const table = bonus ? bonusReelTable() : reelTable();
+  private filler(): ReelItem {
+    const table = reelTable();
     let total = 0;
     for (const s of table) total += s.weight;
     let x = Math.random() * total;
@@ -72,7 +71,7 @@ export class Reel {
     this.ms = ms ?? R.spinMs;
 
     this.items = [];
-    for (let i = 0; i < R.stripLen; i++) this.items.push(this.filler(this.bonusMode));
+    for (let i = 0; i < R.stripLen; i++) this.items.push(this.filler());
     this.items[R.targetIndex] = winner;      // переможець стоїть на targetIndex
 
     this.from = 0;

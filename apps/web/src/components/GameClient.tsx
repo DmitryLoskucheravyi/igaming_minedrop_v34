@@ -25,6 +25,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Presenter, type HudState } from '../game/presenter';
+import {
+  CURRENCIES, CURRENCY_META, FALLBACK_RATES, fmtAmount, fmtWhole,
+  loadCurrency, saveCurrency, type CurrencyCode, type Rates,
+} from '../lib/currency';
 import { FairPanel } from './FairPanel';
 
 const EMPTY: HudState = {
@@ -32,20 +36,31 @@ const EMPTY: HudState = {
   balance: 0,
   bet: 50,
   bets: [10, 25, 50, 100, 250],
-  streak: 0,
-  streakNeeded: 12,
-  bonusPending: false,
-  buyCost: 0,
-  message: 'завантаження…',
+  message: 'загрузка…',
   canSpin: false,
-  canBuy: false,
-  spinLabel: 'ГРАТИ',
+  rates: FALLBACK_RATES,
   busy: false,
   resultEmpty: false,
   verified: null,
   fair: null,
   error: null,
+  profile: null,
 };
+
+/* Сума + іконка валюти. whole — велика сума (баланс, ставка): у рублях
+   ціле; дрібна (напр. частина виграшу) — з дробом. */
+function Money({ rub, currency, rates, whole }: {
+  rub: number; currency: CurrencyCode; rates: Rates; whole?: boolean;
+}) {
+  const meta = CURRENCY_META[currency];
+  const s = whole ? fmtWhole(rub, currency, rates) : fmtAmount(rub, currency, rates);
+  return (
+    <span className="money">
+      {s}
+      <img className={'cur-ico' + (meta.mono ? ' mono' : '')} src={meta.icon} alt="" />
+    </span>
+  );
+}
 
 export function GameClient() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -53,6 +68,12 @@ export function GameClient() {
   const [hud, setHud] = useState<HudState>(EMPTY);
   const [showFair, setShowFair] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Іконку профілю кладемо файлом у public/. Поки її нема (або не
+  // завантажилась) — показуємо квадрат із першою літерою імені.
+  const [avatarOk, setAvatarOk] = useState(true);
+  // Валюта відображення (косметика). Читаємо з localStorage ПІСЛЯ
+  // монтування — інакше SSR-розмітка ('RUB') не збіглась би з клієнтом.
+  const [currency, setCurrencyState] = useState<CurrencyCode>('RUB');
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -68,8 +89,15 @@ export function GameClient() {
     };
   }, []);
 
+  useEffect(() => { setCurrencyState(loadCurrency()); }, []);
+  useEffect(() => { gameRef.current?.setCurrency(currency); }, [currency]);
+
+  const changeCurrency = useCallback((c: CurrencyCode) => {
+    setCurrencyState(c);
+    saveCurrency(c);
+  }, []);
+
   const spin = useCallback(() => gameRef.current?.primary(), []);
-  const buy = useCallback(() => gameRef.current?.buy(), []);
   const setBet = useCallback((b: number) => gameRef.current?.setBet(b), []);
 
   // Степер заблокований лише поки триває сама анімація раунду (від
@@ -117,7 +145,9 @@ export function GameClient() {
 
         <div className="balance-chip">
           <span className="label">БАЛАНС</span>
-          <span className="value">{hud.balance}</span>
+          <span className="value">
+            <Money rub={hud.balance} currency={currency} rates={hud.rates} whole />
+          </span>
         </div>
       </header>
 
@@ -127,17 +157,17 @@ export function GameClient() {
         {!!statusText && (
           <div className={'statusline' + (hud.error ? ' err' : '')}>
             {statusText}
-            {hud.verified === true && <span className="verified" title="Клієнт перерахував раунд із сида і зійшовся з сервером"> ✓</span>}
-            {hud.verified === false && <span className="mismatch" title="Локальний перерахунок не зійшовся з сервером — дивись консоль"> ✕</span>}
+            {hud.verified === true && <span className="verified" title="Клиент пересчитал раунд из сида и сошёлся с сервером"> ✓</span>}
+            {hud.verified === false && <span className="mismatch" title="Локальный пересчёт не сошёлся с сервером — смотри консоль"> ✕</span>}
           </div>
         )}
 
-        {hud.state === 'LOADING' && <div className="loader"><span>ЗАВАНТАЖЕННЯ…</span></div>}
+        {hud.state === 'LOADING' && <div className="loader"><span>ЗАГРУЗКА…</span></div>}
         {hud.state === 'ERROR' && (
           <div className="loader">
             <span>
-              API не відповідає.<br />
-              Підніми сервер: <code>npm run dev:api</code>
+              API не отвечает.<br />
+              Подними сервер: <code>npm run dev:api</code>
             </span>
           </div>
         )}
@@ -146,17 +176,22 @@ export function GameClient() {
       <footer className="bottombar">
         <div className="betstepper">
           <button type="button" className="stepbtn" disabled={!canBetDown} onClick={betDown}>−</button>
-          <div className="betvalue">{hud.bet}</div>
+          <div className="betvalue">
+            <Money rub={hud.bet} currency={currency} rates={hud.rates} whole />
+          </div>
           <button type="button" className="stepbtn" disabled={!canBetUp} onClick={betUp}>+</button>
         </div>
 
-        <button type="button" className="playbtn" disabled={!hud.canSpin} onClick={spin}>
-          {hud.busy ? '…' : hud.spinLabel}
-        </button>
-
-        <button type="button" className="buybtn" disabled={!hud.canBuy} onClick={buy}>
-          <span className="buybtn-label">БОНУС</span>
-          <span className="buybtn-cost">-{hud.buyCost}</span>
+        <button
+          type="button"
+          className="playbtn"
+          disabled={!hud.canSpin}
+          onClick={spin}
+          aria-label="Играть"
+        >
+          {hud.busy
+            ? <span className="playbtn-wait">…</span>
+            : <span className="playbtn-tri" aria-hidden="true" />}
         </button>
       </footer>
 
@@ -170,24 +205,58 @@ export function GameClient() {
             <button type="button" className="x" onClick={() => setMenuOpen(false)}>✕</button>
           </div>
 
-          <div className="drawer-row">
-            <span className="label">БАЛАНС</span>
-            <span className="drawer-value">{hud.balance}</span>
-          </div>
+          {hud.profile && (
+            <div className="drawer-profile">
+              {avatarOk ? (
+                <img
+                  className="avatar avatar-img"
+                  src="/profile.png"
+                  alt=""
+                  onError={() => setAvatarOk(false)}
+                />
+              ) : (
+                <div className="avatar avatar-fallback" aria-hidden="true">
+                  {hud.profile.name.slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <div className="drawer-profile-id">
+                <span className="pname">{hud.profile.name}</span>
+                <span className="phandle">{hud.profile.handle}</span>
+              </div>
+            </div>
+          )}
 
           <div className="drawer-row">
-            <span className="label">СТРІК ДО БОНУСКИ</span>
+            <span className="label">БАЛАНС</span>
             <span className="drawer-value">
-              {hud.streakNeeded <= 6
-                ? '●'.repeat(hud.streak) + '○'.repeat(Math.max(0, hud.streakNeeded - hud.streak))
-                : `${hud.streak}/${hud.streakNeeded}`}
+              <Money rub={hud.balance} currency={currency} rates={hud.rates} whole />
             </span>
           </div>
 
-          {hud.bonusPending && <div className="drawer-note">Бонуска виграна — тисни «ГРАТИ»</div>}
+          <div className="drawer-row">
+            <span className="label">ВАЛЮТА</span>
+            <div className="cur-switch">
+              {CURRENCIES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className={'cur-opt' + (c === currency ? ' on' : '')}
+                  aria-pressed={c === currency}
+                  title={CURRENCY_META[c].label}
+                  onClick={() => changeCurrency(c)}
+                >
+                  <img
+                    className={'cur-ico' + (CURRENCY_META[c].mono ? ' mono' : '')}
+                    src={CURRENCY_META[c].icon}
+                    alt={CURRENCY_META[c].label}
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
 
           <button type="button" className="drawer-btn" onClick={openFair}>
-            ЧЕСНІСТЬ РАУНДУ
+            ЧЕСТНОСТЬ РАУНДА
           </button>
         </aside>
       </div>

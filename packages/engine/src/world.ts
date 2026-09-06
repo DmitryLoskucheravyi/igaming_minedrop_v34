@@ -99,7 +99,6 @@ function regionOreMap(root: number, regionId: number, cols: number): Map<string,
 
 export class Mine {
   readonly cols: number;
-  readonly bonus: boolean;
   readonly root: number;
   readonly rows = new Map<number, (Cell | null)[]>();
   deepest = 0;
@@ -111,10 +110,9 @@ export class Mine {
   private readonly oreCache = new Map<number, Map<string, BlockId>>();
 
   /** root — корінь порядкового сида (streamRoot(seed, 'mine')) */
-  constructor(cols: number, root: number, bonus: boolean) {
+  constructor(cols: number, root: number) {
     this.cols = cols || CONFIG.cols;
     this.root = root | 0;
-    this.bonus = !!bonus;
   }
 
   private oreMapFor(regionId: number): Map<string, BlockId> {
@@ -124,7 +122,7 @@ export class Mine {
   }
 
   genRow(r: number): (Cell | null)[] {
-    const w = depthWeights(r, this.bonus);
+    const w = depthWeights(r);
     const rnd: Rng = rowRng(this.root, r);
     const row: (Cell | null)[] = new Array(this.cols);
 
@@ -139,7 +137,7 @@ export class Mine {
         dmg: 0,
         seed: ((r * 73856093) ^ (c * 19349663)) & 0x7fffffff,
       };
-      if (k === 'mult') cell.m = pickWeighted(CONFIG.bonus.multTable, rnd).m;
+      if (k === 'mult') cell.m = pickWeighted(CONFIG.mult.table, rnd).m;
       row[c] = cell;
     }
     return row;

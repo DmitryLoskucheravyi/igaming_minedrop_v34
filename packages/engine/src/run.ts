@@ -66,16 +66,16 @@ export const TNT_MAX_HITS = 28;    // стеля НА ОДНУ ланку лан
                                     // ланцюгова детонація сусіднього TNT може дати
                                     // більше сумарно — це вже не одна вибухівка
 
-/* Стеля ЛАНЦЮГА множників за один забіг. Без неї collected множиться
-   БЕЗ ОБМЕЖЕНЬ кожним наступним блоком-множником (x2..x15) — і саме
-   через рідкісні довгі ланцюги середнє значення collected вибухає в
-   мільйони/мільярди, змушуючи payoutK бути астрономічним числом, щоб
-   утримати РТП=95%. А з таким payoutK будь-який окремий блок (навіть
-   алмаз) при типовій ставці округлюється до нуля — «числа на екрані»
-   перестають щось значити. Зі стелею довгий ланцюг усе одно рідкісний
-   і приємний (до цього значення можна дійти кількома множниками), але
-   вже не тягне середнє в нескінченність — payoutK можна тримати
-   людяним числом, і звичайний блок знову щось важить. */
+/* Блок-множник (x2..x15) БІЛЬШЕ НЕ іксує вже зібране. Замість цього він
+   відкриває ВІКНО на MULT_WINDOW_SEC секунд, і все, що зібрано за цей
+   час (звичайні удари + вибухи TNT), множиться на активний множник.
+   Новий множник під час відкритого вікна: беремо БІЛЬШИЙ із двох
+   (не перемножуємо), таймер скидається на повні MULT_WINDOW_SEC.
+   Стіл зачарування (p.enchantMult) — окремий механізм, вікна не чіпає. */
+export const MULT_WINDOW_SEC = 15;
+
+/* Стеля активного множника вікна — щоб рідкісний x15 не розганяв
+   середню віддачу в нескінченність і payoutK лишався людяним числом. */
 export const MULT_CHAIN_CAP = 50;
 
 /* Одна кірка — тіло у фізиці */
@@ -84,10 +84,13 @@ export class Pick {
   tier: Tier;
   hpMax: number;
   hp: number;
+  /* Магічний («зачарований») скін кірки. Ставить ЛИШЕ стіл зачарування.
+     Верстак (апгрейд тіру) його НЕ вмикає — після верстака кірка носить
+     звичайний скін свого нового тіру. */
   enchanted = false;
-  /* Стіл зачарування більше НЕ підвищує тір і не лікує — замість цього
-     кожен дотик додає +0.1 до множника, який діє на ВЕСЬ виграш ЦІЄЇ
-     кірки з цього моменту й далі (не заднім числом, як блок-множник):
+  /* Стіл зачарування НЕ підвищує тір і не лікує — замість цього кожен
+     дотик додає +0.1 до множника, який діє на ВЕСЬ виграш ЦІЄЇ кірки
+     з цього моменту й далі (не заднім числом, як блок-множник):
      1-й стіл -> x1.1, 2-й -> x1.2, 3-й -> x1.3 і так далі. */
   enchantMult = 1;
   /* Верстак на максимальному тірі (Diamond) лікує РІВНО ОДИН раз — далі
@@ -132,12 +135,15 @@ export interface RunOptions {
 
 export class Run {
   readonly mine: Mine;
-  readonly bonus: boolean;
   readonly picks: Pick[];
   private readonly rnd: Rng;
 
   collected = 0;        // спільний рахунок усіх кірок
-  multChain = 1;        // добуток усіх зібраних множників (для показу)
+  multChain = 1;        // найбільший активний множник вікна за забіг (для показу)
+  /* Вікно множення від блока-множника (спільне на весь забіг). Поки
+     multWindowT > 0, зібране множиться на multActive. */
+  multActive = 1;
+  multWindowT = 0;
   blocks = 0;
   hits = 0;
   depth = 0;
@@ -154,10 +160,9 @@ export class Run {
 
   constructor(tiers: Tier[], mine: Mine, opts: RunOptions) {
     this.mine = mine;
-    this.bonus = mine.bonus;
     this.rnd = opts.rnd;
     this.picks = tiers.map((t, i) =>
-      new Pick(t, opts.cols[i % opts.cols.length], -P.startHeight - i * CONFIG.bonus.spread));
+      new Pick(t, opts.cols[i % opts.cols.length], -P.startHeight));
   }
 
   get alive(): Pick[] { return this.picks.filter((p) => !p.dead); }
@@ -179,6 +184,12 @@ export class Run {
     const dt = SIM_DT;
     this.time += dt;
     this.steps++;
+
+    /* Вікно множника цокає незалежно від того, чи хтось зараз копає. */
+    if (this.multWindowT > 0) {
+      this.multWindowT -= dt;
+      if (this.multWindowT <= 0) { this.multWindowT = 0; this.multActive = 1; }
+    }
 
     /* Позиція кожної кірки, яка ОБРОБЛЯЛАСЬ цього тіку — жива на вході,
        навіть якщо саме цим кроком і померла. Пруниться нижче по НІЙ, а
@@ -232,8 +243,12 @@ export class Run {
   private stepPick(p: Pick, dt: number): void {
     p.vy = Math.min(P.maxFall, p.vy + P.gravity * dt);
     p.vx -= p.vx * P.airDrag * dt;
+    /* Оберт — суто анімація (на колізію й виплату не впливає, collide()
+       кутом не користується). Стеля maxSpin + сильніше гасіння тримають
+       перевертання плавним: без стелі кілька ударів поспіль розганяли
+       кірку в нечитабельний блюр. */
+    p.rotV = clamp(p.rotV - p.rotV * P.spinDamp * dt, -P.maxSpin, P.maxSpin);
     p.rot += p.rotV * dt;
-    p.rotV -= p.rotV * P.spinDamp * dt;
 
     const dist = Math.hypot(p.vx, p.vy) * dt;
     const n = Math.max(1, Math.ceil(dist / P.substep));
@@ -297,19 +312,22 @@ export class Run {
          безкінечний безкоштовний хіл від кожного наступного верстака —
          саме це раніше ламало РТП у бонусці). Вибух TNT сюди не заходить:
          блоки цього kind ламаються ним як звичайні, без жодного ефекту
-         (див. цикл вибуху нижче — там лише this.collected += value). */
+         (див. цикл вибуху нижче — там лише this.collected += value).
+
+         ВАЖЛИВО: верстак НЕ чіпає p.enchanted. «Магічний» скін кірки
+         ставить ЛИШЕ стіл зачарування. Після апгрейду кірка показує
+         звичайний скін нового тіру; якщо її до того зачарували столом —
+         лишається зачарованою (тепер магічний скін нового тіру). */
       if (p.level < TIERS.length - 1) {
         p.level++;
         p.tier = TIERS[p.level];
         p.hpMax = p.tier.hp;
         p.hp = p.tier.hp;
-        p.enchanted = true;
         this.upgrades++;
         this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: false, pick: idx });
       } else if (!p.maxHealUsed) {
         p.hp = p.hpMax;
         p.maxHealUsed = true;
-        p.enchanted = true;
         this.upgrades++;
         this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: true, pick: idx });
       }
@@ -334,16 +352,16 @@ export class Run {
     if (def.kind === 'mult') {
       this.mine.clear(r, c);
       const m = cell.m || 2;
-      const before = this.collected;
       p.hp -= def.cost;
       p.hits++; this.hits++;
       this.mults++;
-      // ланцюг уже впирався в стелю — блок і так зникає, але вже не множить
-      if (this.multChain < MULT_CHAIN_CAP) {
-        this.collected *= m;            // множить УЖЕ накопичений виграш
-        this.multChain *= m;
-      }
-      this.events.push({ t: 'mult', r, c, m, before, total: this.collected, pick: idx });
+      /* Не іксуємо вже зібране. Відкриваємо/подовжуємо вікно: активний
+         множник = більший із двох (не перемножуємо), таймер — на повні
+         MULT_WINDOW_SEC. */
+      this.multActive = Math.min(MULT_CHAIN_CAP, Math.max(this.multActive, m));
+      this.multWindowT = MULT_WINDOW_SEC;
+      if (this.multActive > this.multChain) this.multChain = this.multActive;
+      this.events.push({ t: 'mult', r, c, m, active: this.multActive, secs: MULT_WINDOW_SEC, pick: idx });
       this.bounce(p, dx, sideways, 1);
       this.checkDead(p, idx);
       return;
@@ -416,7 +434,8 @@ export class Run {
           hit.push(b);
           this.blocks++; p.blocks++;
           if (BLOCKS[b.id].kind === 'tnt') queue.push([b.r, b.c]);
-          else got += BLOCKS[b.id].value * p.enchantMult;  // верстак: value 0, просто ламається
+          // верстак: value 0, просто ламається. multActive=1 поза вікном.
+          else got += BLOCKS[b.id].value * p.enchantMult * this.multActive;
         }
         this.collected += got;
 
@@ -425,7 +444,7 @@ export class Run {
 
       p.vy = -P.tntBlast;
       p.vx = clamp(p.vx + (this.rnd() - 0.5) * P.tntBlast, -P.maxSideSpeed, P.maxSideSpeed);
-      p.rotV += (this.rnd() < 0.5 ? -1 : 1) * P.spinKick * 1.6;
+      p.rotV += (this.rnd() < 0.5 ? -1 : 1) * P.spinKick * 1.2;
       this.checkDead(p, idx);
       return;
     }
@@ -439,7 +458,7 @@ export class Run {
 
     if (cell.dmg >= def.tough) {
       this.mine.clear(r, c);
-      const got = def.value * p.enchantMult;
+      const got = def.value * p.enchantMult * this.multActive;
       this.collected += got;
       this.blocks++; p.blocks++;
       this.events.push({ t: 'break', r, c, id: def.id, got, pick: idx });
@@ -464,7 +483,7 @@ export class Run {
     }
 
     p.vx = clamp(p.vx, -P.maxSideSpeed, P.maxSideSpeed);
-    p.rotV += (this.rnd() < 0.5 ? -1 : 1) * (P.spinKick * (0.6 + this.rnd() * 0.8));
+    p.rotV += (this.rnd() < 0.5 ? -1 : 1) * (P.spinKick * (0.3 + this.rnd() * 0.5));
   }
 
   private checkDead(p: Pick, idx: number): void {

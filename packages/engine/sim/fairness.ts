@@ -26,11 +26,10 @@ const clientSeed = 'гравець-написав-своє';
 if (!verifyCommit(serverSeed, published)) fail('хеш не сходиться зі своїм же сидом');
 if (verifyCommit(toHex(sha256(utf8('інший'))), published)) fail('чужий сид пройшов перевірку');
 
-const modes: RoundMode[] = ['bet', 'bet', 'bet', 'bonus-buy'];
 const seen = new Set<string>();
 
 for (let nonce = 1; nonce <= N; nonce++) {
-  const mode = modes[nonce % modes.length];
+  const mode = 'bet' as RoundMode;
   const bet = 50;
 
   // сервер грає раунд

@@ -39,8 +39,6 @@ export interface PlayerRecord {
   firstName: string;
 
   balance: number;
-  streak: number;
-  bonusPending: boolean;
 
   clientSeed: string;
   serverSeed: string;        // СЕКРЕТ. Ніколи не віддається до розкриття
@@ -86,8 +84,6 @@ export class PlayersService {
       username: user.username,
       firstName: user.firstName,
       balance: CONFIG.startBalance,
-      streak: 0,
-      bonusPending: false,
       clientSeed: randomBytes(8).toString('hex'),
       serverSeed,
       serverSeedHash: serverSeedHash(serverSeed),
@@ -108,9 +104,6 @@ export class PlayersService {
       firstName: rec.firstName,
       username: rec.username ?? null,
       balance: rec.balance,
-      streak: rec.streak,
-      streakNeeded: CONFIG.bonus.streak,
-      bonusPending: rec.bonusPending,
       clientSeed: rec.clientSeed,
       serverSeedHash: rec.serverSeedHash,
       nonce: rec.nonce,

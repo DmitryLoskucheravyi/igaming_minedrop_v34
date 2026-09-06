@@ -19,8 +19,8 @@ class VerifyDto {
   @IsInt() @Min(1)
   nonce!: number;
 
-  @IsIn(['bet', 'bonus-buy', 'bonus-streak'])
-  mode!: RoundMode;
+  @IsOptional() @IsIn(['bet'])
+  mode: RoundMode = 'bet';
 
   @IsInt() @Min(1)
   bet!: number;

@@ -10,23 +10,18 @@
    серверним — правий сервер, а розбіжність це баг детермінізму.
    ============================================================ */
 
-import {
-  bonusReelTable, CONFIG, reelTable, tierIndex, tierOnlyTable, TIER_BY_ID,
-} from './config';
+import { CONFIG, reelTable, tierIndex, TIER_BY_ID } from './config';
 import { pickWeighted, stream, streamRoot, type Rng } from './rng';
 import { Run } from './run';
 import { Mine } from './world';
-import type { RoundMode, RunSummary, SpinResult, Tier, TierId } from './types';
+import type { RoundMode, RunSummary, SpinResult, TierId } from './types';
 
 export interface RoundSetup {
   mode: RoundMode;
-  bonus: boolean;         // бонусний раунд (15 прокрутів, кірки разом)
   spins: SpinResult[];    // що випало на кожному прокруті; null = «пусто»
   tiers: TierId[];        // кірки, що йдуть у шахту
   startCols: number[];    // з яких колонок стартують
 }
-
-const isBonusMode = (m: RoundMode) => m === 'bonus-buy' || m === 'bonus-streak';
 
 /* ---------------- рулетка ---------------- */
 
@@ -46,62 +41,23 @@ function spinBet(rnd: Rng): { spins: SpinResult[]; tiers: TierId[] } {
   return { spins, tiers: [] };
 }
 
-/* Бонуска: крутить усі spins разів, збирає ВСІ кірки.
-   guarantee — якщо під кінець досі нічого, останні прокрути форсяться. */
-function spinBonus(rnd: Rng): { spins: SpinResult[]; tiers: TierId[] } {
-  const B = CONFIG.bonus;
-  const table = bonusReelTable();
-  const forced = tierOnlyTable();
-  const spins: SpinResult[] = [];
-  const tiers: TierId[] = [];
-
-  for (let k = 0; k < B.spins; k++) {
-    let tier: Tier | null = pickWeighted(table, rnd).tier;
-    const left = B.spins - k;
-    if (!tier && tiers.length < B.guarantee && left <= B.guarantee - tiers.length) {
-      tier = pickWeighted(forced, rnd).tier;
-    }
-    spins.push(tier ? (tier.id as TierId) : null);
-    if (tier) tiers.push(tier.id as TierId);
-  }
-  return { spins, tiers };
-}
-
-/* ---------------- стартові колонки ---------------- */
-
-function spreadCols(n: number, cols: number, rnd: Rng): number[] {
-  const all: number[] = [];
-  for (let i = 0; i < cols; i++) all.push(i);
-  for (let i = all.length - 1; i > 0; i--) {          // перемішуємо
-    const j = Math.floor(rnd() * (i + 1));
-    const t = all[i]; all[i] = all[j]; all[j] = t;
-  }
-  const out: number[] = [];
-  for (let i = 0; i < n; i++) out.push(all[i % cols]);
-  return out;
-}
-
 /* ---------------- збірка ---------------- */
 
 /** Що випало в раунді. Без фізики — клієнт кличе це, щоб крутити рулетку. */
-export function buildSetup(seed: string, mode: RoundMode): RoundSetup {
-  const bonus = isBonusMode(mode);
+export function buildSetup(seed: string, mode: RoundMode = 'bet'): RoundSetup {
   const reelRnd = stream(seed, 'reel');
-  const { spins, tiers } = bonus ? spinBonus(reelRnd) : spinBet(reelRnd);
+  const { spins, tiers } = spinBet(reelRnd);
 
   const colRnd = stream(seed, 'cols');
-  const startCols = tiers.length
-    ? (bonus ? spreadCols(tiers.length, CONFIG.cols, colRnd)
-             : [Math.floor(colRnd() * CONFIG.cols)])
-    : [];
+  const startCols = tiers.length ? [Math.floor(colRnd() * CONFIG.cols)] : [];
 
-  return { mode, bonus, spins, tiers, startCols };
+  return { mode, spins, tiers, startCols };
 }
 
 /** Шахта + забіг, готові крокувати. Клієнт тикає їх сам, у ритмі кадрів. */
 export function createRun(seed: string, setup: RoundSetup): { mine: Mine; run: Run } | null {
   if (!setup.tiers.length) return null;
-  const mine = new Mine(CONFIG.cols, streamRoot(seed, 'mine'), setup.bonus);
+  const mine = new Mine(CONFIG.cols, streamRoot(seed, 'mine'));
   const run = new Run(
     setup.tiers.map((id) => TIER_BY_ID[id]),
     mine,
@@ -156,11 +112,9 @@ export function resolveRound(seed: string, mode: RoundMode, bet: number): Resolv
   };
 }
 
-/** Ціна входу в раунд */
-export function roundCost(mode: RoundMode, bet: number): number {
-  return mode === 'bonus-buy' ? bet * CONFIG.bonus.buyCost
-       : mode === 'bonus-streak' ? 0        // виграна бонуска — безкоштовна
-       : bet;
+/** Ціна входу в раунд = ставка. */
+export function roundCost(_mode: RoundMode, bet: number): number {
+  return bet;
 }
 
 export { tierIndex };

@@ -59,12 +59,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     bot.command('start', async (ctx) => {
       if (!webAppUrl) {
-        await ctx.reply('Мініапс ще не налаштований: не задано WEBAPP_URL.');
+        await ctx.reply('Мини-апп ещё не настроен: не задан WEBAPP_URL.');
         return;
       }
-      await ctx.reply('Кірка чекає. Тисни — і в шахту.', {
+      await ctx.reply('Кирка ждёт. Жми — и в шахту.', {
         reply_markup: {
-          inline_keyboard: [[{ text: '⛏ ГРАТИ', web_app: { url: webAppUrl } }]],
+          inline_keyboard: [[{ text: '⛏ ИГРАТЬ', web_app: { url: webAppUrl } }]],
         },
       });
     });
@@ -75,7 +75,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     if (webAppUrl) {
       try {
         await bot.api.setChatMenuButton({
-          menu_button: { type: 'web_app', text: 'Грати', web_app: { url: webAppUrl } },
+          menu_button: { type: 'web_app', text: 'Играть', web_app: { url: webAppUrl } },
         });
       } catch (e) {
         this.log.warn(`Не вдалось поставити menu button: ${(e as Error).message}`);
