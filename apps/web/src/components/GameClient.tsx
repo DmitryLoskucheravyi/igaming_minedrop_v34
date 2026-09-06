@@ -35,7 +35,7 @@ const EMPTY: HudState = {
   state: 'LOADING',
   balance: 0,
   bet: 50,
-  bets: [10, 25, 50, 100, 250],
+  bets: [10, 25, 50, 100, 250, 500, 1000, 2000],
   message: 'загрузка…',
   canSpin: false,
   dryStreak: 0,
