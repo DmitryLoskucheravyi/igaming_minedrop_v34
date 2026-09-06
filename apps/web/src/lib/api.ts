@@ -57,6 +57,9 @@ export interface Payment {
   amount: number;        // ₽ на баланс
   usdtAmount: number;    // скільки переказати
   rate: number;
+  /** курс на момент створення був приблизний (біржа не відповідала) —
+      сума USDT може не збігатися з ринковою, це треба показати */
+  rateApprox?: boolean;
   address: string;
   status: PaymentStatus;
   createdAt: number;

@@ -195,11 +195,21 @@ export function rowRng(root: number, row: number): Rng {
 
 /* ---------------- зважений вибір ---------------- */
 
+/* Поріг саме `< 0`, а не `<= 0`.
+
+   rnd() віддає число з [0, 1), тому x = rnd() * total ∈ [0, total) —
+   і при x рівно 0 (sfc32 це вміє) умова `x <= 0` спрацьовувала на
+   ПЕРШОМУ ж елементі, навіть якщо його вага 0. У depthWeights перший
+   ключ — `air: 0`, тобто в суцільній шахті раз на ~4 млрд клітинок
+   з'являлась порожня. З `< 0` елемент із нульовою вагою недосяжний
+   за побудовою: `x -= 0` не рухає x, а якби x уже був < 0, ми б
+   вийшли раніше. Кінцевий fallback лишається лише як страховка від
+   total === 0. */
 export function pickWeighted<T extends { weight: number }>(arr: readonly T[], rnd: Rng): T {
   let total = 0;
   for (const it of arr) total += it.weight;
   let x = rnd() * total;
-  for (const it of arr) { x -= it.weight; if (x <= 0) return it; }
+  for (const it of arr) { x -= it.weight; if (x < 0) return it; }
   return arr[arr.length - 1];
 }
 
@@ -207,6 +217,6 @@ export function pickWeightedKey(weights: Record<string, number>, rnd: Rng, fallb
   let total = 0;
   for (const k in weights) total += weights[k];
   let x = rnd() * total;
-  for (const k in weights) { x -= weights[k]; if (x <= 0) return k; }
+  for (const k in weights) { x -= weights[k]; if (x < 0) return k; }
   return fallback;
 }

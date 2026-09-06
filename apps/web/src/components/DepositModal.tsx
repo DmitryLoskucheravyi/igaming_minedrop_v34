@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Api, ApiError, type Payment, type PaymentsInfo } from '../lib/api';
+import { Modal } from './Modal';
 
 const QUICK = [500, 1000, 5000];
 const rub = (n: number) => Math.round(n).toLocaleString('ru-RU');
@@ -29,14 +30,19 @@ function mmss(ms: number): string {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export function DepositModal({ onClose }: { onClose: () => void }) {
+interface Props {
+  onClose: () => void;
+  /** заявку закрито (погоджено / скасовано / протухла) — перечитати баланс */
+  onResolved?: () => void;
+}
+
+export function DepositModal({ onClose, onResolved }: Props) {
   const [info, setInfo] = useState<PaymentsInfo | null>(null);
   const [amount, setAmount] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(Date.now());
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -48,25 +54,34 @@ export function DepositModal({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  // тікаємо секундами (таймер) і поллимо статус, поки є активна заявка
+  // секундна стрілка для таймера
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
 
   const active = info?.active ?? null;
+  const activeId = active?.id ?? null;
+
+  /* Поллимо статус, поки висить активна заявка.
+
+     Залежність саме від id, а не від об'єкта заявки: кожен полл
+     повертає НОВИЙ об'єкт, тому з `active` у залежностях ефект
+     перезапускався (і таймер знищувався й створювався) кожні 8 с. */
   useEffect(() => {
-    if (active && !pollRef.current) {
-      pollRef.current = setInterval(() => void load(), 8000);
-    }
-    if (!active && pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-    return () => {
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    };
-  }, [active, load]);
+    if (!activeId) return;
+    const t = setInterval(() => void load(), 8000);
+    return () => clearInterval(t);
+  }, [activeId, load]);
+
+  /* Заявка зникла з активних — отже адмін її вирішив (або вона
+     протухла). Баланс міг змінитись, а гра про це не знає: сама
+     вона ходить на сервер лише за раундом. */
+  const prevActiveId = useRef<string | null>(null);
+  useEffect(() => {
+    if (prevActiveId.current && !activeId) onResolved?.();
+    prevActiveId.current = activeId;
+  }, [activeId, onResolved]);
 
   const submit = async () => {
     if (amount < (info?.minRub ?? 100)) return;
@@ -93,110 +108,114 @@ export function DepositModal({ onClose }: { onClose: () => void }) {
   const left = active ? active.expiresAt - now : 0;
 
   return (
-    <div className="modal" role="dialog" aria-label="Пополнение">
-      <div className="modalbox">
-        <div className="modalhead">
-          <h2>ПОПОЛНЕНИЕ</h2>
-          <button type="button" className="x" onClick={onClose}>✕</button>
-        </div>
+    <Modal title="ПОПОЛНЕНИЕ" onClose={onClose}>
+      {err && <p className="err">{err}</p>}
 
-        {err && <p className="err">{err}</p>}
+      {!active && (
+        <section>
+          <div className="dep-method">
+            <span className="dep-method-badge">USDT · TRC20</span>
+            <span className="dep-method-note">пока единственный способ</span>
+          </div>
 
-        {!active && (
-          <section>
-            <div className="dep-method">
-              <span className="dep-method-badge">USDT · TRC20</span>
-              <span className="dep-method-note">пока единственный способ</span>
-            </div>
+          <label className="dep-label" htmlFor="dep-amount">Сумма зачисления, ₽</label>
+          <input
+            id="dep-amount"
+            className="input mono"
+            type="number"
+            inputMode="numeric"
+            min={info?.minRub ?? 100}
+            value={amount || ''}
+            onChange={(e) => setAmount(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+            placeholder={`от ${rub(info?.minRub ?? 100)}`}
+          />
+          <div className="dep-chips">
+            {QUICK.map((q) => (
+              <button key={q} type="button" className="dep-chip" onClick={() => setAmount((a) => a + q)}>
+                +{rub(q)}
+              </button>
+            ))}
+          </div>
 
-            <label className="dep-label" htmlFor="dep-amount">Сумма зачисления, ₽</label>
-            <input
-              id="dep-amount"
-              className="input mono"
-              type="number"
-              inputMode="numeric"
-              min={info?.minRub ?? 100}
-              value={amount || ''}
-              onChange={(e) => setAmount(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
-              placeholder={`от ${rub(info?.minRub ?? 100)}`}
-            />
-            <div className="dep-chips">
-              {QUICK.map((q) => (
-                <button key={q} type="button" className="dep-chip" onClick={() => setAmount((a) => a + q)}>
-                  +{rub(q)}
-                </button>
-              ))}
-            </div>
+          <p className="dep-est">Точную сумму USDT к переводу увидишь после создания заявки.</p>
 
-            <p className="dep-est">Точную сумму USDT к переводу увидишь после создания заявки.</p>
+          <button
+            type="button"
+            className="btn wide"
+            disabled={busy || amount < (info?.minRub ?? 100)}
+            onClick={() => void submit()}
+          >
+            {busy ? 'Создаю…' : 'СОЗДАТЬ ЗАЯВКУ'}
+          </button>
+        </section>
+      )}
 
-            <button
-              type="button"
-              className="btn wide"
-              disabled={busy || amount < (info?.minRub ?? 100)}
-              onClick={() => void submit()}
-            >
-              {busy ? 'Создаю…' : 'СОЗДАТЬ ЗАЯВКУ'}
-            </button>
-          </section>
-        )}
+      {active && (
+        <section className="dep-active">
+          {left > 0 ? (
+            <>
+              <p className="dep-hint">
+                Переведи ровно эту сумму USDT (TRC20) на адрес ниже.
+                Больше ничего нажимать не нужно — как только средства придут
+                и админ подтвердит, баланс пополнится.
+              </p>
 
-        {active && (
-          <section className="dep-active">
-            {left > 0 ? (
-              <>
-                <p className="dep-hint">
-                  Переведи ровно эту сумму USDT (TRC20) на адрес ниже.
-                  Больше ничего нажимать не нужно — как только средства придут
-                  и админ подтвердит, баланс пополнится.
-                </p>
-
-                <div className="dep-row">
-                  <span className="dep-k">Сумма</span>
-                  <span className="dep-v big">{active.usdtAmount} <small>USDT</small></span>
-                </div>
-                <div className="dep-row">
-                  <span className="dep-k">К зачислению</span>
-                  <span className="dep-v">{rub(active.amount)} ₽</span>
-                </div>
-
-                <span className="dep-label">Адрес (TRC20)</span>
-                <div className="dep-addr">
-                  <code>{active.address}</code>
-                  <button type="button" className="btn" onClick={() => void copy(active.address)}>
-                    {copied ? '✓' : 'Копировать'}
-                  </button>
-                </div>
-
-                <div className={'dep-timer' + (left < 5 * 60_000 ? ' urgent' : '')}>
-                  осталось {mmss(left)}
-                </div>
-              </>
-            ) : (
-              <div className="dep-expired">
-                <p>Срок заявки истёк.</p>
-                <p className="dep-hint">Если ты уже перевёл средства — напиши в поддержку.
-                  Иначе создай новую заявку.</p>
-                <button type="button" className="btn wide" onClick={() => void load()}>ОБНОВИТЬ</button>
+              <div className="dep-row">
+                <span className="dep-k">Сумма</span>
+                <span className="dep-v big">{active.usdtAmount} <small>USDT</small></span>
               </div>
-            )}
-          </section>
-        )}
+              <div className="dep-row">
+                <span className="dep-k">К зачислению</span>
+                <span className="dep-v">{rub(active.amount)} ₽</span>
+              </div>
 
-        {info && info.history.length > 0 && (
-          <section>
-            <h3>Последние</h3>
-            <div className="dep-hist">
-              {info.history.slice(0, 3).map((p) => (
-                <div key={p.id} className={'dep-hist-row st-' + p.status}>
-                  <span className="dep-hist-amt">{rub(p.amount)} ₽</span>
-                  <span className="dep-hist-st">{STATUS_RU[p.status]}</span>
-                </div>
-              ))}
+              {/* Курс не приехал с биржи — сумма посчитана по запасному
+                  значению. Молчать об этом нельзя: человек переводит
+                  реальные деньги по этой цифре. */}
+              {active.rateApprox && (
+                <p className="dep-warn">
+                  ⚠ Курс не удалось обновить, сумма посчитана по запасному
+                  ({rub(active.rate)} ₽ за USDT) и может отличаться от рыночной.
+                  Перед переводом лучше уточнить у поддержки.
+                </p>
+              )}
+
+              <span className="dep-label">Адрес (TRC20)</span>
+              <div className="dep-addr">
+                <code>{active.address}</code>
+                <button type="button" className="btn" onClick={() => void copy(active.address)}>
+                  {copied ? '✓' : 'Копировать'}
+                </button>
+              </div>
+
+              <div className={'dep-timer' + (left < 5 * 60_000 ? ' urgent' : '')}>
+                осталось {mmss(left)}
+              </div>
+            </>
+          ) : (
+            <div className="dep-expired">
+              <p>Срок заявки истёк.</p>
+              <p className="dep-hint">Если ты уже перевёл средства — напиши в поддержку.
+                Иначе создай новую заявку.</p>
+              <button type="button" className="btn wide" onClick={() => void load()}>ОБНОВИТЬ</button>
             </div>
-          </section>
-        )}
-      </div>
-    </div>
+          )}
+        </section>
+      )}
+
+      {info && info.history.length > 0 && (
+        <section>
+          <h3>Последние</h3>
+          <div className="dep-hist">
+            {info.history.slice(0, 3).map((p) => (
+              <div key={p.id} className={'dep-hist-row st-' + p.status}>
+                <span className="dep-hist-amt">{rub(p.amount)} ₽</span>
+                <span className="dep-hist-st">{STATUS_RU[p.status]}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </Modal>
   );
 }

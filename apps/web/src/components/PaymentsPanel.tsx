@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { Api, type Payment } from '../lib/api';
+import { Modal } from './Modal';
 
 const rub = (n: number) => Math.round(n).toLocaleString('ru-RU');
 const STATUS_RU: Record<Payment['status'], string> = {
@@ -28,35 +29,28 @@ export function PaymentsPanel({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <div className="modal" role="dialog" aria-label="История платежей">
-      <div className="modalbox">
-        <div className="modalhead">
-          <h2>ИСТОРИЯ ПЛАТЕЖЕЙ</h2>
-          <button type="button" className="x" onClick={onClose}>✕</button>
-        </div>
+    <Modal title="ИСТОРИЯ ПЛАТЕЖЕЙ" onClose={onClose}>
+      {err && <p className="err">{err}</p>}
+      {!rows && !err && <p className="hint">Загрузка…</p>}
+      {rows && rows.length === 0 && <p className="hint">Платежей ещё не было.</p>}
 
-        {err && <p className="err">{err}</p>}
-        {!rows && !err && <p className="hint">Загрузка…</p>}
-        {rows && rows.length === 0 && <p className="hint">Платежей ещё не было.</p>}
-
-        {rows && rows.length > 0 && (
-          <div className="pay-list">
-            {rows.map((p) => (
-              <div key={p.id} className={'pay-item st-' + p.status}>
-                <div className="pay-item-top">
-                  <span className="pay-amt">+{rub(p.amount)} ₽</span>
-                  <span className="pay-status">{STATUS_RU[p.status]}</span>
-                </div>
-                <div className="pay-item-sub">
-                  <span>{p.usdtAmount} USDT · TRC20</span>
-                  <span>{when(p.createdAt)}</span>
-                </div>
-                {p.adminNote && <div className="pay-note">{p.adminNote}</div>}
+      {rows && rows.length > 0 && (
+        <div className="pay-list">
+          {rows.map((p) => (
+            <div key={p.id} className={'pay-item st-' + p.status}>
+              <div className="pay-item-top">
+                <span className="pay-amt">+{rub(p.amount)} ₽</span>
+                <span className="pay-status">{STATUS_RU[p.status]}</span>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+              <div className="pay-item-sub">
+                <span>{p.usdtAmount} USDT · TRC20</span>
+                <span>{when(p.createdAt)}</span>
+              </div>
+              {p.adminNote && <div className="pay-note">{p.adminNote}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }

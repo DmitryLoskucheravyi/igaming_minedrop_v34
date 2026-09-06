@@ -77,7 +77,17 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                   </div>
                 </td>
                 <td className={s.num}>{rub(p.amount)}</td>
-                <td className={s.num}>{p.usdtAmount}</td>
+                <td className={s.num}>
+                  {p.usdtAmount}
+                  {/* Курс на момент створення заявки не приїхав з біржі —
+                      сума порахована по запасному значенню. Це треба
+                      звірити ДО підтвердження, а не після. */}
+                  {p.rateApprox && (
+                    <span className={s.approx} title={`Курс приблизный: ${rub(p.rate)} ₽ за USDT (биржа не ответила). Сверь сумму перед подтверждением.`}>
+                      ≈
+                    </span>
+                  )}
+                </td>
                 <td>
                   <div className={`${s.mono} ${s.wrapAny}`} style={{ maxWidth: 220 }}>{p.address}</div>
                   {p.addressLabel && <div className={s.dim}>{p.addressLabel}</div>}

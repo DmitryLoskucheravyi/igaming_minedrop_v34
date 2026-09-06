@@ -56,6 +56,36 @@ for (let nonce = 1; nonce <= N; nonce++) {
 
 if (seen.size !== N) fail(`сиди повторюються: ${seen.size} унікальних із ${N}`);
 
+/* ---- PITY ----
+   Кожна CONFIG.pity-та порожня ставка поспіль форсує кірку: з таблиці
+   прокруту прибирається «пусто». Це ЧАСТИНА раунду, тому перевірка
+   мусить знати той самий прапорець, інакше вона рахує інший раунд.
+
+   Саме цього тут раніше не було: /fairness/verify і панель у клієнті
+   кликали resolveRound() без pity, і кожен восьмий раунд «не сходився»,
+   хоча сервер грав чесно. Симуляція проходила, бо теж дивилась лише на
+   pity=false. Тепер перевіряємо обидві гілки — і те, що вони РІЗНІ. */
+let pityDiff = 0;
+for (let nonce = 1; nonce <= 200; nonce++) {
+  const bet = 50;
+  const seed = roundSeed(serverSeed, clientSeed, nonce);
+
+  const forced = resolveRound(seed, 'bet' as RoundMode, bet, true);
+  const recheck = resolveRound(seed, 'bet' as RoundMode, bet, true);
+  if (forced.payout !== recheck.payout) fail(`pity-раунд не відтворився на nonce ${nonce}`);
+  if (!forced.setup.tiers.length) fail(`pity не гарантував кірку на nonce ${nonce}`);
+  if (!forced.setup.pity) fail(`прапорець pity загубився на nonce ${nonce}`);
+
+  // перевірка без прапорця мусить давати ІНШЕ — інакше він нічого не значить
+  const naive = resolveRound(seed, 'bet' as RoundMode, bet, false);
+  if (naive.payout !== forced.payout || naive.setup.tiers.join() !== forced.setup.tiers.join()) {
+    pityDiff++;
+  }
+}
+if (pityDiff === 0) fail('pity ні на що не впливає — перевірка нічого не ловить');
+console.log(`pity: перевірено 200 раундів, від звичайних відрізняються ${pityDiff}`);
+
+
 console.log('раундів перевірено:', N);
 console.log('serverSeedHash:', published.slice(0, 24) + '…');
 console.log(bad === 0 ? 'FAIRNESS OK — раунд відтворюється з розкритого сида' : bad + ' failures');

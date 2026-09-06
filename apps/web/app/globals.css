@@ -626,6 +626,21 @@ canvas {
 .check.bad { border-left-color: #ff6a5c; }
 .check .payout { margin-top: 6px; font: 700 15px inherit; color: #ffd34d; }
 
+/* Прапорець «гарантована кірка» у перевірці раунду: без нього кожен
+   восьмий раунд перераховується з іншою таблицею прокруту й не
+   сходиться, тому підпис навмисно довгий і пояснювальний. */
+.check-pity {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #8b95a3;
+  cursor: pointer;
+}
+.check-pity input { margin-top: 2px; flex: 0 0 auto; accent-color: #ffd34d; }
+
 /* ---- кнопка «+» біля балансу ---- */
 .deposit-btn {
   width: 24px;
@@ -688,6 +703,18 @@ canvas {
 }
 .dep-chip:hover { background: #64707f; }
 .dep-est { font-size: 11px; color: #8b95a3; margin: 10px 0; }
+
+/* Курс не приїхав з біржі — сума в заявці приблизна. Помітно, але не
+   червоною помилкою: заявка робоча, просто цифру варто уточнити. */
+.dep-warn {
+  margin: 10px 0;
+  padding: 9px 10px;
+  border-left: 4px solid #ffd34d;
+  background: #2a2417;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #f0dca8;
+}
 
 .dep-active .dep-hint {
   font-size: 11.5px;

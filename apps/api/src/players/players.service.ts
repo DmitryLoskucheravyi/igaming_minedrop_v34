@@ -1,10 +1,8 @@
-import {
-  Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { CONFIG, serverSeedHash } from '@minedrop/engine';
 import type { RoundResult } from '@minedrop/engine';
-import { ENV, type Env } from '../config/env';
+import { MongoService } from '../db/mongo.service';
 import { PlayerStore } from './player-store';
 import type { TelegramUser } from '../telegram/init-data';
 
@@ -27,14 +25,16 @@ import type { TelegramUser } from '../telegram/init-data';
    перезаписується в БД (fire-and-forget, persist()). MONGO_URL порожній
    -> тільки Map, стан гине з рестартом (dev без БД).
 
-   ТЕСТОВЕ ПОПОВНЕННЯ: поки гри без реальних грошей і без адмінки,
-   findOrCreate() сам повертає баланс, якщо його не вистачає навіть
-   на найдешевшу ставку. Спрацьовує на будь-якому зверненні гравця —
-   рефреш аппки, новий раунд, відкриття панелі чесності — тому
-   застрягти з 0 і без можливості грати далі не можна. Це навмисний
-   тимчасовий костиль на час тестів, а НЕ адмін-видача чи компенсація:
-   прибрати разом із переходом на файлову/БД-персистентність і
-   справжнє поповнення балансу.
+   ГРОШІ ЗВІДКИ БЕРУТЬСЯ: новий гравець отримує CONFIG.startBalance
+   один раз, при заведенні. Далі баланс поповнюється ЛИШЕ через CRM —
+   вручну адміном або підтвердженням заявки на депозит.
+
+   Автоматичного «дотягування» балансу до стартового більше немає.
+   Воно спрацьовувало на будь-якому зверненні гравця (навіть на
+   GET /players/me і GET /payments/me) і робило платіжну частину
+   непридатною до перевірки: щойно баланс падав нижче найдешевшої
+   ставки, гроші з'являлись самі, ще до того, як гравець устигав
+   створити заявку.
    ============================================================ */
 
 export interface PlayerRecord {
@@ -65,40 +65,22 @@ export interface PlayerRecord {
 
 const HISTORY_LIMIT = 50;
 
-/* Найдешевша ставка з CONFIG.bets — поріг, нижче якого гравець
-   фізично не може зробити жодного ходу. */
-const MIN_PLAYABLE_BET = Math.min(...CONFIG.bets);
-
 @Injectable()
-export class PlayersService implements OnModuleInit, OnModuleDestroy {
+export class PlayersService implements OnModuleInit {
   private readonly log = new Logger(PlayersService.name);
   private readonly players = new Map<number, PlayerRecord>();
   private store: PlayerStore | null = null;
 
-  constructor(@Inject(ENV) private readonly env: Env) {}
+  constructor(private readonly mongo: MongoService) {}
 
   async onModuleInit(): Promise<void> {
-    if (!this.env.mongoUrl) {
-      this.log.warn('MONGO_URL не заданий — гравці тільки in-memory, гинуть із рестартом.');
-      return;
-    }
-    const store = new PlayerStore();
-    try {
-      await store.connect(this.env.mongoUrl);
-      const rows = await store.loadAll();
-      for (const r of rows) this.players.set(r.telegramId, r);
-      this.store = store;
-      this.log.log(`Завантажено гравців із БД: ${rows.length}`);
-    } catch (e) {
-      await store.close();
-      this.log.error(`MongoDB недоступна (${(e as Error).message}). ` +
-        'Працюємо in-memory — стан НЕ зберігається.');
-      if (this.env.isProd) throw e;   // у проді без БД стартувати не можна
-    }
-  }
-
-  async onModuleDestroy(): Promise<void> {
-    await this.store?.close();
+    const db = await this.mongo.ready();
+    if (!db) return;   // dev без БД — MongoService уже попередив у лог
+    const store = new PlayerStore(db);
+    const rows = await store.loadAll();
+    for (const r of rows) this.players.set(r.telegramId, r);
+    this.store = store;
+    this.log.log(`Завантажено гравців із БД: ${rows.length}`);
   }
 
   /** Асинхронно скидає гравця в БД (fire-and-forget, помилку лише логуємо). */
@@ -108,19 +90,15 @@ export class PlayersService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Перший вхід — заводимо гравця; далі просто знаходимо.
-      Пише в БД лише коли справді щось змінилось (створення / поповнення) —
-      «останній вхід» без активності в БД не летить, це надто дрібно. */
+      Пише в БД лише коли справді щось змінилось (створення) — «останній
+      вхід» без активності в БД не летить, це надто дрібно. Балансу тут
+      не торкаємось: поповнення живе тільки в CRM. */
   findOrCreate(user: TelegramUser): PlayerRecord {
     const found = this.players.get(user.id);
     if (found) {
       found.seenAt = Date.now();
       found.username = user.username ?? found.username;
       found.firstName = user.firstName || found.firstName;
-      if (found.balance < MIN_PLAYABLE_BET) {
-        this.log.warn(`тестове поповнення: ${found.telegramId} ${found.balance} -> ${CONFIG.startBalance}`);
-        found.balance = CONFIG.startBalance;
-        this.persist(found);
-      }
       return found;
     }
 
@@ -174,7 +152,7 @@ export class PlayersService implements OnModuleInit, OnModuleDestroy {
     this.persist(rec);
   }
 
-  /* ---- для адмін-панелі (тимчасова, поза продом) ---- */
+  /* ---- для CRM (доступ під адмін-логіном, див. admin/) ---- */
 
   /** Усі заведені гравці. */
   all(): PlayerRecord[] {
@@ -186,13 +164,15 @@ export class PlayersService implements OnModuleInit, OnModuleDestroy {
     return this.players.get(telegramId);
   }
 
-  /** Ручне поповнення балансу. Повертає новий баланс або null. */
-  topUp(telegramId: number, amount: number): number | null {
+  /** Ручне поповнення балансу. Повертає новий баланс або null, якщо
+      такого гравця нема — той, хто кличе, ЗОБОВ'ЯЗАНИЙ це перевірити:
+      null означає, що гроші не нараховані. */
+  topUp(telegramId: number, amount: number, by = 'система'): number | null {
     const rec = this.players.get(telegramId);
     if (!rec) return null;
     rec.balance += amount;
     this.persist(rec);
-    this.log.warn(`адмін-поповнення: ${telegramId} +${amount} -> ${rec.balance}`);
+    this.log.warn(`поповнення (${by}): ${telegramId} +${amount} -> ${rec.balance}`);
     return rec.balance;
   }
 }

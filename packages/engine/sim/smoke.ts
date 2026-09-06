@@ -1,7 +1,7 @@
 /* Інваріанти фізики та логіки. npm run sim:smoke -- [забігів] */
 import { BLOCKS, CONFIG, TIERS } from '../src/config';
 import { buildSetup, createRun } from '../src/round';
-import { MULT_CHAIN_CAP, MULT_WINDOW_SEC, TNT_MAX_HITS } from '../src/run';
+import { MULT_WINDOW_SEC, TNT_MAX_HITS } from '../src/run';
 import { isWall } from '../src/world';
 import { seedAt } from './seeds';
 
@@ -80,10 +80,12 @@ for (let i = 0; i < N; i++) {
         mults++;
         t(CONFIG.mult.table.some((x) => x.m === e.m), 'невідомий множник x' + e.m);
         // блок-множник більше не іксує накопичене — він відкриває вікно:
-        // active — активний множник вікна (>= номіналу блоку, <= стелі),
-        // secs — довжина вікна
+        // active — активний множник вікна, secs — його довжина.
+        // Множники не перемножуються (береться більший), тому активний
+        // ніколи не виходить за найбільший номінал у таблиці.
+        const topMult = Math.max(...CONFIG.mult.table.map((x) => x.m));
         t(e.secs === MULT_WINDOW_SEC, 'вікно множника не ' + MULT_WINDOW_SEC + 'с: ' + e.secs);
-        t(e.active >= e.m && e.active <= MULT_CHAIN_CAP,
+        t(e.active >= e.m && e.active <= topMult,
           'активний множник поза межами: ' + e.active + ' (блок x' + e.m + ')');
         t(run.multActive === e.active && run.multWindowT > 0,
           'стан вікна не збігається з подією');

@@ -226,6 +226,16 @@
 }
 .tab:hover { color: #cdd3da; }
 .tab.on { color: #e6e9ee; border-bottom-color: #4ec86a; }
+
+/* хто зайшов + вихід — праворуч у рядку вкладок */
+.who {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding-bottom: 6px;
+}
+.who .dim { margin-top: 0; }
 .tab .dot {
   display: inline-block;
   min-width: 16px;
@@ -286,3 +296,52 @@
 
 .timer { font-family: ui-monospace, monospace; }
 .timer.urgent { color: #e8706b; }
+
+/* ---- форма входу ---- */
+.loginWrap {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #0e1216;
+  color: #e6e9ee;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.loginBox {
+  width: min(360px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: #151b21;
+  border: 1px solid #2a333c;
+  border-radius: 10px;
+  padding: 26px 24px 24px;
+}
+.loginBox h1 {
+  font: 700 16px inherit;
+  letter-spacing: .12em;
+  margin: 0;
+}
+.loginHint {
+  font-size: 12px;
+  color: #7c8590;
+  margin: 8px 0 18px;
+}
+.loginBox .confirm { margin-top: 18px; }
+
+/* Курс у заявці був приблизний — адмін мусить це бачити ДО того,
+   як підтвердить надходження. */
+.approx {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #4a3a12;
+  color: #f0dca8;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: help;
+}

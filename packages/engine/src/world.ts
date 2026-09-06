@@ -64,25 +64,30 @@ function placeVein(
   const r0 = regionStart + Math.floor(rnd() * ORE_REGION_ROWS);
   const c0 = Math.floor(rnd() * cols);
 
-  const frontier: [number, number][] = [];
+  /* Третє число у вузлі — скільки спроб рости з нього вже провалилось.
+     Раніше вузол викидався після ПЕРШОГО ж невдалого напрямку з чотирьох,
+     тому фронт танув набагато швидше, ніж поклад устигав дорости, і
+     реальні розміри систематично не дотягували до spec.min/max. Тепер
+     вузол лишається у фронті, доки не провалиться DIRS.length спроб. */
+  const frontier: [number, number, number][] = [];
   const key0 = r0 + ',' + c0;
   let placed = 0;
-  if (!oreMap.has(key0)) { oreMap.set(key0, oreId); frontier.push([r0, c0]); placed = 1; }
+  if (!oreMap.has(key0)) { oreMap.set(key0, oreId); frontier.push([r0, c0, 0]); placed = 1; }
 
   let guard = size * 20;   // страховка від зависання в затиснутому регіоні
   while (placed < size && frontier.length && guard-- > 0) {
     const idx = Math.floor(rnd() * frontier.length);
-    const [fr, fc] = frontier[idx];
+    const node = frontier[idx];
     const [dr, dc] = DIRS[Math.floor(rnd() * DIRS.length)];
-    const nr = clamp(fr + dr, regionStart, regionStart + ORE_REGION_ROWS - 1);
-    const nc = clamp(fc + dc, 0, cols - 1);
+    const nr = clamp(node[0] + dr, regionStart, regionStart + ORE_REGION_ROWS - 1);
+    const nc = clamp(node[1] + dc, 0, cols - 1);
     const key = nr + ',' + nc;
     if (!oreMap.has(key)) {
       oreMap.set(key, oreId);
-      frontier.push([nr, nc]);
+      frontier.push([nr, nc, 0]);
       placed++;
-    } else {
-      frontier.splice(idx, 1);   // цей вузол вичерпано — пробуємо інший
+    } else if (++node[2] >= DIRS.length) {
+      frontier.splice(idx, 1);   // усі напрямки з цього вузла вичерпані
     }
   }
 }
@@ -101,7 +106,12 @@ export class Mine {
   readonly cols: number;
   readonly root: number;
   readonly rows = new Map<number, (Cell | null)[]>();
-  deepest = 0;
+
+  /* Найвища межа ЖИВОЇ шахти: усе, що вище, вже викинуто prune(), і
+     відновлювати його не можна ні у фізиці, ні на екрані — ряд
+     згенерується з нуля, цілими блоками, і діри від кірки й TNT
+     «заростуть». Потрібно саме peek() (див. нижче). */
+  private prunedAbove = -Infinity;
 
   /* Регіони покладів руди — окремий, набагато дрібніший кеш від `rows`:
      не пруниться (розмір тривіальний навіть на довгий забіг), існує
@@ -146,7 +156,6 @@ export class Mine {
   row(r: number): (Cell | null)[] {
     let row = this.rows.get(r);
     if (!row) { row = this.genRow(r); this.rows.set(r, row); }
-    if (r > this.deepest) this.deepest = r;
     return row;
   }
 
@@ -154,6 +163,25 @@ export class Mine {
   get(r: number, c: number): Cell | null | WallCell {
     if (c < 0 || c >= this.cols) return WALL;
     if (r < 0) return null;
+    return this.row(r)[c];
+  }
+
+  /** Читання для РЕНДЕРА: те саме, що get(), але ніколи не перетворює
+      намальоване на стан гри.
+
+      Різниця тільки для рядів вище межі прунингу: get() згенерував би
+      такий ряд наново (цілим!) і поклав у кеш — і кірка, яка колись
+      туди повернеться, зіткнулась би з блоками, яких на сервері вже
+      немає. Тобто клієнт розійшовся б із сервером через саме лише
+      малювання. Тут такий ряд рахується транзитно і в кеш не лягає.
+      Ряди нижче межі кешуються як звичайно — фізика все одно попросить
+      їх наступними кроками, і згенеровані вони будуть ідентично. */
+  peek(r: number, c: number): Cell | null | WallCell {
+    if (c < 0 || c >= this.cols) return WALL;
+    if (r < 0) return null;
+    const cached = this.rows.get(r);
+    if (cached) return cached[c];
+    if (r < this.prunedAbove) return this.genRow(r)[c];
     return this.row(r)[c];
   }
 
@@ -172,6 +200,7 @@ export class Mine {
      Run.pruneMine() від найвищої ЖИВОЇ кірки. */
   prune(aboveRow: number): void {
     for (const r of this.rows.keys()) if (r < aboveRow) this.rows.delete(r);
+    if (aboveRow > this.prunedAbove) this.prunedAbove = aboveRow;
   }
 }
 

@@ -44,7 +44,14 @@ export class FairnessService {
     return { revealed, next: { serverSeedHash: rec.serverSeedHash, nonce: 0 } };
   }
 
-  /** Перерахунок раунду з розкритих даних. Нічого не змінює. */
+  /** Перерахунок раунду з розкритих даних. Нічого не змінює.
+
+      pity ОБОВ'ЯЗКОВО має збігатися з тим, як раунд грався насправді
+      (RoundResult.pity). Кожна CONFIG.pity-та порожня ставка поспіль
+      форсує кірку: з таблиці прокруту прибирається «пусто», і той самий
+      сид дає ІНШИЙ результат. Доки цей прапорець сюди не доїжджав,
+      перевірка pity-раундів не сходилась практично ніколи — тобто
+      кожна восьма ставка виглядала як обман, хоча обману не було. */
   verify(input: {
     serverSeed: string;
     serverSeedHash?: string;
@@ -52,17 +59,19 @@ export class FairnessService {
     nonce: number;
     mode: RoundMode;
     bet: number;
+    pity?: boolean;
   }) {
     const commitOk = input.serverSeedHash
       ? verifyCommit(input.serverSeed, input.serverSeedHash)
       : null;
 
     const seed = roundSeed(input.serverSeed, input.clientSeed, input.nonce);
-    const r = resolveRound(seed, input.mode, input.bet);
+    const r = resolveRound(seed, input.mode, input.bet, input.pity ?? false);
 
     return {
       commitOk,
       seed,
+      pity: r.setup.pity,
       spins: r.setup.spins,
       tiers: r.setup.tiers,
       startCols: r.setup.startCols,

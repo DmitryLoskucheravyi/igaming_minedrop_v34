@@ -25,17 +25,31 @@ export function PlayersTab() {
   const [amount, setAmount] = useState(0);
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true); setErr(null);
+  /* quiet — фонове оновлення: без «Загрузка…» на кнопці, щоб таблиця
+     не блимала кожні 15 секунд. */
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    setErr(null);
     try {
       const body = await api<{ players: Player[] }>('/players');
       setPlayers(body.players);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
-    } finally { setLoading(false); }
+    } finally { if (!quiet) setLoading(false); }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  /* Баланси міняються поза CRM (раунди гравців, підтверджені заявки),
+     тому таблиця освіжається сама — як і вкладка «Заявки». Раніше
+     оновити її можна було лише кнопкою, і цифри тихо застарівали.
+     Поки відкрите вікно поповнення — не чіпаємо: під ним лежить
+     той самий гравець, і підміна рядка збила б поточний баланс. */
+  useEffect(() => {
+    if (target) return;
+    const t = setInterval(() => void load(true), 15_000);
+    return () => clearInterval(t);
+  }, [load, target]);
 
   const submit = async () => {
     if (!target || amount < 1) return;

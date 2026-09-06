@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { ENV, type Env } from '../config/env';
+import { MongoService } from '../db/mongo.service';
 import { RatesService } from '../rates/rates.service';
 import { PlayersService } from '../players/players.service';
 import { PaymentStore } from './payment-store';
@@ -26,24 +27,19 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(ENV) private readonly env: Env,
+    private readonly mongo: MongoService,
     private readonly rates: RatesService,
     private readonly players: PlayersService,
   ) {}
 
   async onModuleInit(): Promise<void> {
-    if (this.env.mongoUrl) {
-      const store = new PaymentStore();
-      try {
-        await store.connect(this.env.mongoUrl);
-        for (const p of await store.loadAll()) this.items.set(p.id, p);
-        for (const a of await store.loadAddresses()) this.addrs.set(a.id, a);
-        this.store = store;
-        this.log.log(`Завантажено: заявок ${this.items.size}, адрес ${this.addrs.size}`);
-      } catch (e) {
-        await store.close();
-        this.log.error(`MongoDB (payments) недоступна: ${(e as Error).message}`);
-        if (this.env.isProd) throw e;
-      }
+    const db = await this.mongo.ready();
+    if (db) {
+      const store = new PaymentStore(db);
+      for (const p of await store.loadAll()) this.items.set(p.id, p);
+      for (const a of await store.loadAddresses()) this.addrs.set(a.id, a);
+      this.store = store;
+      this.log.log(`Завантажено: заявок ${this.items.size}, адрес ${this.addrs.size}`);
     }
 
     // сід із env: якщо адрес нема, а в конфізі задана валідна — заводимо
@@ -58,7 +54,6 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     if (this.sweepTimer) clearInterval(this.sweepTimer);
-    await this.store?.close();
   }
 
   private persist(rec: PaymentRecord): void {
@@ -155,6 +150,11 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
     const addr = this.pickAddress();
     const rate = this.rates.snapshot().rubPerUsdt;
+    /* Курс міг не приїхати з біржі — тоді працює fallback, і сума USDT
+       нижче лише приблизна. Мовчати про це не можна: людина переказує
+       реальні кошти. Позначаємо заявку, а показують це і гравцю
+       (DepositModal), і адміну в CRM. */
+    const rateApprox = this.rates.isApproximate();
     const usdtAmount = Math.round((amount / rate) * 10000) / 10000;
     const now = Date.now();
     const rec: PaymentRecord = {
@@ -164,6 +164,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       amount: Math.round(amount),
       usdtAmount,
       rate,
+      rateApprox,
       address: addr.address,
       addressId: addr.id,
       status: 'pending',
@@ -172,7 +173,8 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     };
     this.items.set(rec.id, rec);
     this.persist(rec);
-    this.log.log(`нова заявка ${rec.id}: ${telegramId} ${amount}₽ (${usdtAmount} USDT) -> ${addr.address}`);
+    this.log.log(`нова заявка ${rec.id}: ${telegramId} ${amount}₽ (${usdtAmount} USDT` +
+      `${rateApprox ? ', курс ПРИБЛИЗНИЙ' : ''}) -> ${addr.address}`);
     return rec;
   }
 
@@ -190,12 +192,26 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       (a, b) => rank(a.status) - rank(b.status) || b.createdAt - a.createdAt);
   }
 
+  /* Порядок тут принциповий: СПЕРШУ гроші, і тільки якщо вони справді
+     лягли — статус.
+
+     Раніше заявка ставала approved до нарахування, а результат topUp()
+     не перевірявся. Гравця немає в пам'яті (невідомий telegramId) ->
+     topUp повертає null, гроші не зараховані, але заявка вже «погоджена»
+     й повторно підтвердити її не можна: mustPending() кине конфлікт.
+     Тобто помилка адміна тихо з'їдала депозит. */
   approve(id: string): PaymentRecord {
     const rec = this.mustPending(id);
+
+    const balance = this.players.topUp(rec.telegramId, rec.amount);
+    if (balance === null) {
+      throw new NotFoundException(
+        `Игрок ${rec.telegramId} не найден — баланс не начислен, заявка осталась в ожидании`);
+    }
+
     rec.status = 'approved';
     rec.resolvedAt = Date.now();
     this.persist(rec);
-    const balance = this.players.topUp(rec.telegramId, rec.amount);
     this.log.log(`заявку ${id} погоджено: ${rec.telegramId} +${rec.amount}₽ -> ${balance}`);
     return rec;
   }

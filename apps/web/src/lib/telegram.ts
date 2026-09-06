@@ -57,15 +57,25 @@ export const initData = (): string | null => {
 };
 
 /** Стабільний id для dev-режиму в браузері: щоб у різних вкладках
-    був різний гравець, але той самий після перезавантаження. */
+    був різний гравець, але той самий після перезавантаження.
+
+    Записане значення перевіряємо, а не довіряємо: зіпсований рядок у
+    localStorage давав Number(...) = NaN, сервер відповідав 401 на все
+    підряд, і гра назавжди лишалась в ERROR — доти, доки хтось не здогадається
+    почистити сховище руками. Тепер сміття просто замінюється новим id.
+    Сховище може й кинути (приватний режим) — тоді працюємо без нього. */
 export function devUserId(): number {
   if (typeof window === 'undefined') return 1;
   const KEY = 'minedrop.devUser';
-  const found = window.localStorage.getItem(KEY);
-  if (found) return Number(found);
-  const id = 100000 + Math.floor(Math.random() * 800000);
-  window.localStorage.setItem(KEY, String(id));
-  return id;
+  try {
+    const found = Number(window.localStorage.getItem(KEY));
+    if (Number.isInteger(found) && found > 0) return found;
+    const id = 100000 + Math.floor(Math.random() * 800000);
+    window.localStorage.setItem(KEY, String(id));
+    return id;
+  } catch {
+    return 1;
+  }
 }
 
 /** Версія телеграма не нижча за потрібну (для нових методів) */

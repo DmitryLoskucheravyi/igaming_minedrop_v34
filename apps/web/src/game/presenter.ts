@@ -154,8 +154,23 @@ export class Presenter {
 
   private onHud: (h: HudState) => void;
   private onResize = () => this.layout();
+
+  /* Поки на екрані модалка (депозит, чесність, історія платежів) або
+     фокус у полі вводу — пробіл належить їм, а не грі. Без цього
+     набраний у полі суми пробіл і з'їдався (preventDefault), і
+     запускав новий раунд «з-під» відкритого вікна. */
+  private typing(target: EventTarget | null): boolean {
+    if (typeof document !== 'undefined' && document.querySelector('.modal, .drawer-overlay.open')) {
+      return true;
+    }
+    const el = target as HTMLElement | null;
+    if (!el || !el.tagName) return false;
+    return el.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName);
+  }
+
   private onKey = (e: KeyboardEvent) => {
     if (e.code !== 'Space') return;
+    if (this.typing(e.target)) return;
     e.preventDefault();
     /* Затиснутий пробіл (ще з моменту старту прокруту) генерує браузером
        ПОВТОРНІ keydown з e.repeat=true, доки палець не відпустять.
@@ -364,6 +379,39 @@ export class Presenter {
     }
   }
 
+  /** Перечитати стан гравця з сервера.
+
+      Потрібно після того, як гроші змінилися ПОЗА грою: адмін підтвердив
+      заявку на депозит або поповнив баланс вручну. Раніше такого шляху не
+      було взагалі — вікно депозиту поллило свій ендпоінт, а презентер про
+      зарахування не дізнавався, і гравець бачив старий баланс, доки не
+      зіграє раунд.
+
+      Баланс підмінюємо тільки коли раунд не йде: під час розіграшу на
+      екрані свідомо стоїть «баланс після списання», і замінювати його
+      серверним числом посеред анімації не можна. */
+  async refreshPlayer(): Promise<void> {
+    let p: PlayerState;
+    try {
+      p = await Api.me();
+    } catch {
+      return;   // фонове оновлення: не шумимо, спробуємо наступного разу
+    }
+
+    this.player = p;
+    if (p.config?.rates) this.rates = p.config.rates;
+
+    if (this.state === 'IDLE' || this.state === 'RESULT' || this.state === 'ERROR') {
+      this.balance = p.balance;
+      if (this.error && this.balance >= this.bet) this.error = null;
+      if (this.state === 'ERROR') {
+        this.state = 'IDLE';
+        this.message = 'Сделай ставку и крути';
+      }
+    }
+    this.emit();
+  }
+
   private async startRound(): Promise<void> {
     this.busy = true;
     this.error = null;
@@ -541,6 +589,11 @@ export class Presenter {
     this.stageTarget = 0;
     this.decorativeMine();
     this.state = 'IDLE';
+    /* Червона плашка стосувалась ПОПЕРЕДНЬОЇ спроби (не вистачило
+       коштів, обірвалась мережа). Раунд закрито — причини більше
+       нема, а раніше вона висіла в IDLE до наступного оновлення
+       стану гравця, тобто виглядала як постійна поломка. */
+    this.error = null;
     this.message = this.player && this.balance < this.bet
       ? 'Мало монет — уменьши ставку'
       : 'Сделай ставку и крути';
@@ -901,7 +954,12 @@ export class Presenter {
     for (let r = r0; r <= r1; r++) {
       const y = this.sy(r);
       for (let c = 0; c < CONFIG.cols; c++) {
-        const b = this.mine.get(r, c);
+        /* peek(), а не get(): рендер не має права створювати стан гри.
+           get() для ряду, викинутого прунингом, згенерував би його
+           наново — ЦІЛИМ — і поклав у кеш, після чого кірка зіткнулася б
+           із блоками, яких на сервері вже немає. Тобто клієнт розходився б
+           із сервером через саме лише малювання. Див. Mine.peek(). */
+        const b = this.mine.peek(r, c);
         if (!b || 'wall' in b) continue;
         const x = this.sx(c);
         Render.block(ctx, x, y, cell, b);
@@ -950,14 +1008,23 @@ export class Presenter {
   /* Стіни шахти по боках, якщо поле вужче за екран */
   private drawWalls(ctx: CanvasRenderingContext2D): void {
     if (this.fieldX <= 0) return;
+    const right = this.fieldX + this.fieldW;
     ctx.fillStyle = '#05070a';
     ctx.fillRect(0, 0, this.fieldX, this.h);
-    ctx.fillRect(this.fieldX + this.fieldW, 0, this.fieldX + 2, this.h);
+    // ширина, а не координата: третій аргумент fillRect — саме ширина,
+    // і раніше сюди йшло this.fieldX + 2 (працювало лише тому, що поле
+    // центроване, тобто зліва й справа лишається порівну)
+    ctx.fillRect(right, 0, Math.max(0, this.w - right), this.h);
   }
 
-  /* Історія ставок — колонка зліва */
+  /* Історія ставок. На широкому екрані — колонка зліва; на телефоні
+     вона б з'їла пів поля, тому там компактна стрічка зверху зліва.
+     Раніше на вузькому екрані історії не було ВЗАГАЛІ — тобто на
+     основній платформі гри цей код просто ніколи не виконувався. */
   private drawHistory(ctx: CanvasRenderingContext2D): void {
-    if (this.w < 720 || !this.history.length) return;
+    if (!this.history.length) return;
+    if (this.w < 720) { this.drawHistoryStrip(ctx); return; }
+
     const w = 156, rh = 34, x = 14, y = 86;
     const n = Math.min(this.history.length, Math.max(2, Math.floor((this.h - y - 30) / rh) - 1));
 
@@ -978,6 +1045,37 @@ export class Presenter {
         '700 14px ui-monospace, monospace',
         e.win === 0 ? '#7a8595' : (won ? '#5ce08a' : '#e0925c'), 'right');
     }
+  }
+
+  /* Наскільки вниз посунути верхній HUD (сумарний виграш, вікно
+     множника, зачарування): на телефоні верхню смугу займає стрічка
+     історії, і без цього зсуву написи лягали б один на одного. */
+  private get topInset(): number {
+    return this.w < 720 && this.history.length ? 42 : 0;
+  }
+
+  /* Мобільна історія: горизонтальна стрічка останніх ставок у лівому
+     верхньому куті. Найновіша — ліворуч. */
+  private drawHistoryStrip(ctx: CanvasRenderingContext2D): void {
+    const cellW = 30, gap = 4, y = 8, h = 30;
+    const room = Math.floor((this.w * 0.62 + gap) / (cellW + gap));
+    const n = Math.max(0, Math.min(this.history.length, room, 6));
+
+    for (let i = 0; i < n; i++) {
+      const e = this.history[i];
+      const x = 10 + i * (cellW + gap);
+      const won = e.win >= e.cost;
+
+      ctx.globalAlpha = i === 0 ? 1 : 0.72;
+      Render.inset(ctx, x, y, cellW, h, i === 0 ? '#1f2a22' : '#1b1f26', 3);
+      if (!e.item) Render.cross(ctx, x + cellW / 2, y + h * 0.4, 11, 0.85);
+      else Render.pickaxe(ctx, x + cellW / 2, y + h * 0.4, 22, e.item, -0.5, false);
+
+      Render.text(ctx, 'x' + e.x.toFixed(1), x + cellW / 2, y + h - 4,
+        '700 9px ui-monospace, monospace',
+        e.win === 0 ? '#7a8595' : (won ? '#5ce08a' : '#e0925c'));
+    }
+    ctx.globalAlpha = 1;
   }
 
   /* Живий лог виграшу — push-тости знизу екрана, без фону: рядок
@@ -1024,7 +1122,8 @@ export class Presenter {
     if (!this.run || this.state !== 'RUNNING') return;
     const cash = this.run.collected * this.bet / CONFIG.payoutK;
     if (cash <= 0) return;   // "+0" на весь екран нічого не каже — просто мовчимо, доки нема чого показати
-    this.drawMoney(ctx, cash, this.w / 2, 46, '800 20px ui-monospace, monospace', '#ffd34d');
+    this.drawMoney(ctx, cash, this.w / 2, 46 + this.topInset,
+      '800 20px ui-monospace, monospace', '#ffd34d');
   }
 
   /* Вікно множника: поки воно активне (run.multWindowT > 0), усе зібране
@@ -1034,7 +1133,7 @@ export class Presenter {
     const run = this.run;
     if (!run || this.state !== 'RUNNING' || run.multWindowT <= 0 || run.multActive <= 1) return;
 
-    const y = 78;
+    const y = 78 + this.topInset;
     const frac = Math.max(0, Math.min(1, run.multWindowT / MULT_WINDOW_SEC));
     const secs = Math.max(1, Math.ceil(run.multWindowT));
     const urgent = run.multWindowT < 4;
@@ -1057,7 +1156,8 @@ export class Presenter {
   /* Поточний множник зачарування кірки — постійний напис зверху праворуч. */
   private drawEnchantMult(ctx: CanvasRenderingContext2D): void {
     if (!this.run || this.state !== 'RUNNING' || this.enchantMult <= 1) return;
-    Render.text(ctx, 'ЗАЧАР. X' + this.enchantMult.toFixed(2).replace(/\.?0+$/, ''), this.w - 14, 46,
+    Render.text(ctx, 'ЗАЧАР. X' + this.enchantMult.toFixed(2).replace(/\.?0+$/, ''),
+      this.w - 14, 46 + this.topInset,
       '800 15px ui-monospace, monospace', '#d9a3ff', 'right');
   }
 

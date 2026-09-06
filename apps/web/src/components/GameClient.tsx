@@ -105,6 +105,10 @@ export function GameClient() {
     saveCurrency(c);
   }, []);
 
+  /* Заявку на депозит вирішили в CRM — баланс на сервері змінився, а
+     гра сама туди не ходить поза раундами. Перечитуємо стан гравця. */
+  const refreshPlayer = useCallback(() => { void gameRef.current?.refreshPlayer(); }, []);
+
   const spin = useCallback(() => gameRef.current?.primary(), []);
   const setBet = useCallback((b: number) => gameRef.current?.setBet(b), []);
   const cycleSpeed = useCallback(() => gameRef.current?.cycleSpeed(), []);
@@ -351,7 +355,12 @@ export function GameClient() {
       </div>
 
       {showFair && <FairPanel fair={hud.fair} onClose={() => setShowFair(false)} />}
-      {showDeposit && <DepositModal onClose={() => setShowDeposit(false)} />}
+      {showDeposit && (
+        <DepositModal
+          onClose={() => setShowDeposit(false)}
+          onResolved={refreshPlayer}
+        />
+      )}
       {showPayments && <PaymentsPanel onClose={() => setShowPayments(false)} />}
     </div>
   );

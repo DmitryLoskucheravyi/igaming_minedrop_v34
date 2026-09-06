@@ -37,6 +37,17 @@ export interface Env {
 
   /** Адреса гаманця USDT TRC20 для депозитів. Порожньо — депозит вимкнено. */
   usdtTrc20Address: string | null;
+
+  /* ---- CRM ----
+     Обліковий запис адміна засівається в колекцію `admins` при старті.
+     Пароль у БД лежить хешем (scrypt + сіль), у .env — відкритим:
+     .env і є те місце, звідки береться перший пароль. Порожній
+     adminPassword = адміна не завести, вхід у CRM неможливий. */
+  adminLogin: string | null;
+  adminEmail: string | null;
+  adminPassword: string | null;
+  /** Скільки годин живе сесія CRM */
+  adminSessionTtlH: number;
 }
 
 /* Коли можна пускати без підпису телеграма.
@@ -64,6 +75,19 @@ export function loadEnv(): Env {
     );
   }
 
+  /* .env.example давно обіцяв, що в проді MONGO_URL обов'язковий, але
+     ніхто цього не перевіряв: із порожнім рядком сервер спокійно
+     піднімався «в пам'яті» й мовчки втрачав усіх гравців при кожному
+     рестарті. Падати на старті тут набагато краще, ніж дізнатися про
+     це після першого деплою. */
+  const mongoUrl = process.env.MONGO_URL?.trim() || null;
+  if (isProd && !mongoUrl) {
+    throw new Error(
+      'MONGO_URL не заданий. У продакшні без бази не можна: ' +
+      'баланси, заявки й адміни живуть лише в пам\'яті процесу і гинуть із рестартом.',
+    );
+  }
+
   return {
     port: Number(process.env.PORT ?? 4000),
     isProd,
@@ -75,8 +99,13 @@ export function loadEnv(): Env {
     webhookUrl: process.env.TELEGRAM_WEBHOOK_URL?.trim() || null,
     webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || null,
     devAuth: resolveDevAuth(isProd, botToken),
-    mongoUrl: process.env.MONGO_URL?.trim() || null,
+    mongoUrl,
     usdtTrc20Address: process.env.USDT_TRC20_ADDRESS?.trim() || null,
+    adminLogin: process.env.ADMIN_LOGIN?.trim() || null,
+    adminEmail: process.env.ADMIN_EMAIL?.trim() || null,
+    // пароль не тримаємо: у ньому можуть бути значущі пробіли по краях
+    adminPassword: process.env.ADMIN_PASSWORD || null,
+    adminSessionTtlH: Number(process.env.ADMIN_SESSION_TTL_H ?? 12),
   };
 }
 

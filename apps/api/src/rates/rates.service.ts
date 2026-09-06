@@ -14,6 +14,10 @@ import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
    ============================================================ */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/* Після цього віку курс вважається несвіжим: біржа недоступна вже
+   не один цикл оновлення, і рахувати по ньому реальні перекази —
+   значить показати людині суму, яка не збігається з ринком. */
+const STALE_MS = 2 * DAY_MS;
 
 /* Fallback, поки перший запит не пройшов (або якщо API недоступне). */
 const FALLBACK_RUB_PER_USDT = 100;
@@ -50,6 +54,14 @@ export class RatesService implements OnModuleInit {
       rubPerStar: RUB_PER_STAR,
       updatedAt: this.updatedAt,
     };
+  }
+
+  /** Чи курс ПРИБЛИЗНИЙ: жодного успішного запиту (працює fallback)
+      або останній успіх був надто давно. Для косметичного показу
+      балансу це байдуже, а от заявку на депозит по такому курсу
+      треба явно позначати — людина переказує реальні гроші. */
+  isApproximate(): boolean {
+    return this.updatedAt === 0 || Date.now() - this.updatedAt > STALE_MS;
   }
 
   private async refresh(): Promise<void> {

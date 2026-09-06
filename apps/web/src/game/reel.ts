@@ -59,6 +59,11 @@ export class Reel {
     const R = CONFIG.reel;
     this.items = [];
     for (let i = 0; i < R.stripLen; i++) this.items.push(this.filler());
+    /* На лінії виплати в спокої — завжди «пусто». Філер там ставив
+       випадковий символ, і приблизно в кожному шостому випадку рулетка
+       ще до прокруту показувала кірку в рамці — виглядало так, ніби
+       щойно щось виграно. */
+    this.items[R.targetIndex] = null;
     this.offset = R.targetIndex;
     this.spinning = false;
   }

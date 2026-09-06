@@ -122,7 +122,12 @@ export const Render = {
   cracks(ctx: Ctx, x: number, y: number, s: number, p: number, seed: number) {
     if (p <= 0) return;
     const n = Math.round(Math.min(1, p) * 22);
-    let st = ((seed | 0) * 2654435761 % 2147483647) || 12345;
+    /* Math.imul, а не звичайне множення: seed доходить до 2^31, і
+       seed * 2654435761 давало ~5.7e18 — далеко за межами точного
+       діапазону double (2^53). Молодші біти там уже втрачені, тобто
+       «випадковість» малюнка тріщин була вироджена. imul рахує саме
+       32-бітний добуток, як і задумано. */
+    let st = (Math.abs(Math.imul(seed | 0, 2654435761)) % 2147483647) || 12345;
     const rnd = () => (st = (st * 48271) % 2147483647) / 2147483647;
     const u = s / 16;
 

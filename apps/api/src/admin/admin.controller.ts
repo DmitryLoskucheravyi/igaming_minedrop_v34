@@ -1,16 +1,34 @@
 import {
-  Body, Controller, ForbiddenException, Get, Inject, NotFoundException, Param, Post,
+  Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Req, UseGuards,
 } from '@nestjs/common';
-import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
-import { ENV, type Env } from '../config/env';
+import {
+  IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength,
+} from 'class-validator';
 import { PlayersService } from '../players/players.service';
 import { PaymentsService } from '../payments/payments.service';
+import { clientKey } from '../common/rate-limit';
+import { AdminsService } from './admins.service';
+import { AdminAuthGuard, CurrentAdmin, bearerFrom, type AdminRequest } from './admin-auth.guard';
+import type { AdminSession } from './admin.types';
 
 /* ============================================================
-   ADMIN — тимчасова панель на час тестів. БЕЗ авторизації, тому
-   доступна ТІЛЬКИ поза продакшном (loadEnv().isProd === false).
-   Гравці + ручне поповнення + заявки на депозит.
+   ADMIN — CRM: гравці, ручне поповнення, заявки на депозит, адреси.
+
+   Доступ — тільки під обліковим записом адміна (колекція `admins`,
+   див. admins.service.ts). Публічний тут рівно один маршрут — вхід.
+
+   Було: єдиною перепоною стояло `if (isProd) throw` — тобто поза
+   продом CRM була відкрита будь-кому, хто знає адресу, включно з
+   публічним тунелем із `npm run tg`.
    ============================================================ */
+
+class LoginDto {
+  @IsString() @MinLength(1) @MaxLength(120)
+  login!: string;
+
+  @IsString() @MinLength(1) @MaxLength(200)
+  password!: string;
+}
 
 class TopUpDto {
   @IsInt() @Min(1) @Max(100_000_000)
@@ -43,19 +61,41 @@ export class AdminController {
   constructor(
     private readonly players: PlayersService,
     private readonly payments: PaymentsService,
-    @Inject(ENV) private readonly env: Env,
+    private readonly admins: AdminsService,
   ) {}
 
-  private guard(): void {
-    if (this.env.isProd) {
-      throw new ForbiddenException('Админ-панель недоступна в продакшне');
-    }
+  /* ---- вхід ---- */
+
+  /** Єдиний маршрут CRM без токена. Лічильник спроб — в AdminsService. */
+  @Post('login')
+  @HttpCode(200)
+  login(@Body() dto: LoginDto, @Req() req: AdminRequest) {
+    return this.admins.login(dto.login, dto.password, clientKey(req.headers, req.ip));
   }
+
+  @Post('logout')
+  @HttpCode(200)
+  @UseGuards(AdminAuthGuard)
+  logout(@Req() req: AdminRequest) {
+    const token = bearerFrom(req.headers);
+    if (token) this.admins.logout(token);
+    return { ok: true };
+  }
+
+  /** Хто зайшов + до якого часу жива сесія. Фронт кличе на старті,
+      щоб зрозуміти, показувати форму входу чи вже саму CRM. */
+  @Get('me')
+  @UseGuards(AdminAuthGuard)
+  me(@CurrentAdmin() session: AdminSession) {
+    return { admin: this.admins.view(session.adminId), expiresAt: session.expiresAt };
+  }
+
+  /* ---- гравці ---- */
 
   /** Усі гравці, свіжіші зверху. */
   @Get('players')
+  @UseGuards(AdminAuthGuard)
   list() {
-    this.guard();
     const players = this.players.all()
       .sort((a, b) => b.seenAt - a.seenAt)
       .map((r) => ({
@@ -74,19 +114,21 @@ export class AdminController {
 
   /** Поповнити баланс гравця на amount (рублів). */
   @Post('players/:id/topup')
-  topUp(@Param('id') id: string, @Body() dto: TopUpDto) {
-    this.guard();
-    const balance = this.players.topUp(Number(id), dto.amount);
+  @UseGuards(AdminAuthGuard)
+  topUp(@Param('id') id: string, @Body() dto: TopUpDto, @CurrentAdmin() session: AdminSession) {
+    const telegramId = Number(id);
+    if (!Number.isInteger(telegramId)) throw new NotFoundException('Игрок не найден');
+    const balance = this.players.topUp(telegramId, dto.amount, session.login);
     if (balance === null) throw new NotFoundException('Игрок не найден');
-    return { telegramId: Number(id), balance, added: dto.amount };
+    return { telegramId, balance, added: dto.amount };
   }
 
   /* ---- заявки на депозит ---- */
 
   /** Усі заявки: pending зверху. Плюс ім'я/нік гравця й заголовок адреси. */
   @Get('payments')
+  @UseGuards(AdminAuthGuard)
   payList() {
-    this.guard();
     const addrById = new Map(this.payments.addrList().map((a) => [a.id, a]));
     const payments = this.payments.listAll().map((p) => {
       const pl = this.players.byId(p.telegramId);
@@ -104,22 +146,22 @@ export class AdminController {
   }
 
   @Post('payments/:id/approve')
+  @UseGuards(AdminAuthGuard)
   payApprove(@Param('id') id: string) {
-    this.guard();
     return this.payments.approve(id);
   }
 
   @Post('payments/:id/reject')
+  @UseGuards(AdminAuthGuard)
   payReject(@Param('id') id: string, @Body() dto: RejectDto) {
-    this.guard();
     return this.payments.reject(id, dto.note);
   }
 
   /* ---- адреси для прийому ---- */
 
   @Get('addresses')
+  @UseGuards(AdminAuthGuard)
   addrList() {
-    this.guard();
     const busy = new Map<string, number>();
     for (const p of this.payments.listAll()) {
       if (p.status === 'pending' && p.addressId) busy.set(p.addressId, (busy.get(p.addressId) ?? 0) + 1);
@@ -130,20 +172,20 @@ export class AdminController {
   }
 
   @Post('addresses')
+  @UseGuards(AdminAuthGuard)
   addrAdd(@Body() dto: AddAddressDto) {
-    this.guard();
     return this.payments.addAddress(dto.address, dto.label);
   }
 
   @Post('addresses/:id')
+  @UseGuards(AdminAuthGuard)
   addrPatch(@Param('id') id: string, @Body() dto: PatchAddressDto) {
-    this.guard();
     return this.payments.updateAddress(id, dto);
   }
 
   @Post('addresses/:id/delete')
+  @UseGuards(AdminAuthGuard)
   addrDelete(@Param('id') id: string) {
-    this.guard();
     this.payments.removeAddress(id);
     return { ok: true };
   }
