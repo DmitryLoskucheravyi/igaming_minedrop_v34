@@ -118,8 +118,8 @@ for (let i = 0; i < N; i++) {
   t(run.over, 'забіг не завершився за 100000 кроків');
   t(run.reason !== null, 'немає причини завершення');
   t(run.reason !== 'broken' || run.picks.every((p) => p.hp <= 0), 'reason=broken, але не всі кірки зламані');
-  // TNT розносить до TNT_MAX_HITS сусідів за один вибух, тому blocks може перегнати hits саме на стільки
-  t(run.blocks <= run.hits + run.tnts * TNT_MAX_HITS, 'розколото більше блоків, ніж дозволяють удари + вибухи');
+  // одна детонація: до TNT_MAX_HITS твердих + TNT у радіусі 2 (макс 5x5=25)
+  t(run.blocks <= run.hits + run.tnts * (TNT_MAX_HITS + 25), 'розколото більше блоків, ніж дозволяють удари + вибухи');
   t(mine.rows.size < 8000, 'сітка розрослась: ' + mine.rows.size);
 
   totalHits += run.hits; totalBlocks += run.blocks;

@@ -792,15 +792,15 @@ export class Presenter {
       ctx.globalAlpha = 1;
     }
 
-    // рулетка: у центрі, поки не випала кірка, далі їде вгору
+    /* Рулетка стоїть на місці й ЗГАСАЄ (не їде вгору), трохи осідаючи
+       вниз — так видно, як переможна кірка випадає з-під її нижнього
+       краю прямо на поле. */
     const a = 1 - this.stage;
     if (a > 0.01) {
       ctx.fillStyle = 'rgba(4,6,9,' + (0.62 * a).toFixed(3) + ')';
       ctx.fillRect(0, 0, this.w, this.h);
-      const focusY = this.h * 0.46;
-      const riseTo = -this.itemH * CONFIG.reel.visible;
-      const cy = focusY + (riseTo - focusY) * this.stage;
-      this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, Math.min(1, a * 1.6));
+      const cy = this.h * 0.42 + this.stage * this.itemH * 0.9;
+      this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, Math.min(1, a * 1.7));
     }
 
     this.drawHistory(ctx);

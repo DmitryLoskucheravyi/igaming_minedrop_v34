@@ -39,7 +39,7 @@ const EMPTY: HudState = {
   message: 'загрузка…',
   canSpin: false,
   dryStreak: 0,
-  pityAt: 4,
+  pityAt: 7,
   rates: FALLBACK_RATES,
   busy: false,
   resultEmpty: false,
@@ -184,7 +184,7 @@ export function GameClient() {
               <span className="pity-pips" aria-hidden="true">
                 {'●'.repeat(hud.dryStreak) + '○'.repeat(Math.max(0, hud.pityAt - hud.dryStreak))}
               </span>
-              <span>до гарантии</span>
+              <span>{hud.dryStreak}/{hud.pityAt} до гарантии</span>
             </>
           )}
         </div>

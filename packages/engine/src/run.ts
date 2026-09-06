@@ -62,9 +62,10 @@ export const TNT_POWER_MAX = 3.0;  // було 4.4
 export const TNT_STEP = 0.4;
 export const TNT_DECAY_MIN = 0.3;
 export const TNT_DECAY_RAND = 0.25;
-export const TNT_MAX_HITS = 28;    // стеля НА ОДНУ ланку ланцюга (див. impact());
-                                    // ланцюгова детонація сусіднього TNT може дати
-                                    // більше сумарно — це вже не одна вибухівка
+export const TNT_MAX_HITS = 28;    // стеля ТВЕРДИХ блоків на одну детонацію
+                                    // (TNT у наборі не ріжеться — див. impact()).
+export const TNT_CHAIN_RADIUS = 2; // увесь TNT у цьому радіусі від епіцентру
+                                    // детонує гарантовано, поза залежністю від променів
 
 /* Бонус за довжину ланцюга детонацій: що більше TNT здетонувало одним
    вибухом, то більший множник на ВЕСЬ виграш цього вибуху. Береться
@@ -107,6 +108,9 @@ export class Pick {
      Множник діє на ВЕСЬ подальший виграш цієї кірки. */
   enchantLvl = 0;
   enchantMult = 1;
+  /* Алмазна кірка (топ-тір): перший верстак лікує ПОВНІСТЮ, кожен
+     наступний — лише +CONFIG.workbench.topHeal HP (не понад hpMax). */
+  topHealUsed = false;
 
   x: number;
   y: number;
@@ -225,7 +229,7 @@ export class Run {
     this.depth = deepest;
 
     if (this.picks.every((p) => p.dead)) this.finish('broken');
-    else if (this.time > 240) this.finish('timeout');
+    else if (this.time > P.maxTime) this.finish('timeout');
 
     if (--this.pruneIn <= 0) { this.pruneIn = PRUNE_EVERY; this.pruneMine(touchedTop); }
   }
@@ -253,10 +257,15 @@ export class Run {
   private stepPick(p: Pick, dt: number): void {
     p.vy = Math.min(P.maxFall, p.vy + P.gravity * dt);
     p.vx -= p.vx * P.airDrag * dt;
-    /* Оберт — суто анімація (на колізію й виплату не впливає, collide()
-       кутом не користується). Стеля maxSpin + сильніше гасіння тримають
-       перевертання плавним: без стелі кілька ударів поспіль розганяли
-       кірку в нечитабельний блюр. */
+    /* Оберт — суто анімація (collide() кутом не користується). Модель —
+       маятник: важча головка тягне кірку в положення restRot («головкою
+       вниз»). Слабка пружина (rotPull) + гасіння (spinDamp) + стеля
+       (maxSpin) -> кірку від удару гойдає, і вона плавно влягається,
+       а не завмирає під випадковим кутом і не крутиться дзиґою. */
+    const TAU = Math.PI * 2;
+    let d = (p.rot - P.restRot) % TAU;
+    if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU;
+    p.rotV -= d * P.rotPull * dt;
     p.rotV = clamp(p.rotV - p.rotV * P.spinDamp * dt, -P.maxSpin, P.maxSpin);
     p.rot += p.rotV * dt;
 
@@ -317,11 +326,9 @@ export class Run {
     if (def.kind === 'upgrade') {
       this.mine.clear(r, c);
       /* Верстак: прямий дотик підвищує тір (поки є куди рости) і лікує
-         до максимуму. На топ-тірі (Diamond) — просто повний хіл, ЩОРАЗУ
-         (обмеження «один хіл» знято разом із бонускою; тепер довжину
-         забігу все одно тримають timeout 240с і maxHits). Без цього
-         старт саме Diamond'ом виходив гіршим за старт Golden'ом з
-         апгрейдом — топ-кірка не мала свого «рампу».
+         до максимуму. На топ-тірі (Diamond) 1-й верстак дає повний хіл,
+         кожен наступний — лише +CONFIG.workbench.topHeal HP (не понад
+         hpMax). Довжину забігу тримає HP кірки, а не таймер.
          Вибух TNT сюди не заходить (ламає як звичайний блок).
          p.enchanted верстак НЕ чіпає — магічний скін ставить лише стіл. */
       if (p.level < TIERS.length - 1) {
@@ -332,7 +339,8 @@ export class Run {
         this.upgrades++;
         this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: false, pick: idx });
       } else {
-        p.hp = p.hpMax;
+        if (!p.topHealUsed) { p.hp = p.hpMax; p.topHealUsed = true; }
+        else p.hp = Math.min(p.hpMax, p.hp + CONFIG.workbench.topHeal);
         this.upgrades++;
         this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: true, pick: idx });
       }
@@ -429,14 +437,35 @@ export class Run {
             hitMap.set(key, { r: rr, c: cc, id: b.id });
           }
         }
-        let candidates = Array.from(hitMap.values());
-        if (candidates.length > TNT_MAX_HITS) {
-          for (let i = candidates.length - 1; i > 0; i--) {
-            const j = Math.floor(this.rnd() * (i + 1));
-            const tmp = candidates[i]; candidates[i] = candidates[j]; candidates[j] = tmp;
+
+        /* ГАРАНТОВАНА ланцюгова детонація: увесь TNT у радіусі
+           TNT_CHAIN_RADIUS від епіцентру вибухає завжди, навіть якщо
+           жоден промінь через нього не пройшов. Раніше саме через це
+           сусідній динаміт «раз так, раз ні». Детерміновано (без rnd). */
+        for (let rr = er - TNT_CHAIN_RADIUS; rr <= er + TNT_CHAIN_RADIUS; rr++) {
+          for (let cc = ec - TNT_CHAIN_RADIUS; cc <= ec + TNT_CHAIN_RADIUS; cc++) {
+            const key = rr + ',' + cc;
+            if (cleared.has(key) || hitMap.has(key)) continue;
+            const b = this.mine.get(rr, cc);
+            if (b && !isWall(b) && BLOCKS[b.id].kind === 'tnt') {
+              hitMap.set(key, { r: rr, c: cc, id: b.id });
+            }
           }
-          candidates = candidates.slice(0, TNT_MAX_HITS);
         }
+
+        /* TNT з набору НІКОЛИ не відкидається лімітом — інакше ланцюг
+           знову рветься. Обрізаємо (за потреби) лише тверді блоки. */
+        const all = Array.from(hitMap.values());
+        const tntCells = all.filter((b) => BLOCKS[b.id].kind === 'tnt');
+        let solidCells = all.filter((b) => BLOCKS[b.id].kind !== 'tnt');
+        if (solidCells.length > TNT_MAX_HITS) {
+          for (let i = solidCells.length - 1; i > 0; i--) {
+            const j = Math.floor(this.rnd() * (i + 1));
+            const tmp = solidCells[i]; solidCells[i] = solidCells[j]; solidCells[j] = tmp;
+          }
+          solidCells = solidCells.slice(0, TNT_MAX_HITS);
+        }
+        const candidates = [...tntCells, ...solidCells];
 
         const hit: { r: number; c: number; id: Cell['id'] }[] = [];
         let got = 0;
