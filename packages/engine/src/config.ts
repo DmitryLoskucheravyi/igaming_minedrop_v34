@@ -62,11 +62,12 @@ export const CONFIG = {
      (наприклад, до ~2, щоб кірка була ~89% і компенсувала втрату
      7 попередніх шансів; підбирай через sim/final.ts і sim/balance.ts). */
   spinsPerBet: 1,
-  /* Ваги рулетки задають частоту запуску шахти. ≈ 16.7% за ставку:
-     nothingWeight 100 проти суми кірок 20 (9+5+3+2+1), разом 120.
-     Розклад за ставку: Wooden 7.5% / Stone 4.2% / Iron 2.5% /
-     Golden 1.7% / Diamond 0.83%. Фінал — симуляцією з payoutK. */
-  nothingWeight: 100,
+  /* Ваги рулетки задають частоту запуску шахти. ≈ 15.5% за ставку:
+     nothingWeight 109 проти суми кірок 20 (9+5+3+2+1), разом 129.
+     Розклад за ставку: Wooden 7.0% / Stone 3.9% / Iron 2.3% /
+     Golden 1.6% / Diamond 0.78%. Фінал — симуляцією з payoutK.
+     Було 100 (16.7%) — кірку зроблено на 7% рідшою. */
+  nothingWeight: 109,
   /* PITY: стільки пустих ставок ПІДРЯД, після яких НАСТУПНА гарантовано
      дає кірку (кожна 8-ма = 7 пустих + форс). Тір — за звичайними вагами.
      Лічильник живе на гравці ОКРЕМО по кожній ставці (PlayerRecord.dryStreaks). */
@@ -234,13 +235,19 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   grass:    { id: 'grass',    name: 'Дёрн',     kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#5f8a3f', skin: '/земля_трава.jpg' },
   dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
   stone:    { id: 'stone',    name: 'Камень',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
-  coal:     { id: 'coal',     name: 'Уголь',    kind: 'solid', tough: 2,  cost: 1, value: 1,   color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
-  iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 5,   color: '#b98b6c', skin: '/assets/blocks/7.png' },
-  lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 10,  color: '#1f4fa8', skin: '/лазурит.jpg' },
-  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 5,  cost: 1, value: 15,  color: '#b3241f', skin: '/редстоун.jpg' },
-  gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 20,  color: '#e8c33a', skin: '/assets/blocks/6.png' },
-  diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 45,  color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
-  emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 130, color: '#16c96a', skin: '/ізумруд.jpg' },
+  /* Вартості зрізано рівно на 15% (× 0.85) від попередніх цілих:
+     1 / 5 / 10 / 15 / 20 / 45 / 130. Дроби лишені навмисно — округлення
+     до цілих зіпсувало б саме те, заради чого правка робиться: вугілля
+     з 0.85 стало б 1 (нуль зрізу), а редстоун із 12.75 -> 13 (-13%
+     замість -15%). value ніде не показується як є: у виплату йде
+     value * ставка / payoutK, тож дробове значення нічого не ламає. */
+  coal:     { id: 'coal',     name: 'Уголь',    kind: 'solid', tough: 2,  cost: 1, value: 0.85,  color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
+  iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 4.25,  color: '#b98b6c', skin: '/assets/blocks/7.png' },
+  lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 8.5,   color: '#1f4fa8', skin: '/лазурит.jpg' },
+  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 5,  cost: 1, value: 12.75, color: '#b3241f', skin: '/редстоун.jpg' },
+  gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 17,    color: '#e8c33a', skin: '/assets/blocks/6.png' },
+  diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 38.25, color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
+  emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 110.5, color: '#16c96a', skin: '/ізумруд.jpg' },
   tnt:      { id: 'tnt',      name: 'TNT',      kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/assets/blocks/3.jpg' },
   magic:    { id: 'magic',    name: 'Верстак',           kind: 'upgrade', tough: 1, cost: 1, value: 0, color: '#c8a165', skin: '/assets/blocks/4.png' },
   enchant:  { id: 'enchant',  name: 'Стол зачарования',  kind: 'magic', tough: 1, cost: 1, value: 0, color: '#6c3ec9', skin: '/чарстол.jpg' },
@@ -270,7 +277,7 @@ export function depthWeights(r: number): Record<string, number> {
     dirt:  r === 0 ? 0 : 70 * (1 - ramp(r, 0, 6)),
     stone: r === 0 ? 0 : 30 + 45 * ramp(r, 0, 6),
     tnt:     r < 3 ? 0 : 1.25,   // −50%: динаміту було 2.5
-    magic:   r < 3 ? 0 : 0.40,   // верстак ≈ 0.47% фонових клітинок. Підвищує тір
+    magic:   r < 3 ? 0 : 0.36,   // верстак. Підвищує тір. Було 0.40 — на 10% менше
     enchant: r < 10 ? 0 : 0.15,  // стіл зачарування — 3 рівні множника кірки
     mult:    r < 2 ? 0 : CONFIG.mult.weight,
   };
