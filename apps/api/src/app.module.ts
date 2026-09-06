@@ -5,8 +5,12 @@ import { PlayersModule } from './players/players.module';
 import { FairnessModule } from './fairness/fairness.module';
 import { RoundsModule } from './rounds/rounds.module';
 import { RatesModule } from './rates/rates.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
-  imports: [ConfigModule, RatesModule, TelegramModule, PlayersModule, FairnessModule, RoundsModule],
+  imports: [
+    ConfigModule, RatesModule, TelegramModule, PlayersModule,
+    FairnessModule, RoundsModule, AdminModule,
+  ],
 })
 export class AppModule {}

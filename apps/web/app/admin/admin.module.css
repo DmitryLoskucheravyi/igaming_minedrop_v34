@@ -1,0 +1,209 @@
+/* Адмін-панель. Окремий, не-ігровий стиль. Оболонка — fixed поверх
+   усього, бо app/globals.css вішає body{overflow:hidden} під мініапс. */
+.shell {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: #0e1216;
+  color: #e6e9ee;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 0;
+  padding: clamp(16px, 4vw, 40px);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.head h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+}
+.count {
+  font: 600 12px ui-monospace, monospace;
+  color: #8a94a0;
+  background: #171d23;
+  border: 1px solid #2a333c;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.refresh {
+  margin-left: auto;
+  font: 600 13px inherit;
+  color: #cdd3da;
+  background: #1c242b;
+  border: 1px solid #2a333c;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.refresh:hover { background: #232c34; }
+.refresh:disabled { opacity: .5; cursor: default; }
+
+.err {
+  border: 1px solid #7a3b38;
+  background: #2a1614;
+  color: #e8a29e;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  font-size: 14px;
+}
+
+.tableWrap {
+  border: 1px solid #2a333c;
+  border-radius: 12px;
+  overflow-x: auto;
+  background: #12171c;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.table th, .table td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid #222a31;
+  white-space: nowrap;
+}
+.table th {
+  font: 600 11px ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #7c8590;
+  background: #171d23;
+}
+.table tbody tr:last-child td { border-bottom: none; }
+.table tbody tr:hover td { background: #171d23; }
+.table td.num {
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.table th.num { text-align: right; }
+
+.player .name { font-weight: 600; }
+.player .sub { color: #7c8590; font: 400 12px ui-monospace, monospace; margin-top: 2px; }
+
+.balance { color: #ffd34d; font-weight: 600; }
+
+.addBtn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 20px inherit;
+  line-height: 1;
+  color: #08210f;
+  background: #4ec86a;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.addBtn:hover { background: #5cd97a; }
+
+.empty {
+  padding: 40px 16px;
+  text-align: center;
+  color: #7c8590;
+  font-size: 14px;
+}
+
+/* ---- модалка ---- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 6, 9, .68);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 10;
+}
+.modal {
+  width: 100%;
+  max-width: 380px;
+  background: #171d23;
+  border: 1px solid #2a333c;
+  border-radius: 14px;
+  padding: 22px;
+}
+.modal h2 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.modal .cur {
+  color: #8a94a0;
+  font-size: 13px;
+  margin: 0 0 18px;
+}
+.modal .cur b { color: #ffd34d; }
+
+.label {
+  display: block;
+  font: 600 11px ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #7c8590;
+  margin-bottom: 6px;
+}
+.input {
+  width: 100%;
+  font: 600 18px ui-monospace, monospace;
+  color: #e6e9ee;
+  background: #0e1216;
+  border: 1px solid #2a333c;
+  border-radius: 8px;
+  padding: 11px 13px;
+}
+.input:focus { outline: 2px solid #4ec86a; outline-offset: -1px; }
+
+.chips {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 22px;
+}
+.chip {
+  flex: 1;
+  font: 600 13px ui-monospace, monospace;
+  color: #cdd3da;
+  background: #1c242b;
+  border: 1px solid #2a333c;
+  border-radius: 8px;
+  padding: 9px 0;
+  cursor: pointer;
+}
+.chip:hover { background: #232c34; border-color: #3a4650; }
+
+.actions { display: flex; gap: 10px; }
+.confirm {
+  flex: 1;
+  font: 700 14px inherit;
+  color: #08210f;
+  background: #4ec86a;
+  border: 0;
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+}
+.confirm:hover { background: #5cd97a; }
+.confirm:disabled { background: #3a4650; color: #7c8590; cursor: default; }
+.cancel {
+  font: 600 14px inherit;
+  color: #cdd3da;
+  background: transparent;
+  border: 1px solid #2a333c;
+  border-radius: 8px;
+  padding: 12px 18px;
+  cursor: pointer;
+}
+.cancel:hover { background: #1c242b; }

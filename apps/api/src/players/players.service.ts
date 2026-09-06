@@ -123,4 +123,25 @@ export class PlayersService {
     rec.history.unshift(result);
     if (rec.history.length > HISTORY_LIMIT) rec.history.length = HISTORY_LIMIT;
   }
+
+  /* ---- для адмін-панелі (тимчасова, поза продом) ---- */
+
+  /** Усі заведені гравці. */
+  all(): PlayerRecord[] {
+    return [...this.players.values()];
+  }
+
+  /** Гравець за telegram id або undefined. */
+  byId(telegramId: number): PlayerRecord | undefined {
+    return this.players.get(telegramId);
+  }
+
+  /** Ручне поповнення балансу. Повертає новий баланс або null. */
+  topUp(telegramId: number, amount: number): number | null {
+    const rec = this.players.get(telegramId);
+    if (!rec) return null;
+    rec.balance += amount;
+    this.log.warn(`адмін-поповнення: ${telegramId} +${amount} -> ${rec.balance}`);
+    return rec.balance;
+  }
 }
