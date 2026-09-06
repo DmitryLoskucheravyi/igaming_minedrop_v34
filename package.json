@@ -18,6 +18,7 @@
     "sim:smoke": "npm run sim:smoke -w @minedrop/engine",
     "sim:final": "npm run sim:final -w @minedrop/engine",
     "sim:balance": "npm run sim:balance -w @minedrop/engine",
+    "sim:tiers": "npm run sim:tiers -w @minedrop/engine",
     "sim:fair": "npm run sim:fair -w @minedrop/engine",
     "typecheck": "npm run typecheck -w @minedrop/engine && npm run typecheck -w @minedrop/api && npm run typecheck -w @minedrop/web",
     "sim:e2e": "npm run sim:e2e -w @minedrop/engine",

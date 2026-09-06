@@ -39,8 +39,9 @@ export type SpinResult = TierId | null;
 export type RunEvent =
   | { t: 'break'; r: number; c: number; id: BlockId; got: number; pick: number }
   | { t: 'crack'; r: number; c: number; id: BlockId; stage: number; of: number; pick: number }
-  | { t: 'tnt'; r: number; c: number; hit: { r: number; c: number; id: BlockId }[]; got: number; pick: number }
-  | { t: 'magic'; r: number; c: number; mult: number; pick: number }
+  | { t: 'tnt'; r: number; c: number; hit: { r: number; c: number; id: BlockId }[]; got: number; chain: number; pick: number }
+  | { t: 'tntchain'; r: number; c: number; chain: number; mult: number; extra: number; pick: number }
+  | { t: 'magic'; r: number; c: number; mult: number; lvl: number; pick: number }
   | { t: 'upgrade'; r: number; c: number; tier: TierId; healOnly: boolean; pick: number }
   /* m — номінал блоку (x2, x5...), active — множник вікна після цього блоку,
      secs — на скільки секунд відкрито/подовжено вікно множення */

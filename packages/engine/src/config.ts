@@ -33,11 +33,11 @@ export const CONFIG = {
   startBalance: 3000,     // dev
   bets: [10, 25, 50, 100, 250],
   /* Дільник виплати. Підбирається sim/final.ts під RTP 95% (послідовний
-     потік ставок із pity). Після баффу частоти кірки (14.6% -> ~38% за
-     ставку з pity) RTP при K=252 злетів до 161%, тому K перерахований.
-     Наступні зміни (перебалансування руди, enchant) вимагатимуть ще
-     одного прогону. */
-  payoutK: 428,
+     потік ставок із pity). Історія: 252 (RTP 61% при 14.6% кірок) ->
+     428 (після баффу частоти до ~38%) -> 587 (після Стадії 2/3: верстак
+     завжди лікує, крута крива руди 1..130, enchant ×1.25/1.5/2, бонус
+     за ланцюг TNT). Будь-яка зміна ваг/цінностей вимагає нового прогону. */
+  payoutK: 587,
   /* Стеля виграшу за раунд, у ставках. Реальний максимум на поточній
      математиці ≈ x26 на 50k ставок (p99.9 ≈ x15), тому стеля майже
      ніколи не спрацьовує — це чесний запобіжник, а не маркетингове
@@ -86,6 +86,13 @@ export const CONFIG = {
     visible: 3,           // скільки символів видно у вікні: над / на лінії / під
     widthRatio: 1,        // квадратна комірка-символ, як у класичному слоті
     riseMs: 550,          // за скільки рулетка їде вгору, коли випала кірка
+  },
+
+  /* ---- СТІЛ ЗАЧАРУВАННЯ ----
+     3 фіксовані рівні множника кірки. I → ×1.25, II → ×1.5, III → ×2.0,
+     далі дотики без ефекту. Діє на весь подальший виграш ЦІЄЇ кірки. */
+  enchant: {
+    steps: [1.25, 1.5, 2.0],
   },
 
   /* ---- БЛОКИ-МНОЖНИКИ ----
@@ -203,32 +210,30 @@ export const NOTHING = { id: 'none', name: 'Пусто', color: '#39424f', color
            а сама виплата множиться на bet — тому чим більша ставка, тим
            дорожчий той самий блок).
            Земля й камінь — суцільний наповнювач шахти, у виграш не йдуть
-           (value 0). Далі — логічна градація за рідкістю: вугілля <
-           редстоун < залізо < лазурит < золото < алмаз < ізумруд (найдорожчий).
-           Значення підняті приблизно вдвічі за проханням («занадто мало
-           виграємо») — payoutK свідомо НЕ перераховано у відповідь: ефект
-           саме в тому, щоб виплата реально зросла, а не компенсувалась.
+           (value 0). Далі — крута прогресія: 1 / 3 / 5 / 10 / 20 / 45 / 130.
+           Спред вугілля→ізумруд ×130 (було ×35) — щоб глибокий забіг із
+           ізумрудом реально відчувався як jackpot. payoutK підганяється
+           симуляцією під RTP 95% після кожної зміни.
 
-   ВЕРСТАК проти СТОЛУ ЗАЧАРУВАННЯ — два РІЗНІ ефекти, не один:
+   ВЕРСТАК проти СТОЛУ ЗАЧАРУВАННЯ — два РІЗНІ ефекти:
      - верстак (id magic, kind 'upgrade') — прямий дотик підвищує тір
        (поки є куди рости) і лікує до максимуму; на топ-тірі (Diamond)
-       лікує ЛИШЕ ОДИН РАЗ (без цього — безкінечний безкоштовний хіл
-       у бонусці з кількома кірками, саме це раніше й ламало РТП);
-       вибух TNT просто ламає його, без жодного ефекту.
-     - стіл зачарування (id enchant, kind 'magic') — НЕ підвищує тір
-       і не лікує, лише додає +0.1 до множника виграшу цієї кірки.
+       щоразу дає повний хіл (довжину забігу тримають timeout + maxHits).
+       Вибух TNT просто ламає його, без ефекту.
+     - стіл зачарування (id enchant, kind 'magic') — НЕ підвищує тір і
+       не лікує; 3 фіксовані рівні множника кірки (×1.25 / ×1.5 / ×2.0).
 */
 export const BLOCKS: Record<BlockId, BlockDef> = {
   grass:    { id: 'grass',    name: 'Дёрн',     kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#5f8a3f', skin: '/земля_трава.jpg' },
   dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
   stone:    { id: 'stone',    name: 'Камень',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
-  coal:     { id: 'coal',     name: 'Уголь',    kind: 'solid', tough: 2,  cost: 1, value: 2,  color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
-  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 3,  cost: 1, value: 5,  color: '#b3241f', skin: '/редстоун.jpg' },
-  iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 6,  color: '#b98b6c', skin: '/assets/blocks/7.png' },
-  lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 12, color: '#1f4fa8', skin: '/лазурит.jpg' },
-  gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 16, color: '#e8c33a', skin: '/assets/blocks/6.png' },
-  diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 35, color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
-  emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 70, color: '#16c96a', skin: '/ізумруд.jpg' },
+  coal:     { id: 'coal',     name: 'Уголь',    kind: 'solid', tough: 2,  cost: 1, value: 1,   color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
+  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 3,  cost: 1, value: 3,   color: '#b3241f', skin: '/редстоун.jpg' },
+  iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 5,   color: '#b98b6c', skin: '/assets/blocks/7.png' },
+  lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 10,  color: '#1f4fa8', skin: '/лазурит.jpg' },
+  gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 20,  color: '#e8c33a', skin: '/assets/blocks/6.png' },
+  diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 45,  color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
+  emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 130, color: '#16c96a', skin: '/ізумруд.jpg' },
   tnt:      { id: 'tnt',      name: 'TNT',      kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/assets/blocks/3.jpg' },
   magic:    { id: 'magic',    name: 'Верстак',           kind: 'upgrade', tough: 1, cost: 1, value: 0, color: '#c8a165', skin: '/assets/blocks/4.png' },
   enchant:  { id: 'enchant',  name: 'Стол зачарования',  kind: 'magic', tough: 1, cost: 1, value: 0, color: '#6c3ec9', skin: '/чарстол.jpg' },

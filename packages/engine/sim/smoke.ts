@@ -1,5 +1,5 @@
 /* Інваріанти фізики та логіки. npm run sim:smoke -- [забігів] */
-import { BLOCKS, CONFIG } from '../src/config';
+import { BLOCKS, CONFIG, TIERS } from '../src/config';
 import { buildSetup, createRun } from '../src/round';
 import { MULT_CHAIN_CAP, MULT_WINDOW_SEC, TNT_MAX_HITS } from '../src/run';
 import { isWall } from '../src/world';
@@ -88,20 +88,28 @@ for (let i = 0; i < N; i++) {
         t(run.multActive === e.active && run.multWindowT > 0,
           'стан вікна не збігається з подією');
       }
-      // стіл зачарування — ЄДИНЕ джерело магічного скіну
-      if (e.t === 'magic') t(run.picks.some((q) => q.enchanted), 'стіл зачарування не зачарував жодної кірки');
+      // стіл зачарування — ЄДИНЕ джерело магічного скіну; 3 рівні
+      if (e.t === 'magic') {
+        t(run.picks.some((q) => q.enchanted), 'стіл зачарування не зачарував жодної кірки');
+        t(e.lvl >= 1 && e.lvl <= CONFIG.enchant.steps.length, 'рівень зачарування поза межами: ' + e.lvl);
+        t(e.mult === CONFIG.enchant.steps[e.lvl - 1], 'множник не відповідає рівню');
+      }
       // верстак підвищує тір або лікує, але enchanted НЕ чіпає
       if (e.t === 'upgrade') {
         const q = run.picks[e.pick];
         t(!!q, 'подія верстака посилається на неіснуючу кірку');
-        if (q && e.healOnly) t(q.maxHealUsed, 'healOnly-апгрейд не позначив maxHealUsed');
+        if (q && e.healOnly) t(q.level === TIERS.length - 1, 'healOnly-апгрейд не на топ-тірі');
         if (q && !e.healOnly) t(q.level > 0, 'апгрейд тіру не підняв рівень кірки');
       }
       // 'tnt' у hit — ланцюгова детонація (той TNT теж вибухне окремою подією)
-      if (e.t === 'tnt') for (const h of e.hit) {
-        const k = BLOCKS[h.id].kind;
-        t(k === 'solid' || k === 'magic' || k === 'upgrade' || k === 'tnt', 'вибух зачепив не той блок');
+      if (e.t === 'tnt') {
+        t(e.chain >= 1, 'chain лічильник TNT некоректний: ' + e.chain);
+        for (const h of e.hit) {
+          const k = BLOCKS[h.id].kind;
+          t(k === 'solid' || k === 'magic' || k === 'upgrade' || k === 'tnt', 'вибух зачепив не той блок');
+        }
       }
+      if (e.t === 'tntchain') t(e.chain >= 3 && e.mult > 1, 'бонус ланцюга TNT при chain < 3');
     }
     lastLevels = run.picks.map((p) => p.level);
     run.events.length = 0;

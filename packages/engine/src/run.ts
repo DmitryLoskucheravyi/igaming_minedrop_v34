@@ -66,6 +66,20 @@ export const TNT_MAX_HITS = 28;    // стеля НА ОДНУ ланку лан
                                     // ланцюгова детонація сусіднього TNT може дати
                                     // більше сумарно — це вже не одна вибухівка
 
+/* Бонус за довжину ланцюга детонацій: що більше TNT здетонувало одним
+   вибухом, то більший множник на ВЕСЬ виграш цього вибуху. Береться
+   найвищий досяжний поріг. Входить у RTP (симуляція це враховує). */
+export const TNT_CHAIN_BONUS: readonly { at: number; mult: number }[] = [
+  { at: 3, mult: 1.10 },
+  { at: 5, mult: 1.25 },
+  { at: 10, mult: 1.50 },
+];
+export function tntChainBonus(chain: number): number {
+  let m = 1;
+  for (const b of TNT_CHAIN_BONUS) if (chain >= b.at) m = b.mult;
+  return m;
+}
+
 /* Блок-множник (x2..x15) БІЛЬШЕ НЕ іксує вже зібране. Замість цього він
    відкриває ВІКНО на MULT_WINDOW_SEC секунд, і все, що зібрано за цей
    час (звичайні удари + вибухи TNT), множиться на активний множник.
@@ -88,15 +102,11 @@ export class Pick {
      Верстак (апгрейд тіру) його НЕ вмикає — після верстака кірка носить
      звичайний скін свого нового тіру. */
   enchanted = false;
-  /* Стіл зачарування НЕ підвищує тір і не лікує — замість цього кожен
-     дотик додає +0.1 до множника, який діє на ВЕСЬ виграш ЦІЄЇ кірки
-     з цього моменту й далі (не заднім числом, як блок-множник):
-     1-й стіл -> x1.1, 2-й -> x1.2, 3-й -> x1.3 і так далі. */
+  /* Стіл зачарування — 3 фіксовані рівні (CONFIG.enchant.steps):
+     I → ×1.25, II → ×1.5, III → ×2.0. Далі дотики без ефекту.
+     Множник діє на ВЕСЬ подальший виграш цієї кірки. */
+  enchantLvl = 0;
   enchantMult = 1;
-  /* Верстак на максимальному тірі (Diamond) лікує РІВНО ОДИН раз — далі
-     нічого не робить. Без цього обмеження кірка на топ-тірі отримувала
-     б безкінечний безкоштовний хіл від кожного наступного верстака. */
-  maxHealUsed = false;
 
   x: number;
   y: number;
@@ -307,17 +317,13 @@ export class Run {
     if (def.kind === 'upgrade') {
       this.mine.clear(r, c);
       /* Верстак: прямий дотик підвищує тір (поки є куди рости) і лікує
-         до максимуму. На топ-тірі (Diamond) — лише ОДИН додатковий хіл,
-         далі жодного ефекту (без цього кірка на топ-тірі отримувала б
-         безкінечний безкоштовний хіл від кожного наступного верстака —
-         саме це раніше ламало РТП у бонусці). Вибух TNT сюди не заходить:
-         блоки цього kind ламаються ним як звичайні, без жодного ефекту
-         (див. цикл вибуху нижче — там лише this.collected += value).
-
-         ВАЖЛИВО: верстак НЕ чіпає p.enchanted. «Магічний» скін кірки
-         ставить ЛИШЕ стіл зачарування. Після апгрейду кірка показує
-         звичайний скін нового тіру; якщо її до того зачарували столом —
-         лишається зачарованою (тепер магічний скін нового тіру). */
+         до максимуму. На топ-тірі (Diamond) — просто повний хіл, ЩОРАЗУ
+         (обмеження «один хіл» знято разом із бонускою; тепер довжину
+         забігу все одно тримають timeout 240с і maxHits). Без цього
+         старт саме Diamond'ом виходив гіршим за старт Golden'ом з
+         апгрейдом — топ-кірка не мала свого «рампу».
+         Вибух TNT сюди не заходить (ламає як звичайний блок).
+         p.enchanted верстак НЕ чіпає — магічний скін ставить лише стіл. */
       if (p.level < TIERS.length - 1) {
         p.level++;
         p.tier = TIERS[p.level];
@@ -325,9 +331,8 @@ export class Run {
         p.hp = p.tier.hp;
         this.upgrades++;
         this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: false, pick: idx });
-      } else if (!p.maxHealUsed) {
+      } else {
         p.hp = p.hpMax;
-        p.maxHealUsed = true;
         this.upgrades++;
         this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId, healOnly: true, pick: idx });
       }
@@ -337,14 +342,18 @@ export class Run {
 
     if (def.kind === 'magic') {
       this.mine.clear(r, c);
-      /* Стіл зачарування НЕ підвищує тір і не лікує — тільки додає
-         +0.1 до множника цієї кірки (1-й стіл -> x1.1, 2-й -> x1.2...),
-         який діє на її виграш з цього моменту й ДАЛІ, а не заднім
-         числом на вже зібране (на відміну від блока-множника нижче). */
-      p.enchantMult += 0.1;
+      /* Стіл зачарування: 3 фіксовані рівні множника цієї кірки
+         (CONFIG.enchant.steps: ×1.25 → ×1.5 → ×2.0). Множник діє на
+         виграш кірки з цього моменту й ДАЛІ (не заднім числом). Далі
+         дотики без ефекту. */
+      const steps = CONFIG.enchant.steps;
+      if (p.enchantLvl < steps.length) {
+        p.enchantLvl++;
+        p.enchantMult = steps[p.enchantLvl - 1];
+      }
       p.enchanted = true;
       this.upgrades++;
-      this.events.push({ t: 'magic', r, c, mult: p.enchantMult, pick: idx });
+      this.events.push({ t: 'magic', r, c, mult: p.enchantMult, lvl: p.enchantLvl, pick: idx });
       this.bounce(p, dx, sideways, 0.7);
       return;
     }
@@ -392,10 +401,13 @@ export class Run {
       const cleared = new Set<string>([r + ',' + c]);
       const queue: [number, number][] = [[r, c]];
       let chainGuard = 0;
+      let chainLen = 0;   // скільки TNT здетонувало цим одним вибухом
+      let blastGot = 0;   // сирий виграш вибуху до бонуса за ланцюг
 
       while (queue.length && chainGuard++ < 60) {
         const [er, ec] = queue.shift()!;
         this.tnts++;
+        chainLen++;
 
         const hitMap = new Map<string, { r: number; c: number; id: Cell['id'] }>();
         for (let i = 0; i < TNT_RAYS; i++) {
@@ -437,9 +449,17 @@ export class Run {
           // верстак: value 0, просто ламається. multActive=1 поза вікном.
           else got += BLOCKS[b.id].value * p.enchantMult * this.multActive;
         }
-        this.collected += got;
+        blastGot += got;
 
-        this.events.push({ t: 'tnt', r: er, c: ec, hit, got, pick: idx });
+        this.events.push({ t: 'tnt', r: er, c: ec, hit, got, chain: chainLen, pick: idx });
+      }
+
+      /* Бонус за довжину ланцюга — на ВЕСЬ виграш цього вибуху. */
+      const chainMult = tntChainBonus(chainLen);
+      this.collected += blastGot * chainMult;
+      if (chainMult > 1) {
+        this.events.push({ t: 'tntchain', r, c, chain: chainLen, mult: chainMult,
+                           extra: blastGot * (chainMult - 1), pick: idx });
       }
 
       p.vy = -P.tntBlast;

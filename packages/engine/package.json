@@ -17,6 +17,7 @@
     "sim:determinism": "tsx sim/determinism.ts",
     "sim:final": "tsx sim/final.ts",
     "sim:balance": "tsx sim/balance.ts",
+    "sim:tiers": "tsx sim/tierdiag.ts",
     "sim:fair": "tsx sim/fairness.ts",
     "sim:e2e": "tsx sim/e2e.ts",
     "make:initdata": "tsx sim/make-initdata.ts"

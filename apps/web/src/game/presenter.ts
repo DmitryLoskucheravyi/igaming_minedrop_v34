@@ -592,23 +592,36 @@ export class Presenter {
         // перераховуємо з e.hit клієнтом, бо множник зачарування —
         // рантайм-стан кірки, його нема в статичній таблиці BLOCKS
         const cash = e.got * this.bet / CONFIG.payoutK;
-        this.shake = 26;
+        this.shake = Math.min(34, 22 + e.chain * 3);
         this.flash = 0.35; this.flashColor = '#ff7a2b';
+        const boom = e.chain > 1 ? 'БУМ X' + e.chain : 'БУМ!';
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.3,
-          text: 'БУМ!', color: '#ff8a2b', size: 0.26,
-          money: cash > 0 ? cash : undefined, prefix: 'БУМ! +' });
-        if (cash > 0) this.pushLog('БУМ!', '#ff8a2b', cash);
+          text: boom, color: '#ff8a2b', size: 0.26,
+          money: cash > 0 ? cash : undefined, prefix: boom + ' +' });
+        if (cash > 0) this.pushLog(boom, '#ff8a2b', cash);
       } else if (e.t === 'magic') {
-        // подія від СТОЛУ ЗАЧАРУВАННЯ: не підвищує кірку, лише
-        // накопичує множник e.mult (верстак — окрема подія 'upgrade' нижче)
+        // СТІЛ ЗАЧАРУВАННЯ: 3 фіксовані рівні множника кірки (не підвищує тір)
         this.burst(e.c + 0.5, e.r + 0.5, '#c46bff', 40, 2.2);
         this.shake = 16;
         this.flash = 0.4; this.flashColor = '#c46bff';
-        const mtxt = 'X' + e.mult.toFixed(1);
+        const roman = ['I', 'II', 'III'][e.lvl - 1] ?? String(e.lvl);
+        const mtxt = 'X' + e.mult.toFixed(2).replace(/\.?0+$/, '');
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
-          text: 'ЗАЧАРОВАНИЕ! ' + mtxt, color: '#d9a3ff', size: 0.24 });
-        this.pushLog('Зачарование! ' + mtxt, '#d9a3ff');
+          text: 'ЗАЧАРОВАНИЕ ' + roman + '  ' + mtxt, color: '#d9a3ff', size: 0.22 });
+        this.pushLog('Зачарование ' + roman + ' · ' + mtxt, '#d9a3ff');
         this.enchantMult = e.mult;
+      } else if (e.t === 'tntchain') {
+        // бонус за довгий ланцюг детонацій — на весь виграш вибуху
+        this.shake = 24;
+        this.flash = 0.5; this.flashColor = '#ff9a3c';
+        const cash = e.extra * this.bet / CONFIG.payoutK;
+        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.8,
+          text: 'TNT CHAIN X' + e.chain, color: '#ffb15a', size: 0.3,
+          money: cash > 0 ? cash : undefined,
+          prefix: 'TNT CHAIN X' + e.chain + '  +' + Math.round((e.mult - 1) * 100) + '%  +' });
+        this.pushLog('TNT CHAIN X' + e.chain + ' · +' + Math.round((e.mult - 1) * 100) + '%',
+          '#ffb15a', cash > 0 ? cash : undefined);
+        haptic('win');
       } else if (e.t === 'upgrade') {
         // подія від ВЕРСТАКА: підвищує тір (поки є куди рости) і лікує;
         // на топ-тірі — лише один додатковий хіл (healOnly), без назви тіру
@@ -970,12 +983,11 @@ export class Presenter {
     ctx.fillRect(bx, by, bw * frac, 4);
   }
 
-  /* Поточний множник зачарування — постійний напис зверху праворуч,
-     просто текстом. Показує найвищий множник серед живих кірок. */
+  /* Поточний множник зачарування кірки — постійний напис зверху праворуч. */
   private drawEnchantMult(ctx: CanvasRenderingContext2D): void {
     if (!this.run || this.state !== 'RUNNING' || this.enchantMult <= 1) return;
-    Render.text(ctx, 'X' + this.enchantMult.toFixed(1), this.w - 14, 46,
-      '800 16px ui-monospace, monospace', '#d9a3ff', 'right');
+    Render.text(ctx, 'ЗАЧАР. X' + this.enchantMult.toFixed(2).replace(/\.?0+$/, ''), this.w - 14, 46,
+      '800 15px ui-monospace, monospace', '#d9a3ff', 'right');
   }
 
   private drawResult(ctx: CanvasRenderingContext2D): void {
