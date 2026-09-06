@@ -14,7 +14,21 @@
    ============================================================ */
 
 import { bonusReelTable, CONFIG, reelTable } from '@minedrop/engine';
+import { Assets } from './assets';
 import { Render, type ReelItem } from './render';
+
+/* Геометрія рамки (public/рамка.png, 941x1672 — вужча версія) —
+   заміряно з самого файлу (аналіз альфа-каналу): прозорий центр НЕ
+   рівно по центру зображення, тому координати внутрішнього вікна
+   беремо як частку від повних розмірів рамки, а не як фіксований
+   відступ у пікселях (щоб масштабування на будь-який розмір екрана
+   лишалось коректним). */
+const FRAME_W = 941, FRAME_H = 1672;
+export const FRAME_ASPECT = FRAME_W / FRAME_H;
+export const FRAME_INNER_LEFT = 0.133;
+export const FRAME_INNER_RIGHT = 0.869;
+export const FRAME_INNER_TOP = 0.068;
+export const FRAME_INNER_BOTTOM = 0.910;
 
 export class Reel {
   items: ReelItem[] = [];
@@ -82,33 +96,36 @@ export class Reel {
     }
   }
 
-  /* cx, cy — центр вікна рулетки */
-  draw(ctx: CanvasRenderingContext2D, cx: number, cy: number, itemW: number, itemH: number, alpha = 1): void {
+  /* cx, cy — центр усієї рамки. frameW/frameH — розмір самого зображення
+     рамки (фіксоване співвідношення сторін). itemW/itemH — розмір ОДНІЄЇ
+     комірки стрічки всередині прозорого вікна рамки (їх рахує presenter
+     з тих самих FRAME_INNER_* пропорцій, щоб не дублювати геометрію). */
+  draw(ctx: CanvasRenderingContext2D, cx: number, cy: number,
+    frameW: number, frameH: number, itemW: number, itemH: number, alpha = 1): void {
     const R = CONFIG.reel;
     const winH = itemH * R.visible;
-    const x = cx - itemW / 2;
-    const y = cy - winH / 2;
-    const pad = 18;
+    const frameX = cx - frameW / 2;
+    const frameY = cy - frameH / 2;
+    const x = frameX + frameW * FRAME_INNER_LEFT;
+    const y = frameY + frameH * FRAME_INNER_TOP;
 
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    // дерев'яна рама
-    Render.wood(ctx, x - pad, y - pad, itemW + pad * 2, winH + pad * 2);
+    // темний фон під стрічку — видно крізь прозорий центр рамки
+    Render.inset(ctx, x - 4, y - 4, itemW + 8, winH + 8, '#12151b', 4);
 
-    // темна ніша під стрічку
-    Render.inset(ctx, x - 6, y - 6, itemW + 12, winH + 12, '#12151b', 5);
-
-    // сама стрічка
+    // сама стрічка, обрізана прозорим вікном рамки
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, y, itemW, winH);
     ctx.clip();
 
+    const cyWin = y + winH / 2;
     const first = Math.max(0, Math.floor(this.offset) - Math.ceil(R.visible / 2) - 1);
     const last = Math.min(this.items.length - 1, first + R.visible + 3);
     for (let i = first; i <= last; i++) {
-      const iy = cy - itemH / 2 + (i - this.offset) * itemH;
+      const iy = cyWin - itemH / 2 + (i - this.offset) * itemH;
       const hot = !this.spinning && Math.abs(i - this.offset) < 0.5;
       Render.reelItem(ctx, x + 5, iy + 4, itemW - 10, itemH - 8, this.items[i], hot);
     }
@@ -126,8 +143,14 @@ export class Reel {
     ctx.fillRect(x, y + winH - itemH, itemW, itemH);
     ctx.restore();
 
-    // золоті куточки на виграшній комірці
-    const sy = cy - itemH / 2;
+    // сама рамка — ПОВЕРХ стрічки, прозорий центр показує її знизу.
+    // Якщо файл не завантажився — запасний варіант, стара процедурна рама.
+    const img = Assets.get('reelFrame');
+    if (img) ctx.drawImage(img, frameX, frameY, frameW, frameH);
+    else Render.wood(ctx, x - 18, y - 18, itemW + 36, winH + 36);
+
+    // золоті куточки на виграшній комірці (лінія виплати — середня)
+    const sy = cyWin - itemH / 2;
     const L = Math.min(26, itemH * 0.36);
     const th = 5;
     ctx.fillStyle = '#ffd34d';
@@ -138,21 +161,6 @@ export class Reel {
       [x + itemW - L, sy + itemH - th, L, th], [x + itemW - th, sy + itemH - L, th, L],
     ];
     for (const r of corners) ctx.fillRect(r[0], r[1], r[2], r[3]);
-
-    // стрілки по боках
-    ctx.fillStyle = '#ffd34d';
-    ctx.strokeStyle = '#0d0f13';
-    ctx.lineWidth = 3;
-    const a = 15;
-    for (const [px, dir] of [[x - 10, 1], [x + itemW + 10, -1]] as [number, number][]) {
-      ctx.beginPath();
-      ctx.moveTo(px, cy);
-      ctx.lineTo(px - dir * a, cy - a);
-      ctx.lineTo(px - dir * a, cy + a);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
 
     ctx.restore();
   }

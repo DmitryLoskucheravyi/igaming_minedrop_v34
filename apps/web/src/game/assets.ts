@@ -39,6 +39,7 @@ class AssetStore {
       const skin = BLOCKS[key].skin;
       if (skin) p['block.' + key] = skin;
     }
+    p['reelFrame'] = '/рамка.png';   // декоративна рамка вікна рулетки, прозорий центр
     return p;
   }
 

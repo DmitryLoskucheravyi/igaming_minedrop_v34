@@ -22,7 +22,7 @@ import {
 import { Api, ApiError, type PlayerState } from '../lib/api';
 import { haptic, setupMiniApp } from '../lib/telegram';
 import { Assets } from './assets';
-import { Reel } from './reel';
+import { FRAME_ASPECT, FRAME_INNER_BOTTOM, FRAME_INNER_LEFT, FRAME_INNER_RIGHT, FRAME_INNER_TOP, Reel } from './reel';
 import { Render, type ReelItem } from './render';
 
 const roundKey = () =>
@@ -133,6 +133,7 @@ export class Presenter {
   private w = 0; private h = 0; private cell = 0;
   private fieldW = 0; private fieldX = 0;
   private itemW = 0; private itemH = 0;
+  private frameW = 0; private frameH = 0;
 
   private onHud: (h: HudState) => void;
   private onResize = () => this.layout();
@@ -722,16 +723,20 @@ export class Presenter {
     this.fieldW = this.cell * CONFIG.cols;
     this.fieldX = (this.w - this.fieldW) / 2;
 
-    // квадратна комірка-символ, велика — рулетка тепер головний елемент
-    // екрана, поки крутиться, тому їй віддано куди більше місця, ніж
-    // раніше (був вузький список із п'ятьма рядками тексту)
+    /* Рамка вікна рулетки — растрове зображення (рамка.png) з фіксованим
+       співвідношенням сторін, тому розмір комірки-символу тепер похідна
+       від розміру РАМКИ, а не навпаки: спершу вписуємо всю рамку в
+       доступний простір (за висотою, з обмеженням по ширині), потім
+       ділимо її внутрішнє прозоре вікно на R.visible рівних комірок. */
     const R = CONFIG.reel;
-    let ih = Math.max(90, Math.min(170, this.h / (R.visible + 1.5)));
-    let iw = ih * R.widthRatio;
-    const maxW = this.w - 56;
-    if (iw > maxW) { iw = maxW; ih = iw / R.widthRatio; }
-    this.itemH = ih;
-    this.itemW = iw;
+    let frameH = Math.max(280, Math.min(560, this.h * 0.86));
+    let frameW = frameH * FRAME_ASPECT;
+    const maxFrameW = this.w - 16;
+    if (frameW > maxFrameW) { frameW = maxFrameW; frameH = frameW / FRAME_ASPECT; }
+    this.frameW = frameW;
+    this.frameH = frameH;
+    this.itemW = frameW * (FRAME_INNER_RIGHT - FRAME_INNER_LEFT);
+    this.itemH = (frameH * (FRAME_INNER_BOTTOM - FRAME_INNER_TOP)) / R.visible;
 
     // найвища точка камери: поки крутиться рулетка, поверхня стоїть низько
     this.camMin = -(this.h * CONFIG.camIdle) / this.cell;
@@ -773,7 +778,7 @@ export class Presenter {
       const focusY = this.h * 0.46;
       const riseTo = -this.itemH * CONFIG.reel.visible;
       const cy = focusY + (riseTo - focusY) * this.stage;
-      this.reel.draw(ctx, this.w / 2, cy, this.itemW, this.itemH, Math.min(1, a * 1.6));
+      this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, Math.min(1, a * 1.6));
       if (this.round && this.round.mode !== 'bet') {
         Render.text(ctx, 'БОНУСНА ГРА', this.w / 2, cy - this.itemH * CONFIG.reel.visible / 2 - 46,
           '800 26px ui-monospace, monospace', '#ffd34d');
