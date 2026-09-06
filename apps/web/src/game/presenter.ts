@@ -263,6 +263,8 @@ export class Presenter {
      і незрозумілий крок. */
   setBet(b: number): void {
     this.bet = b;
+    // зменшив ставку до підйомної — плашка нестачі більше не актуальна
+    if (this.error && this.balance >= b) this.error = null;
     this.emit();
   }
 
@@ -301,10 +303,20 @@ export class Presenter {
       if (this.resultT < RESULT_GRACE) return;
       this.closeResult();
       if (this.balance >= this.bet) void this.startRound();
+      else this.notEnough();
       return;
     }
     if (this.state !== 'IDLE' || this.busy) return;
+    if (this.balance < this.bet) { this.notEnough(); return; }
     void this.startRound();
+  }
+
+  /* Тап «ГРАТИ» при нестачі коштів — червона плашка над полем. */
+  private notEnough(): void {
+    this.error = 'Недостаточно средств — пополни баланс или уменьши ставку';
+    this.message = this.error;
+    haptic('lose');
+    this.emit();
   }
 
   /* ---------------- раунд ---------------- */
@@ -312,6 +324,8 @@ export class Presenter {
   private applyPlayer(p: PlayerState): void {
     this.player = p;
     this.balance = p.balance;
+    // баланс поповнили / прийшов новий стан — прибираємо плашку нестачі
+    if (this.error && this.balance >= this.bet) this.error = null;
     if (p.config?.rates) this.rates = p.config.rates;
     if (p.config?.bets?.length && !p.config.bets.includes(this.bet)) {
       this.bet = p.config.bets[Math.min(2, p.config.bets.length - 1)];
@@ -532,7 +546,8 @@ export class Presenter {
       bet: this.bet,
       bets: p?.config?.bets ?? [...CONFIG.bets],
       message: this.message,
-      canSpin: (idle && this.balance >= this.bet) || this.state === 'RESULT',
+      // кнопка активна навіть при нестачі коштів — щоб тап показав плашку
+      canSpin: idle || this.state === 'RESULT',
       dryStreak: p?.dryStreak ?? 0,
       pityAt: p?.pityAt ?? CONFIG.pity,
       rates: this.rates,
