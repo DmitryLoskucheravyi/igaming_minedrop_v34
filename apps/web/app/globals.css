@@ -210,10 +210,9 @@ html, body {
   background: #4ec86a;
 }
 
-/* Керування ставкою — плаваючий блок по центру знизу, БЕЗ панелі:
-   прозорий фон, поле гри видно наскрізь. Зверху вниз: смужка pity,
-   поточна ставка, ряд [−] [ ⟳ ] [+]. Кругла кнопка «крутити» —
-   зі стрілочками обертання. */
+/* Керування — плаваючий блок по центру знизу, БЕЗ панелі: прозорий фон,
+   поле гри видно наскрізь. Зверху вниз: смужка pity, поточна ставка,
+   ряд [ »швидкість ] [−] [ ⟳ ] [+] [ ▶автоплей ]. */
 .controls {
   position: absolute;
   left: 0;
@@ -241,7 +240,14 @@ html, body {
 .control-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
+  pointer-events: none;
+}
+.control-row button { pointer-events: auto; }
+.control-core {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .stepbtn {
@@ -266,6 +272,49 @@ html, body {
   border-bottom-color: #6b7480;
 }
 .stepbtn:disabled { opacity: .35; cursor: default; }
+
+/* Бічні круглі кнопки: швидкість (ліворуч) і автоплей (праворуч). */
+.sidebtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  padding: 0;
+  border-radius: 50%;
+  color: #cdd3da;
+  background: #3a414b;
+  border: 3px solid #565f6b;
+  border-right-color: #2a313a;
+  border-bottom-color: #2a313a;
+  box-shadow: 0 0 0 3px #0d0f13, 0 3px 8px rgba(0,0,0,.45);
+  cursor: pointer;
+  position: relative;
+}
+.sidebtn svg { width: 20px; height: 20px; }
+.sidebtn .ic-fill { fill: currentColor; }
+.sidebtn .ic-stroke { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.sidebtn:active { border-color: #2a313a; border-right-color: #565f6b; border-bottom-color: #565f6b; }
+
+/* Швидкість: x1 — приглушено, x2..x4 — бурштин + число */
+.speedbtn .speed-num { font: 800 15px ui-monospace, monospace; }
+.speedbtn.fast {
+  color: #08210f;
+  background: #ffd34d;
+  border-color: #ffe483;
+  border-right-color: #b8922a;
+  border-bottom-color: #b8922a;
+}
+
+/* Автоплей: увімкнений — зелений */
+.autobtn.on {
+  color: #08210f;
+  background: #4ec86a;
+  border-color: #86e79b;
+  border-right-color: #2a8544;
+  border-bottom-color: #2a8544;
+}
 
 /* Головна кнопка — кругла, зі значком обертання «крутити».
    Вартість тут не показуємо: ставка стоїть окремим написом над кнопкою. */

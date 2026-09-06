@@ -53,6 +53,10 @@ export interface HudState {
   resultEmpty: boolean;
   /** null — ще не перевіряли; true — клієнт зійшовся з сервером */
   verified: boolean | null;
+  /** прискорення програвання раунду: 1 | 2 | 3 | 4 */
+  speed: number;
+  /** автоплей: раунди йдуть один за одним, поки вистачає балансу */
+  autoplay: boolean;
   fair: { serverSeedHash: string; clientSeed: string; nonce: number } | null;
   error: string | null;
   /** профіль гравця з телеграма: імʼя і @нік (або ID, якщо ніка нема).
@@ -75,6 +79,8 @@ interface Popup { x: number; y: number; life: number; text: string; color: strin
 
 const MAX_TICKS_PER_FRAME = 8;   // щоб просадка кадрів не перетворилась на спіраль
 const RESULT_GRACE = 0.4;        // мін. затримка перед тим, як клік/пробіл по RESULT щось робить
+const SPEEDS = [1, 2, 3, 4];     // прискорення програвання раунду (кнопка »)
+const AUTOPLAY_HOLD = 0.9;       // скільки показувати результат перед авто-наступним раундом
 const TOAST_LIFE = 1.6;          // скільки секунд живе один push-тост живого логу
 const TOAST_MAX = 3;             // скільки тостів одночасно на екрані (старіші зникають)
 
@@ -102,6 +108,11 @@ export class Presenter {
      перемкнути на USDT/зірки. Курс приходить у config.rates. */
   private currency: CurrencyCode = 'RUB';
   private rates: Rates = FALLBACK_RATES;
+
+  /* прискорення програвання (косметика — фізика лишається фіксованим
+     кроком SIM_DT, просто за кадр проганяємо більше кроків) і автоплей */
+  private speed = 1;
+  private autoplay = false;
 
   /* поточний раунд */
   private round: RoundResult | null = null;
@@ -243,6 +254,7 @@ export class Presenter {
       } catch (err) {
         console.error('Presenter: помилка в кадрі, відновлюю стан', err);
         this.busy = false;
+        this.autoplay = false;
         this.state = 'IDLE';
         this.error = 'Техническая ошибка — обнови страницу, если игра не реагирует';
         this.message = this.error;
@@ -274,6 +286,25 @@ export class Presenter {
   setCurrency(c: CurrencyCode): void {
     this.currency = c;
     this.emit();
+  }
+
+  /** Наступне прискорення по колу: 1 -> 2 -> 3 -> 4 -> 1.
+      Фізика від цього не змінюється (той самий фіксований крок) —
+      просто за кадр робимо більше кроків, тож раунд грається швидше. */
+  cycleSpeed(): void {
+    this.speed = SPEEDS[(SPEEDS.indexOf(this.speed) + 1) % SPEEDS.length];
+    this.emit();
+  }
+
+  /** Автоплей: після результату сам закриває його й запускає новий
+      раунд, доки увімкнено і вистачає балансу. */
+  toggleAutoplay(): void {
+    this.autoplay = !this.autoplay;
+    this.emit();
+    if (this.autoplay && this.state === 'IDLE' && !this.busy) {
+      if (this.balance >= this.bet) void this.startRound();
+      else { this.autoplay = false; this.notEnough(); }
+    }
   }
 
   /* Малює суму (в рублях) поточною валютою зі значком.
@@ -352,6 +383,7 @@ export class Presenter {
       if (e instanceof ApiError) {
         // сервер відповів і відмовив — ретраїти нема сенсу
         this.busy = false;
+        this.autoplay = false;   // не молотимо запитами по колу
         this.error = e.message;
         this.message = e.message;
         this.emit();
@@ -362,6 +394,7 @@ export class Presenter {
         res = await Api.play(this.bet, key);
       } catch (e2) {
         this.busy = false;
+        this.autoplay = false;
         this.error = e2 instanceof ApiError ? e2.message : 'Сервер не ответил';
         this.message = this.error;
         this.emit();
@@ -557,6 +590,8 @@ export class Presenter {
       busy: this.busy,
       resultEmpty: this.resultEmpty,
       verified: this.verified,
+      speed: this.speed,
+      autoplay: this.autoplay,
       fair: this.round?.fair ?? (p ? { serverSeedHash: p.serverSeedHash, clientSeed: p.clientSeed, nonce: p.nonce } : null),
       error: this.error,
       profile: p
@@ -681,7 +716,14 @@ export class Presenter {
 
   /* ---------------- UPDATE ---------------- */
 
-  private update(dt: number): void {
+  private update(dtReal: number): void {
+    /* Прискорення: множимо крок часу. Усе (рулетка, таймери, фізика,
+       партикли, тряска) грається рівно у stepMul разів швидше. На
+       детермінізм не впливає — фізичний крок нижче лишається SIM_DT,
+       просто за кадр робимо більше кроків (див. maxTicks). */
+    const dt = dtReal * this.speed;
+    const maxTicks = MAX_TICKS_PER_FRAME * this.speed;
+
     if (this.timer > 0) {
       this.timer -= dt;
       if (this.timer <= 0) {
@@ -695,7 +737,16 @@ export class Presenter {
     this.reel.update(dt);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt * 55);
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt * 1.6);
-    if (this.state === 'RESULT') this.resultT += dt;
+    if (this.state === 'RESULT') {
+      this.resultT += dt;
+      /* Автоплей: подивились на результат AUTOPLAY_HOLD секунд — закрили
+         й погнали далі. Не вистачає балансу — автоплей вимикається. */
+      if (this.autoplay && this.resultT >= AUTOPLAY_HOLD) {
+        this.closeResult();
+        if (this.balance >= this.bet) void this.startRound();
+        else { this.autoplay = false; this.notEnough(); }
+      }
+    }
 
     // перехід «рулетка в центрі» <-> «гра»
     const sp = dt / (CONFIG.reel.riseMs / 1000);
@@ -708,12 +759,12 @@ export class Presenter {
     if (this.state === 'RUNNING' && this.run) {
       this.acc += dt;
       let n = 0;
-      while (this.acc >= SIM_DT && !this.run.over && n < MAX_TICKS_PER_FRAME) {
+      while (this.acc >= SIM_DT && !this.run.over && n < maxTicks) {
         this.acc -= SIM_DT;
         this.run.tick();
         n++;
       }
-      if (this.acc > SIM_DT * MAX_TICKS_PER_FRAME) this.acc = SIM_DT * MAX_TICKS_PER_FRAME;
+      if (this.acc > SIM_DT * maxTicks) this.acc = SIM_DT * maxTicks;
       this.drainEvents();
       if (this.run.over) this.onRunOver();
     }

@@ -46,6 +46,8 @@ const EMPTY: HudState = {
   busy: false,
   resultEmpty: false,
   verified: null,
+  speed: 1,
+  autoplay: false,
   fair: null,
   error: null,
   profile: null,
@@ -105,6 +107,8 @@ export function GameClient() {
 
   const spin = useCallback(() => gameRef.current?.primary(), []);
   const setBet = useCallback((b: number) => gameRef.current?.setBet(b), []);
+  const cycleSpeed = useCallback(() => gameRef.current?.cycleSpeed(), []);
+  const toggleAutoplay = useCallback(() => gameRef.current?.toggleAutoplay(), []);
 
   // Степер заблокований лише поки триває сама анімація раунду (від
   // прокруту до падіння кірки) — щойно з'являється RESULT (чи ми в
@@ -216,28 +220,60 @@ export function GameClient() {
           </div>
 
           <div className="control-row">
-            <button type="button" className="stepbtn" disabled={!canBetDown} onClick={betDown} aria-label="Ставка меньше">−</button>
-
             <button
               type="button"
-              className="playbtn"
-              disabled={!hud.canSpin}
-              onClick={spin}
-              aria-label="Играть"
+              className={'sidebtn speedbtn' + (hud.speed > 1 ? ' fast' : '')}
+              onClick={cycleSpeed}
+              aria-label={'Скорость ×' + hud.speed}
+              title={'Скорость игры ×' + hud.speed}
             >
-              {hud.busy
-                ? <span className="playbtn-wait">…</span>
+              {hud.speed > 1
+                ? <span className="speed-num">{hud.speed}×</span>
                 : (
-                  <svg className="playbtn-spin" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3.4 12a8.6 8.6 0 0 1 14.6-6.1l2.6 2.6" />
-                    <polyline points="20.6 3 20.6 8.5 15.1 8.5" />
-                    <path d="M20.6 12a8.6 8.6 0 0 1-14.6 6.1l-2.6-2.6" />
-                    <polyline points="3.4 21 3.4 15.5 8.9 15.5" />
+                  <svg className="ic-stroke" viewBox="0 0 24 24" aria-hidden="true">
+                    <polyline points="5 5 12 12 5 19" />
+                    <polyline points="12 5 19 12 12 19" />
                   </svg>
                 )}
             </button>
 
-            <button type="button" className="stepbtn" disabled={!canBetUp} onClick={betUp} aria-label="Ставка больше">+</button>
+            <div className="control-core">
+              <button type="button" className="stepbtn" disabled={!canBetDown} onClick={betDown} aria-label="Ставка меньше">−</button>
+
+              <button
+                type="button"
+                className="playbtn"
+                disabled={!hud.canSpin}
+                onClick={spin}
+                aria-label="Играть"
+              >
+                {hud.busy
+                  ? <span className="playbtn-wait">…</span>
+                  : (
+                    <svg className="playbtn-spin" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M3.4 12a8.6 8.6 0 0 1 14.6-6.1l2.6 2.6" />
+                      <polyline points="20.6 3 20.6 8.5 15.1 8.5" />
+                      <path d="M20.6 12a8.6 8.6 0 0 1-14.6 6.1l-2.6-2.6" />
+                      <polyline points="3.4 21 3.4 15.5 8.9 15.5" />
+                    </svg>
+                  )}
+              </button>
+
+              <button type="button" className="stepbtn" disabled={!canBetUp} onClick={betUp} aria-label="Ставка больше">+</button>
+            </div>
+
+            <button
+              type="button"
+              className={'sidebtn autobtn' + (hud.autoplay ? ' on' : '')}
+              onClick={toggleAutoplay}
+              aria-label={hud.autoplay ? 'Выключить автоигру' : 'Включить автоигру'}
+              aria-pressed={hud.autoplay}
+              title={hud.autoplay ? 'Автоигра включена' : 'Автоигра'}
+            >
+              {hud.autoplay
+                ? <svg className="ic-fill" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
+                : <svg className="ic-fill" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l12 7-12 7z" /></svg>}
+            </button>
           </div>
         </div>
       </div>
