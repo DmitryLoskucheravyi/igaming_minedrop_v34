@@ -46,6 +46,30 @@ export interface RevealedSeries {
   rounds: number;
 }
 
+export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+
+export interface Payment {
+  id: string;
+  telegramId: number;
+  method: 'usdt_trc20';
+  amount: number;        // ₽ на баланс
+  usdtAmount: number;    // скільки переказати
+  rate: number;
+  address: string;
+  status: PaymentStatus;
+  createdAt: number;
+  expiresAt: number;
+  resolvedAt?: number;
+  adminNote?: string;
+}
+
+export interface PaymentsInfo {
+  active: Payment | null;
+  history: Payment[];
+  minRub: number;
+  maxRub: number;
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -133,5 +157,18 @@ export const Api = {
   rotate() {
     return call<{ revealed: RevealedSeries; next: { serverSeedHash: string; nonce: number } }>(
       '/fairness/rotate', { method: 'POST' });
+  },
+
+  /** Історія платежів + активна заявка. */
+  payments() {
+    return call<PaymentsInfo>('/payments/me');
+  },
+
+  /** Створити заявку на депозит (₽). Повертає заявку з адресою й таймером. */
+  createPayment(amount: number) {
+    return call<Payment>('/payments', {
+      method: 'POST',
+      body: JSON.stringify({ amount, method: 'usdt_trc20' }),
+    });
   },
 };

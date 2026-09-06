@@ -6,11 +6,12 @@ import { FairnessModule } from './fairness/fairness.module';
 import { RoundsModule } from './rounds/rounds.module';
 import { RatesModule } from './rates/rates.module';
 import { AdminModule } from './admin/admin.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
     ConfigModule, RatesModule, TelegramModule, PlayersModule,
-    FairnessModule, RoundsModule, AdminModule,
+    FairnessModule, RoundsModule, PaymentsModule, AdminModule,
   ],
 })
 export class AppModule {}

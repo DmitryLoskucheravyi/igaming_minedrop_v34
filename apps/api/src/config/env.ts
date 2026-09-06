@@ -34,6 +34,9 @@ export interface Env {
   /** MongoDB для персистентності гравців. Порожньо — тільки in-memory
       (стан гине з рестартом). */
   mongoUrl: string | null;
+
+  /** Адреса гаманця USDT TRC20 для депозитів. Порожньо — депозит вимкнено. */
+  usdtTrc20Address: string | null;
 }
 
 /* Коли можна пускати без підпису телеграма.
@@ -73,6 +76,7 @@ export function loadEnv(): Env {
     webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || null,
     devAuth: resolveDevAuth(isProd, botToken),
     mongoUrl: process.env.MONGO_URL?.trim() || null,
+    usdtTrc20Address: process.env.USDT_TRC20_ADDRESS?.trim() || null,
   };
 }
 

@@ -572,6 +572,150 @@ canvas {
 .check.bad { border-left-color: #ff6a5c; }
 .check .payout { margin-top: 6px; font: 700 15px inherit; color: #ffd34d; }
 
+/* ---- кнопка «+» біля балансу ---- */
+.deposit-btn {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 800 18px inherit;
+  line-height: 1;
+  color: #08210f;
+  background: #4ec86a;
+  border-top: 2px solid #86e79b;
+  border-left: 2px solid #86e79b;
+  border-right: 2px solid #2a8544;
+  border-bottom: 2px solid #2a8544;
+  outline: 1px solid #0d0f13;
+  cursor: pointer;
+}
+.deposit-btn:hover { background: #5cd97a; }
+
+/* ---- депозит ---- */
+.dep-method {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 6px 0 16px;
+}
+.dep-method-badge {
+  font: 700 11px ui-monospace, monospace;
+  letter-spacing: .06em;
+  color: #57eede;
+  border: 1px solid #2c5a55;
+  background: #12241f;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.dep-method-note { font-size: 10px; color: #8b95a3; }
+.dep-label {
+  display: block;
+  font: 700 10px ui-monospace, monospace;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #8b95a3;
+  margin: 12px 0 6px;
+}
+.dep-chips { display: flex; gap: 8px; margin: 10px 0 4px; }
+.dep-chip {
+  flex: 1;
+  font: 700 12px ui-monospace, monospace;
+  color: #dfe4ea;
+  background: #55606e;
+  border-top: 2px solid #77828f;
+  border-left: 2px solid #77828f;
+  border-right: 2px solid #333c47;
+  border-bottom: 2px solid #333c47;
+  outline: 1px solid #0d0f13;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.dep-chip:hover { background: #64707f; }
+.dep-est { font-size: 11px; color: #8b95a3; margin: 10px 0; }
+
+.dep-active .dep-hint {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #b9c2ce;
+  margin: 4px 0 14px;
+}
+.dep-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 2px solid #1b1f26;
+}
+.dep-k { font: 700 10px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; color: #8b95a3; }
+.dep-v { font: 700 14px ui-monospace, monospace; color: #e6e9ee; }
+.dep-v.big { font-size: 20px; color: #ffd34d; }
+.dep-v small { font-size: 11px; color: #8b95a3; }
+.dep-addr {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 12px;
+}
+.dep-addr code {
+  flex: 1;
+  min-width: 0;
+  font: 600 12px ui-monospace, monospace;
+  color: #dfe4ea;
+  background: #0e1216;
+  border: 1px solid #2a333c;
+  border-radius: 6px;
+  padding: 9px 11px;
+  word-break: break-all;
+}
+.dep-timer {
+  text-align: center;
+  font: 800 16px ui-monospace, monospace;
+  letter-spacing: .1em;
+  color: #5ce08a;
+  padding: 10px 0 2px;
+}
+.dep-timer.urgent { color: #ff8a7d; }
+.dep-expired { text-align: center; }
+.dep-expired p { font: 700 13px inherit; color: #ff8a7d; margin: 8px 0; }
+.dep-expired .dep-hint { color: #8b95a3; }
+
+.dep-hist { display: flex; flex-direction: column; gap: 4px; }
+.dep-hist-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font: 600 12px ui-monospace, monospace;
+  padding: 6px 8px;
+  background: #1b1f26;
+  border-left: 3px solid #4d5764;
+}
+.dep-hist-row.st-pending { border-left-color: #e0a53c; }
+.dep-hist-row.st-approved { border-left-color: #5ce08a; }
+.dep-hist-row.st-rejected { border-left-color: #ff6a5c; }
+.dep-hist-amt { color: #e6e9ee; }
+.dep-hist-st { color: #8b95a3; font-size: 11px; }
+
+/* ---- історія платежів (окреме вікно) ---- */
+.pay-list { display: flex; flex-direction: column; gap: 8px; }
+.pay-item {
+  border: 1px solid #2a333c;
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #12171c;
+}
+.pay-item.st-pending { border-left-color: #e0a53c; }
+.pay-item.st-approved { border-left-color: #5ce08a; }
+.pay-item.st-rejected { border-left-color: #ff6a5c; }
+.pay-item.st-expired { border-left-color: #4d5764; }
+.pay-item-top { display: flex; justify-content: space-between; align-items: baseline; }
+.pay-amt { font: 700 15px ui-monospace, monospace; color: #ffd34d; }
+.pay-status { font: 700 11px ui-monospace, monospace; color: #8b95a3; text-transform: uppercase; letter-spacing: .06em; }
+.pay-item-sub { display: flex; justify-content: space-between; font: 500 11px ui-monospace, monospace; color: #8b95a3; margin-top: 6px; }
+.pay-note { font-size: 11px; color: #b9c2ce; margin-top: 6px; padding-top: 6px; border-top: 1px solid #222a31; }
+
 /* Дизайн і так мобільний за замовчуванням (компактні панелі,
    висувне меню для другорядного) — на ширших екранах просто
    даємо головній кнопці й степеру трохи більше повітря. */

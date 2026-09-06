@@ -207,3 +207,82 @@
   cursor: pointer;
 }
 .cancel:hover { background: #1c242b; }
+
+/* ---- вкладки ---- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #2a333c;
+}
+.tab {
+  font: 600 13px inherit;
+  color: #8a94a0;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+.tab:hover { color: #cdd3da; }
+.tab.on { color: #e6e9ee; border-bottom-color: #4ec86a; }
+.tab .dot {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #b26f18;
+  color: #0e1216;
+  font: 700 10px ui-monospace, monospace;
+}
+
+/* ---- статус-бейджі ---- */
+.badge {
+  display: inline-block;
+  font: 600 11px ui-monospace, monospace;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #3a4650;
+  color: #cdd3da;
+  white-space: nowrap;
+}
+.badge.pending  { color: #e0a53c; border-color: #6a5220; background: #2a2210; }
+.badge.approved { color: #5ce08a; border-color: #2a5a3a; background: #14281c; }
+.badge.rejected { color: #e8706b; border-color: #6a3330; background: #2a1614; }
+.badge.expired  { color: #8a94a0; border-color: #3a4650; }
+
+.mono { font-family: ui-monospace, monospace; }
+.dim { color: #7c8590; font-size: 12px; margin-top: 3px; }
+.wrapAny { white-space: normal; word-break: break-all; }
+
+.rowActions { display: flex; gap: 6px; justify-content: flex-end; }
+.btnSm {
+  font: 600 12px inherit;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: 1px solid #2a333c;
+  background: #1c242b;
+  color: #cdd3da;
+  cursor: pointer;
+}
+.btnSm:hover { background: #232c34; }
+.btnSm:disabled { opacity: .5; cursor: default; }
+.btnSm.ok { background: #1c3a26; border-color: #2a5a3a; color: #7be2a0; }
+.btnSm.ok:hover { background: #234a30; }
+.btnSm.no { background: #3a1c1a; border-color: #6a3330; color: #ed938e; }
+.btnSm.no:hover { background: #4a2320; }
+
+/* ---- форма додати адресу ---- */
+.addrForm {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.addrForm .input { flex: 1 1 260px; font-size: 14px; padding: 9px 12px; }
+.addrForm .input.short { flex: 0 1 160px; }
+.addrForm .confirm { flex: 0 0 auto; padding: 9px 16px; }
+
+.timer { font-family: ui-monospace, monospace; }
+.timer.urgent { color: #e8706b; }

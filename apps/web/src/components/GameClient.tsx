@@ -30,6 +30,8 @@ import {
   loadCurrency, saveCurrency, type CurrencyCode, type Rates,
 } from '../lib/currency';
 import { FairPanel } from './FairPanel';
+import { DepositModal } from './DepositModal';
+import { PaymentsPanel } from './PaymentsPanel';
 
 const EMPTY: HudState = {
   state: 'LOADING',
@@ -69,6 +71,8 @@ export function GameClient() {
   const gameRef = useRef<Presenter | null>(null);
   const [hud, setHud] = useState<HudState>(EMPTY);
   const [showFair, setShowFair] = useState(false);
+  const [showDeposit, setShowDeposit] = useState(false);
+  const [showPayments, setShowPayments] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Іконку профілю кладемо файлом у public/. Поки її нема (або не
   // завантажилась) — показуємо квадрат із першою літерою імені.
@@ -125,6 +129,7 @@ export function GameClient() {
   }, [bets, hud.bet, setBet]);
 
   const openFair = useCallback(() => { setMenuOpen(false); setShowFair(true); }, []);
+  const openPayments = useCallback(() => { setMenuOpen(false); setShowPayments(true); }, []);
 
   // тонка плашка статусу над полем: помилка — завжди, живе повідомлення —
   // тільки поки триває раунд (у IDLE цьому місцю нема чого сказати).
@@ -150,6 +155,14 @@ export function GameClient() {
           <span className="value">
             <Money rub={hud.balance} currency={currency} rates={hud.rates} whole />
           </span>
+          <button
+            type="button"
+            className="deposit-btn"
+            aria-label="Пополнить"
+            onClick={() => setShowDeposit(true)}
+          >
+            +
+          </button>
         </div>
       </header>
 
@@ -272,6 +285,12 @@ export function GameClient() {
             </div>
           </div>
 
+          <button type="button" className="drawer-btn" onClick={() => { setMenuOpen(false); setShowDeposit(true); }}>
+            ПОПОЛНИТЬ БАЛАНС
+          </button>
+          <button type="button" className="drawer-btn" onClick={openPayments}>
+            ИСТОРИЯ ПЛАТЕЖЕЙ
+          </button>
           <button type="button" className="drawer-btn" onClick={openFair}>
             ЧЕСТНОСТЬ РАУНДА
           </button>
@@ -279,6 +298,8 @@ export function GameClient() {
       </div>
 
       {showFair && <FairPanel fair={hud.fair} onClose={() => setShowFair(false)} />}
+      {showDeposit && <DepositModal onClose={() => setShowDeposit(false)} />}
+      {showPayments && <PaymentsPanel onClose={() => setShowPayments(false)} />}
     </div>
   );
 }
