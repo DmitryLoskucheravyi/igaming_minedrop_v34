@@ -1,5 +1,5 @@
-import { GameClient } from '../src/components/GameClient';
+import { GameGate } from '../src/components/GameGate';
 
 export default function Page() {
-  return <GameClient />;
+  return <GameGate />;
 }

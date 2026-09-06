@@ -181,8 +181,8 @@ async function main() {
     console.log(`\n${bar}`);
     console.log(' МІНІАПС ГОТОВИЙ');
     console.log(bar);
-    console.log(` адреса:   ${url}`);
-    console.log(` адмінка:  ${url}/admin   (і http://localhost:3000/admin)`);
+    console.log(` гра:      ${url}   (тільки в телеграмі)`);
+    console.log(` CRM:      ${url}/admin   (і http://localhost:3000/admin)`);
     console.log(' у телеграмі: відкрий свого бота і надішли /start');
     console.log(' або тисни кнопку «Грати» біля поля вводу');
     console.log('');
