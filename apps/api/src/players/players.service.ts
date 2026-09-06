@@ -39,6 +39,7 @@ export interface PlayerRecord {
   firstName: string;
 
   balance: number;
+  dryStreak: number;         // пустих ставок поспіль (для pity, CONFIG.pity)
 
   clientSeed: string;
   serverSeed: string;        // СЕКРЕТ. Ніколи не віддається до розкриття
@@ -84,6 +85,7 @@ export class PlayersService {
       username: user.username,
       firstName: user.firstName,
       balance: CONFIG.startBalance,
+      dryStreak: 0,
       clientSeed: randomBytes(8).toString('hex'),
       serverSeed,
       serverSeedHash: serverSeedHash(serverSeed),
@@ -104,6 +106,8 @@ export class PlayersService {
       firstName: rec.firstName,
       username: rec.username ?? null,
       balance: rec.balance,
+      dryStreak: rec.dryStreak,
+      pityAt: CONFIG.pity,
       clientSeed: rec.clientSeed,
       serverSeedHash: rec.serverSeedHash,
       nonce: rec.nonce,

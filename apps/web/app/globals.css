@@ -168,6 +168,29 @@ html, body {
 .statusline .mismatch { color: #ff6a5c; }
 
 /* ---- бомбар: степер ставки | ГРАТИ (по центру) | бонус ---- */
+/* ---- pity: прогрес до гарантированной кирки ---- */
+.pity {
+  flex: 0 0 auto;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 5px 12px;
+  background: #1b1f26;
+  border-top: 2px solid #0d0f13;
+  font: 700 10px ui-monospace, monospace;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #b9c2ce;
+}
+.pity-pips { color: #ffd34d; letter-spacing: .22em; font-size: 12px; }
+.pity.ready {
+  color: #08210f;
+  background: #4ec86a;
+  border-top-color: #2a8544;
+}
+
 .bottombar {
   position: relative;
   z-index: 2;

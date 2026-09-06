@@ -18,7 +18,7 @@ let totalHits = 0, totalBlocks = 0, mults = 0, empties = 0;
 
 for (let i = 0; i < N; i++) {
   const seed = seedAt(i);
-  const setup = buildSetup(seed, 'bet');
+  const setup = buildSetup(seed);
 
   t(setup.spins.length > 0, 'рулетка не крутилась жодного разу');
   // у звичайній ставці перша ж кірка зупиняє прокрути

@@ -38,6 +38,8 @@ const EMPTY: HudState = {
   bets: [10, 25, 50, 100, 250],
   message: 'загрузка…',
   canSpin: false,
+  dryStreak: 0,
+  pityAt: 4,
   rates: FALLBACK_RATES,
   busy: false,
   resultEmpty: false,
@@ -172,6 +174,21 @@ export function GameClient() {
           </div>
         )}
       </div>
+
+      {hud.dryStreak > 0 && (
+        <div className={'pity' + (hud.dryStreak >= hud.pityAt ? ' ready' : '')}>
+          {hud.dryStreak >= hud.pityAt ? (
+            <span>СЛЕДУЮЩАЯ — КИРКА</span>
+          ) : (
+            <>
+              <span className="pity-pips" aria-hidden="true">
+                {'●'.repeat(hud.dryStreak) + '○'.repeat(Math.max(0, hud.pityAt - hud.dryStreak))}
+              </span>
+              <span>до гарантии</span>
+            </>
+          )}
+        </div>
+      )}
 
       <footer className="bottombar">
         <div className="betstepper">

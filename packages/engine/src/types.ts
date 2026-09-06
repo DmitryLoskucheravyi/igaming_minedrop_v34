@@ -80,6 +80,8 @@ export interface RoundResult {
   spins: SpinResult[];       // що випало на кожному прокруті
   tiers: TierId[];           // кірки, які пішли в шахту
   startCols: number[];       // з яких колонок стартують кірки
+  pity: boolean;             // прокрут форсований (гарантована кірка після серії пустих)
+  dryStreak: number;         // скільки пустих ставок поспіль ПІСЛЯ цього раунду (0 після кірки)
 
   sim: RunSummary;
 
@@ -101,6 +103,7 @@ export interface RoundResult {
 export interface PlayerState {
   playerId: string;
   balance: number;
+  dryStreak: number;         // пустих ставок поспіль (для показу pity-прогресу)
   nonce: number;
   clientSeed: string;
   serverSeedHash: string;

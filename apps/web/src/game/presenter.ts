@@ -42,6 +42,9 @@ export interface HudState {
   bets: number[];
   message: string;
   canSpin: boolean;
+  /** pity: пустих ставок поспіль і поріг, на якому кірка гарантована */
+  dryStreak: number;
+  pityAt: number;
   /** курс валют із серверного config (для DOM-форматування) */
   rates: Rates;
   busy: boolean;
@@ -361,13 +364,13 @@ export class Presenter {
 
     /* Розбираємо сид САМІ. Якщо сервер прислав спини, яких із цього
        сида не виходить, — це не наша гра, і про це треба сказати вголос. */
-    this.setup = buildSetup(round.seed);
+    this.setup = buildSetup(round.seed, round.pity);
     if (this.setup.spins.join() !== round.spins.join()
       || this.setup.tiers.join() !== round.tiers.join()
       || this.setup.startCols.join() !== round.startCols.join()) {
       this.verified = false;
-      this.setup = { mode: 'bet', spins: round.spins,
-                     tiers: round.tiers, startCols: round.startCols };
+      this.setup = { mode: 'bet', spins: round.spins, tiers: round.tiers,
+                     startCols: round.startCols, pity: round.pity };
     }
 
     this.spinIndex = 0;
@@ -530,6 +533,8 @@ export class Presenter {
       bets: p?.config?.bets ?? [...CONFIG.bets],
       message: this.message,
       canSpin: (idle && this.balance >= this.bet) || this.state === 'RESULT',
+      dryStreak: p?.dryStreak ?? 0,
+      pityAt: p?.pityAt ?? CONFIG.pity,
       rates: this.rates,
       busy: this.busy,
       resultEmpty: this.resultEmpty,

@@ -68,7 +68,7 @@ async function main() {
     if (round.payout > round.cost) wins++;
 
     /* 1. Раунд відтворюється з сида — те саме, що робить клієнт */
-    const local = resolveRound(round.seed, round.mode, round.bet);
+    const local = resolveRound(round.seed, round.mode, round.bet, round.pity);
     if (local.payout !== round.payout) {
       fail(`виплата не відтворилась (nonce ${round.fair.nonce}): локально ${local.payout}, сервер ${round.payout}`);
     }
@@ -78,7 +78,7 @@ async function main() {
     if (local.setup.startCols.join() !== round.startCols.join()) {
       fail(`колонки не відтворились (nonce ${round.fair.nonce})`);
     }
-    if (buildSetup(round.seed, round.mode).tiers.join() !== round.tiers.join()) {
+    if (buildSetup(round.seed, round.pity).tiers.join() !== round.tiers.join()) {
       fail(`кірки не відтворились (nonce ${round.fair.nonce})`);
     }
 

@@ -39,7 +39,8 @@ function server(seed: string, mode: RoundMode, bet: number) {
 /* Клієнтський прогін: рендер чіпає ряди наперед, кроки йдуть пачками
    різного розміру (нерівний фреймрейт), між ними — prune старих рядів. */
 function client(seed: string, mode: RoundMode, bet: number) {
-  const setup = buildSetup(seed, mode);
+  void mode;
+  const setup = buildSetup(seed);
   const made = createRun(seed, setup);
   if (!made) {
     return { payout: 0, collected: 0, steps: 0, blocks: 0, depth: 0, chain: 1,

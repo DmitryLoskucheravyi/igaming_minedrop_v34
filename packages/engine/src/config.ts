@@ -32,19 +32,17 @@ export const CONFIG = {
 
   startBalance: 3000,     // dev
   bets: [10, 25, 50, 100, 250],
-  payoutK: 252,           // дільник виплати. Підбирається sim/final.ts (з bootstrap CI).
-                          // HP кірок повернули на 100-400 (довше «життя»), тому забіг
-                          // знову довший — щоб компенсувати, густоту руди зменшили
-                          // вдвічі, а payoutK перерахували під нову рівновагу (було 59
-                          // при HP 40-180). При цьому bet=50: залізо +1, золото +2,
-                          // алмаз +4 (земля/камінь — 0, як і задумано). При bet=10 з
-                          // руди щось показує лише алмаз (+1) — решта надто дешеві
-                          // відносно payoutK, поки HP лишається довгим.
-  maxWinX: 100000,        // стеля виграшу за раунд, у ставках. Запобіжник від
-                          // рантайм-аномалії (Infinity тощо), не ігрове обмеження:
-                          // реальний забіг на звичайній ставці дає ~x30-x50, тому
-                          // на нормальну гру стеля не впливає. Бонуску, через яку
-                          // виникав «розкрут у нескінченність», прибрано.
+  /* Дільник виплати. Підбирається sim/final.ts під RTP 95% (послідовний
+     потік ставок із pity). Після баффу частоти кірки (14.6% -> ~38% за
+     ставку з pity) RTP при K=252 злетів до 161%, тому K перерахований.
+     Наступні зміни (перебалансування руди, enchant) вимагатимуть ще
+     одного прогону. */
+  payoutK: 428,
+  /* Стеля виграшу за раунд, у ставках. Реальний максимум на поточній
+     математиці ≈ x26 на 50k ставок (p99.9 ≈ x15), тому стеля майже
+     ніколи не спрацьовує — це чесний запобіжник, а не маркетингове
+     число. Розширювати хвіст — Стадія 2 (enchant, крива руди). */
+  maxWinX: 500,
 
   /* ---- рулетка ----
      ОДИН прокрут на ставку — як у справжньому 777: потягнув, побачив
@@ -64,9 +62,15 @@ export const CONFIG = {
      (наприклад, до ~2, щоб кірка була ~89% і компенсувала втрату
      7 попередніх шансів; підбирай через sim/final.ts і sim/balance.ts). */
   spinsPerBet: 1,
-  nothingWeight: 55,      // вага «пусто». Кірки разом важать 9.4 ->
-                          // 9.4/64.4 ≈ 15% за прокрут (= за ставку). Було 35 (~21%) —
-                          // за проханням шанс випадання кірки зменшено ще раз.
+  /* Ваги рулетки задають частоту запуску шахти. Зараз ≈ 33% за ставку:
+     nothingWeight 67 проти суми кірок 33 (15+9+5+3+1). Було 55 проти 9.4
+     (≈15%) — 85% ставок закінчувались миттєвим «Пусто» без анімації.
+     Фінал підбирається симуляцією разом із payoutK. */
+  nothingWeight: 67,
+  /* PITY: стільки пустих ставок ПІДРЯД, після яких НАСТУПНА гарантовано
+     дає кірку (тір — за звичайними вагами, не форсовано Diamond).
+     Лічильник живе на гравці (PlayerRecord.dryStreak). */
+  pity: 4,
   /* Рулетка виглядає як класичний однорядний слот («777»): ОДНА
      вертикальна стрічка символів, у вікні видно три — над, на лінії
      виплати (по центру, з рамкою) і під. Це не три окремі барабани
@@ -162,16 +166,19 @@ export const CONFIG = {
    щоб утримати РТП=95% при таких обсягах). Тепер забіг короткий і
    передбачуваний, тож payoutK може лишатись маленьким і зрозумілим
    числом, а вартість блоку — реальною цифрою на екрані. */
+/* weight — вага на рулетці ВІДНОСНО nothingWeight. Зараз сума = 33
+   (15+9+5+3+1), nothingWeight = 67 -> кірка в ~33% ставок, з розкладом
+   Wooden 15% / Stone 9% / Iron 5% / Golden 3% / Diamond 1% за ставку. */
 export const TIERS: readonly Tier[] = [
-  { id: 'lvl2', name: 'Wooden', weight: 4.30, hp: 100, dmg: 2, color: '#a9803f', color2: '#6b4a20',
+  { id: 'lvl2', name: 'Wooden', weight: 15, hp: 100, dmg: 2, color: '#a9803f', color2: '#6b4a20',
     skin: '/assets/pickaxes/lvl2.webp', skinMagic: '/assets/pickaxes/lvl2_magic.webp' },
-  { id: 'lvl3', name: 'Stone', weight: 2.70, hp: 150, dmg: 3, color: '#a8a8a8', color2: '#6e6e6e',
+  { id: 'lvl3', name: 'Stone', weight: 9, hp: 150, dmg: 3, color: '#a8a8a8', color2: '#6e6e6e',
     skin: '/assets/pickaxes/lvl3.png', skinMagic: '/assets/pickaxes/lvl3_magic.webp' },
-  { id: 'lvl4', name: 'Iron', weight: 1.60, hp: 200, dmg: 4, color: '#e2e2e2', color2: '#9d9d9d',
+  { id: 'lvl4', name: 'Iron', weight: 5, hp: 200, dmg: 4, color: '#e2e2e2', color2: '#9d9d9d',
     skin: '/assets/pickaxes/lvl4.png', skinMagic: '/assets/pickaxes/lvl4_magic.gif' },
-  { id: 'gold', name: 'Golden', weight: 0.66, hp: 300, dmg: 5, color: '#f7d13a', color2: '#c79a10',
+  { id: 'gold', name: 'Golden', weight: 3, hp: 300, dmg: 5, color: '#f7d13a', color2: '#c79a10',
     skin: '/assets/pickaxes/gold.png', skinMagic: '/assets/pickaxes/gold_magic.webp' },
-  { id: 'diamond', name: 'Diamond', weight: 0.14, hp: 400, dmg: 7, color: '#57eede', color2: '#22b7a8',
+  { id: 'diamond', name: 'Diamond', weight: 1, hp: 400, dmg: 7, color: '#57eede', color2: '#22b7a8',
     skin: '/assets/pickaxes/diamond.png', skinMagic: '/assets/pickaxes/diamond_magic.webp' },
 ];
 
@@ -301,4 +308,10 @@ export function reelTable(): ReelSlot[] {
   const table: ReelSlot[] = [{ tier: null, weight: CONFIG.nothingWeight }];
   for (const t of TIERS) table.push({ tier: t, weight: t.weight });
   return table;
+}
+
+/* Тільки кірки, без «пусто» — для pity-прокруту (гарантована кірка).
+   Розклад тірів той самий, що на звичайній рулетці. */
+export function tierOnlyTable(): ReelSlot[] {
+  return TIERS.map((t): ReelSlot => ({ tier: t, weight: t.weight }));
 }

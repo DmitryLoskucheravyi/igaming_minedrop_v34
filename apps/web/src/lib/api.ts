@@ -30,6 +30,9 @@ export interface PlayerState {
   firstName: string;
   username: string | null;
   balance: number;
+  /** пустих ставок поспіль; на pityAt наступна гарантовано дає кірку */
+  dryStreak: number;
+  pityAt: number;
   clientSeed: string;
   serverSeedHash: string;
   nonce: number;

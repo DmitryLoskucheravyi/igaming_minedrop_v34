@@ -19,8 +19,8 @@ const st = {
 for (const t of TIERS) st.perTier[t.id] = { n: 0, sum: 0 };
 
 /* ставка = 1, тому виплата одразу в іксах */
-function playBet(seed: string): { x: number; pick: TierId | null } {
-  const r = resolveRound(seed, 'bet', 1);
+function playBet(seed: string, pity: boolean): { x: number; pick: TierId | null } {
+  const r = resolveRound(seed, 'bet', 1, pity);
   st.spins += r.setup.spins.length;
   const tier = r.setup.tiers[0] ?? null;
   if (!tier) return { x: 0, pick: null };
@@ -38,23 +38,25 @@ function playBet(seed: string): { x: number; pick: TierId | null } {
   return { x, pick: tier };
 }
 
-let baseX = 0, dry = 0, bestBet = 0, capHits = 0;
+let baseX = 0, dry = 0, dryNow = 0, bestBet = 0, capHits = 0, pityHits = 0;
 const betX: number[] = [];
 
 for (let i = 0; i < N; i++) {
-  const r = playBet(seedAt(i));
+  const pity = dryNow >= CONFIG.pity;
+  if (pity) pityHits++;
+  const r = playBet(seedAt(i), pity);
   baseX += r.x; betX.push(r.x);
   if (r.x > bestBet) bestBet = r.x;
   if (r.x >= CONFIG.maxWinX) capHits++;
-  if (!r.pick) dry++;
+  if (!r.pick) { dry++; dryNow++; } else dryNow = 0;
 }
 
 const eBase = baseX / N;
 
 console.log('=== ЗВИЧАЙНА ГРА ===');
 console.log('ставок:', N, '| кірка в', ((st.drops / N) * 100).toFixed(1) + '% ставок',
-            '(' + ((st.drops / st.spins) * 100).toFixed(1) + '% прокрутів)',
-            '| без кірки:', ((dry / N) * 100).toFixed(1) + '%');
+            '| без кірки:', ((dry / N) * 100).toFixed(1) + '%',
+            '| pity спрацював', pityHits, 'раз');
 console.log('політ: глибина', (st.depth / st.drops).toFixed(1),
             '| блоків', (st.blocks / st.drops).toFixed(1),
             '| час', (st.secs / st.drops).toFixed(1) + 'с',

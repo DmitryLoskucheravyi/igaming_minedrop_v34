@@ -65,10 +65,17 @@ export class RoundsService {
     const balanceBefore = rec.balance;
     rec.balance -= cost;
 
+    /* PITY: якщо гравець уже CONFIG.pity ставок поспіль без кірки —
+       цей прокрут форсуємо на гарантовану кірку. */
+    const pity = rec.dryStreak >= CONFIG.pity;
+
     const { seed, nonce } = this.fairness.nextSeed(rec);
-    const resolved = resolveRound(seed, mode, bet);
+    const resolved = resolveRound(seed, mode, bet, pity);
 
     rec.balance += resolved.payout;
+
+    /* Лічильник пустих ставок: кірка (у т.ч. форсована) -> 0, промах -> +1. */
+    rec.dryStreak = resolved.setup.tiers.length ? 0 : rec.dryStreak + 1;
 
     const result: RoundResult = {
       roundId: randomUUID(),
@@ -79,6 +86,8 @@ export class RoundsService {
       spins: resolved.setup.spins,
       tiers: resolved.setup.tiers,
       startCols: resolved.setup.startCols,
+      pity: resolved.setup.pity,
+      dryStreak: rec.dryStreak,
       sim: resolved.sim,
       rawPayout: resolved.rawPayout,
       payout: resolved.payout,
