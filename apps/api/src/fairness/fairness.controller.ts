@@ -48,7 +48,10 @@ export class FairnessController {
   @Post('rotate')
   @UseGuards(TelegramAuthGuard)
   rotate(@TgUser() user: TelegramUser) {
-    return this.fairness.rotate(this.players.findOrCreate(user));
+    const rec = this.players.findOrCreate(user);
+    const out = this.fairness.rotate(rec);
+    this.players.persist(rec);   // rotate змінив serverSeed/nonce/revealed
+    return out;
   }
 
   /* Публічна перевірка — навмисно БЕЗ авторизації: гравець має могти

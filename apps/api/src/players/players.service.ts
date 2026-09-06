@@ -1,7 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit,
+} from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { CONFIG, serverSeedHash } from '@minedrop/engine';
 import type { RoundResult } from '@minedrop/engine';
+import { ENV, type Env } from '../config/env';
+import { PlayerStore } from './player-store';
 import type { TelegramUser } from '../telegram/init-data';
 
 /* ============================================================
@@ -17,11 +21,11 @@ import type { TelegramUser } from '../telegram/init-data';
    ботовим токеном. Відкрив мініапс з іншого пристрою — той самий
    баланс; підмінив id у запиті — підпис не зійдеться.
 
-   СХОВИЩЕ: in-memory. Це заглушка для розробки — процес перезапустили,
-   баланси обнулились. Під продакшн міняється тільки цей файл:
-   методи вже написані як «знайти -> змінити -> зберегти», а списання
-   й нарахування зроблені однією операцією в RoundsService, щоб їх
-   можна було загорнути в транзакцію.
+   СХОВИЩЕ: у процесі — Map, а копія лежить у MongoDB (PlayerStore).
+   На старті все зчитується в Map; після кожної зміни, що торкає гроші
+   (раунд, поповнення, ротація сида), документ гравця повністю
+   перезаписується в БД (fire-and-forget, persist()). MONGO_URL порожній
+   -> тільки Map, стан гине з рестартом (dev без БД).
 
    ТЕСТОВЕ ПОПОВНЕННЯ: поки гри без реальних грошей і без адмінки,
    findOrCreate() сам повертає баланс, якщо його не вистачає навіть
@@ -61,11 +65,46 @@ const HISTORY_LIMIT = 50;
 const MIN_PLAYABLE_BET = Math.min(...CONFIG.bets);
 
 @Injectable()
-export class PlayersService {
+export class PlayersService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(PlayersService.name);
   private readonly players = new Map<number, PlayerRecord>();
+  private store: PlayerStore | null = null;
 
-  /** Перший вхід — заводимо гравця; далі просто знаходимо. */
+  constructor(@Inject(ENV) private readonly env: Env) {}
+
+  async onModuleInit(): Promise<void> {
+    if (!this.env.mongoUrl) {
+      this.log.warn('MONGO_URL не заданий — гравці тільки in-memory, гинуть із рестартом.');
+      return;
+    }
+    const store = new PlayerStore();
+    try {
+      await store.connect(this.env.mongoUrl);
+      const rows = await store.loadAll();
+      for (const r of rows) this.players.set(r.telegramId, r);
+      this.store = store;
+      this.log.log(`Завантажено гравців із БД: ${rows.length}`);
+    } catch (e) {
+      await store.close();
+      this.log.error(`MongoDB недоступна (${(e as Error).message}). ` +
+        'Працюємо in-memory — стан НЕ зберігається.');
+      if (this.env.isProd) throw e;   // у проді без БД стартувати не можна
+    }
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.store?.close();
+  }
+
+  /** Асинхронно скидає гравця в БД (fire-and-forget, помилку лише логуємо). */
+  persist(rec: PlayerRecord): void {
+    this.store?.save(rec).catch((e) =>
+      this.log.error(`не зберігся гравець ${rec.telegramId}: ${(e as Error).message}`));
+  }
+
+  /** Перший вхід — заводимо гравця; далі просто знаходимо.
+      Пише в БД лише коли справді щось змінилось (створення / поповнення) —
+      «останній вхід» без активності в БД не летить, це надто дрібно. */
   findOrCreate(user: TelegramUser): PlayerRecord {
     const found = this.players.get(user.id);
     if (found) {
@@ -75,6 +114,7 @@ export class PlayersService {
       if (found.balance < MIN_PLAYABLE_BET) {
         this.log.warn(`тестове поповнення: ${found.telegramId} ${found.balance} -> ${CONFIG.startBalance}`);
         found.balance = CONFIG.startBalance;
+        this.persist(found);
       }
       return found;
     }
@@ -96,6 +136,7 @@ export class PlayersService {
       seenAt: Date.now(),
     };
     this.players.set(user.id, rec);
+    this.persist(rec);
     return rec;
   }
 
@@ -116,12 +157,16 @@ export class PlayersService {
 
   setClientSeed(rec: PlayerRecord, clientSeed: string): PlayerRecord {
     rec.clientSeed = clientSeed.trim().slice(0, 128) || rec.clientSeed;
+    this.persist(rec);
     return rec;
   }
 
+  /** Викликається в кінці кожного раунду — тут і зберігаємо гравця в БД
+      (баланс, nonce, dryStreak, історія — усе свіже). */
   pushHistory(rec: PlayerRecord, result: RoundResult): void {
     rec.history.unshift(result);
     if (rec.history.length > HISTORY_LIMIT) rec.history.length = HISTORY_LIMIT;
+    this.persist(rec);
   }
 
   /* ---- для адмін-панелі (тимчасова, поза продом) ---- */
@@ -141,6 +186,7 @@ export class PlayersService {
     const rec = this.players.get(telegramId);
     if (!rec) return null;
     rec.balance += amount;
+    this.persist(rec);
     this.log.warn(`адмін-поповнення: ${telegramId} +${amount} -> ${rec.balance}`);
     return rec.balance;
   }

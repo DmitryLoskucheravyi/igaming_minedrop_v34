@@ -30,6 +30,10 @@ export interface Env {
 
   /** dev-режим авторизації: приймати заголовок x-dev-user замість initData */
   devAuth: boolean;
+
+  /** MongoDB для персистентності гравців. Порожньо — тільки in-memory
+      (стан гине з рестартом). */
+  mongoUrl: string | null;
 }
 
 /* Коли можна пускати без підпису телеграма.
@@ -68,6 +72,7 @@ export function loadEnv(): Env {
     webhookUrl: process.env.TELEGRAM_WEBHOOK_URL?.trim() || null,
     webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || null,
     devAuth: resolveDevAuth(isProd, botToken),
+    mongoUrl: process.env.MONGO_URL?.trim() || null,
   };
 }
 
