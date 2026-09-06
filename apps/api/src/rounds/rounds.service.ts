@@ -65,17 +65,22 @@ export class RoundsService {
     const balanceBefore = rec.balance;
     rec.balance -= cost;
 
-    /* PITY: якщо гравець уже CONFIG.pity ставок поспіль без кірки —
-       цей прокрут форсуємо на гарантовану кірку. */
-    const pity = rec.dryStreak >= CONFIG.pity;
+    /* PITY рахується ОКРЕМО на кожній ставці. Серія на ставці 10 нічого
+       не дає на ставці 250 — тож набити промахи по 10 і зняти гарантовану
+       кірку на 250 не вийде. Перемкнувся туди-сюди — серія кожної ставки
+       чекає на місці. */
+    const streak = rec.dryStreaks[bet] ?? 0;
+    const pity = streak >= CONFIG.pity;
 
     const { seed, nonce } = this.fairness.nextSeed(rec);
     const resolved = resolveRound(seed, mode, bet, pity);
 
     rec.balance += resolved.payout;
 
-    /* Лічильник пустих ставок: кірка (у т.ч. форсована) -> 0, промах -> +1. */
-    rec.dryStreak = resolved.setup.tiers.length ? 0 : rec.dryStreak + 1;
+    /* Лічильник пустих прокрутів цієї ставки: кірка (у т.ч. форсована)
+       -> 0, промах -> +1. Інші ставки не чіпаємо. */
+    const nextStreak = resolved.setup.tiers.length ? 0 : streak + 1;
+    rec.dryStreaks[bet] = nextStreak;
 
     const result: RoundResult = {
       roundId: randomUUID(),
@@ -87,7 +92,7 @@ export class RoundsService {
       tiers: resolved.setup.tiers,
       startCols: resolved.setup.startCols,
       pity: resolved.setup.pity,
-      dryStreak: rec.dryStreak,
+      dryStreak: nextStreak,
       sim: resolved.sim,
       rawPayout: resolved.rawPayout,
       payout: resolved.payout,

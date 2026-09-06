@@ -265,6 +265,7 @@ export class Presenter {
     this.bet = b;
     // зменшив ставку до підйомної — плашка нестачі більше не актуальна
     if (this.error && this.balance >= b) this.error = null;
+    // серія до гарантії — своя на кожній ставці; перемалювати прогрес під нову
     this.emit();
   }
 
@@ -548,7 +549,9 @@ export class Presenter {
       message: this.message,
       // кнопка активна навіть при нестачі коштів — щоб тап показав плашку
       canSpin: idle || this.state === 'RESULT',
-      dryStreak: p?.dryStreak ?? 0,
+      // серія до гарантії рахується окремо на кожній ставці — показуємо ту,
+      // що набита саме на поточній вибраній ставці
+      dryStreak: p?.dryStreaks?.[this.bet] ?? 0,
       pityAt: p?.pityAt ?? CONFIG.pity,
       rates: this.rates,
       busy: this.busy,

@@ -39,15 +39,18 @@ export class PlayerStore {
   }
 
   /** Усі гравці з БД. Дозаповнюємо поля, яких могло не бути в старих
-      документах (dryStreak/revealed/history), щоб код далі не думав про це. */
+      документах (dryStreaks/revealed/history), щоб код далі не думав про це.
+      Старе поле dryStreak (одне число) просто ігнорується — серії тепер
+      живуть по ставках, невелика втрата серії при міграції прийнятна. */
   async loadAll(): Promise<PlayerRecord[]> {
     if (!this.col) return [];
     const docs = await this.col.find().toArray();
     return docs.map((d) => {
-      const { _id, ...rest } = d as { _id: number } & Record<string, unknown>;
-      void _id;
+      const { _id, dryStreak, ...rest } = d as
+        { _id: number; dryStreak?: number } & Record<string, unknown>;
+      void _id; void dryStreak;
       return {
-        dryStreak: 0,
+        dryStreaks: {},
         revealed: [],
         history: [],
         ...rest,

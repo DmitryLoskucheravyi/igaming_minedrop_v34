@@ -64,7 +64,8 @@ export class AdminController {
         username: r.username ?? null,
         balance: r.balance,
         nonce: r.nonce,
-        dryStreak: r.dryStreak,
+        // найдовша серія до гарантії серед усіх ставок гравця
+        dryStreak: Math.max(0, ...Object.values(r.dryStreaks)),
         createdAt: r.createdAt,
         seenAt: r.seenAt,
       }));

@@ -119,6 +119,12 @@ export function GameClient() {
   const bets = hud.bets;
   const canBetDown = !roundInFlight && bets.some((b) => b < hud.bet);
   const canBetUp = !roundInFlight && bets.some((b) => b > hud.bet);
+
+  // Ставку можна міняти будь-коли: серія до гарантії «прив'язана» до
+  // ставки, на якій набивається (у кожної ставки — своя). Перемкнувся
+  // на іншу — там серія своя (найчастіше 0); повернувся назад — стара
+  // серія на місці. Тож перекинути гарантовану кірку на дорогу ставку
+  // неможливо, і питати підтвердження не треба.
   const betDown = useCallback(() => {
     const prev = [...bets].reverse().find((b) => b < hud.bet);
     if (prev !== undefined) setBet(prev);
@@ -186,44 +192,55 @@ export function GameClient() {
             </span>
           </div>
         )}
-      </div>
 
-      {hud.dryStreak > 0 && (
-        <div className={'pity' + (hud.dryStreak >= hud.pityAt ? ' ready' : '')}>
-          {hud.dryStreak >= hud.pityAt ? (
-            <span>СЛЕДУЮЩАЯ — КИРКА</span>
-          ) : (
-            <>
-              <span className="pity-pips" aria-hidden="true">
-                {'●'.repeat(hud.dryStreak) + '○'.repeat(Math.max(0, hud.pityAt - hud.dryStreak))}
-              </span>
-              <span>{hud.dryStreak}/{hud.pityAt} до гарантии</span>
-            </>
+        {/* Плаваюче керування: прозорий фон, по центру знизу. Ставка над
+            круглою кнопкою «крутити», по боках — «−» / «+». */}
+        <div className="controls">
+          {hud.dryStreak > 0 && (
+            <div className={'pity' + (hud.dryStreak >= hud.pityAt ? ' ready' : '')}>
+              {hud.dryStreak >= hud.pityAt ? (
+                <span>СЛЕДУЮЩАЯ — КИРКА</span>
+              ) : (
+                <>
+                  <span className="pity-pips" aria-hidden="true">
+                    {'●'.repeat(hud.dryStreak) + '○'.repeat(Math.max(0, hud.pityAt - hud.dryStreak))}
+                  </span>
+                  <span>{hud.dryStreak}/{hud.pityAt} до гарантии</span>
+                </>
+              )}
+            </div>
           )}
-        </div>
-      )}
 
-      <footer className="bottombar">
-        <div className="betstepper">
-          <button type="button" className="stepbtn" disabled={!canBetDown} onClick={betDown}>−</button>
-          <div className="betvalue">
+          <div className="bet-readout">
             <Money rub={hud.bet} currency={currency} rates={hud.rates} whole />
           </div>
-          <button type="button" className="stepbtn" disabled={!canBetUp} onClick={betUp}>+</button>
-        </div>
 
-        <button
-          type="button"
-          className="playbtn"
-          disabled={!hud.canSpin}
-          onClick={spin}
-          aria-label="Играть"
-        >
-          {hud.busy
-            ? <span className="playbtn-wait">…</span>
-            : <span className="playbtn-tri" aria-hidden="true" />}
-        </button>
-      </footer>
+          <div className="control-row">
+            <button type="button" className="stepbtn" disabled={!canBetDown} onClick={betDown} aria-label="Ставка меньше">−</button>
+
+            <button
+              type="button"
+              className="playbtn"
+              disabled={!hud.canSpin}
+              onClick={spin}
+              aria-label="Играть"
+            >
+              {hud.busy
+                ? <span className="playbtn-wait">…</span>
+                : (
+                  <svg className="playbtn-spin" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3.4 12a8.6 8.6 0 0 1 14.6-6.1l2.6 2.6" />
+                    <polyline points="20.6 3 20.6 8.5 15.1 8.5" />
+                    <path d="M20.6 12a8.6 8.6 0 0 1-14.6 6.1l-2.6-2.6" />
+                    <polyline points="3.4 21 3.4 15.5 8.9 15.5" />
+                  </svg>
+                )}
+            </button>
+
+            <button type="button" className="stepbtn" disabled={!canBetUp} onClick={betUp} aria-label="Ставка больше">+</button>
+          </div>
+        </div>
+      </div>
 
       <div
         className={'drawer-overlay' + (menuOpen ? ' open' : '')}

@@ -190,18 +190,15 @@ html, body {
 .statusline .verified { color: #5ce08a; }
 .statusline .mismatch { color: #ff6a5c; }
 
-/* ---- бомбар: степер ставки | ГРАТИ (по центру) | бонус ---- */
-/* ---- pity: прогрес до гарантированной кирки ---- */
+/* ---- pity: прогрес до гарантированной кирки (плаваюча пігулка) ---- */
 .pity {
-  flex: 0 0 auto;
-  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
-  padding: 5px 12px;
-  background: #1b1f26;
-  border-top: 2px solid #0d0f13;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(4,6,9,.62);
   font: 700 10px ui-monospace, monospace;
   letter-spacing: .14em;
   text-transform: uppercase;
@@ -211,83 +208,91 @@ html, body {
 .pity.ready {
   color: #08210f;
   background: #4ec86a;
-  border-top-color: #2a8544;
 }
 
-.bottombar {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  grid-template-columns: auto 1fr;
+/* Керування ставкою — плаваючий блок по центру знизу, БЕЗ панелі:
+   прозорий фон, поле гри видно наскрізь. Зверху вниз: смужка pity,
+   поточна ставка, ряд [−] [ ⟳ ] [+]. Кругла кнопка «крутити» —
+   зі стрілочками обертання. */
+.controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  flex: 0 0 auto;
-  overflow: hidden;
-  background: #2c323b;
-  background-image:
-    linear-gradient(0deg, rgba(255,255,255,.10) 0 4px, transparent 4px);
-  border-top: 4px solid #0d0f13;
+  /* прозорі проміжки не перехоплюють тапи по полю */
+  pointer-events: none;
+}
+.controls > * { pointer-events: auto; }
+
+.bet-readout {
+  font: 700 15px ui-monospace, monospace;
+  color: #ffd34d;
+  text-shadow: 1px 1px 0 rgba(0,0,0,.7);
+  background: rgba(4,6,9,.5);
+  padding: 4px 14px;
+  border-radius: 999px;
 }
 
-.betstepper {
+.control-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  justify-self: start;
-  min-width: 0;
+  gap: 16px;
 }
+
 .stepbtn {
-  width: 32px;
-  height: 32px;
+  width: 46px;
+  height: 46px;
   flex: 0 0 auto;
-  font: 700 18px inherit;
+  border-radius: 50%;
+  font: 700 22px inherit;
   color: #dfe4ea;
-  background: #6b6b6b;
-  border-top: 3px solid #8f8f8f;
-  border-left: 3px solid #8f8f8f;
-  border-right: 3px solid #3d3d3d;
-  border-bottom: 3px solid #3d3d3d;
-  outline: 2px solid #0d0f13;
+  background: #4a525d;
+  border: 3px solid #6b7480;
+  border-right-color: #333c47;
+  border-bottom-color: #333c47;
+  box-shadow: 0 0 0 3px #0d0f13, 0 3px 8px rgba(0,0,0,.45);
   cursor: pointer;
   text-shadow: 1px 1px 0 rgba(0,0,0,.6);
 }
-.stepbtn:hover:not(:disabled) { background: #7d7d7d; }
-.stepbtn:disabled { opacity: .4; cursor: default; }
-.betvalue {
-  min-width: 48px;
-  text-align: center;
-  font: 700 14px ui-monospace, monospace;
-  color: #ffd34d;
-  text-shadow: 1px 1px 0 rgba(0,0,0,.6);
-  overflow: hidden;
+.stepbtn:hover:not(:disabled) { background: #58616e; }
+.stepbtn:active:not(:disabled) {
+  border-color: #333c47;
+  border-right-color: #6b7480;
+  border-bottom-color: #6b7480;
 }
+.stepbtn:disabled { opacity: .35; cursor: default; }
 
-/* Головна кнопка — просто трикутник «грати», центр нижньої панелі.
-   Вартість тут не показуємо: ставка й так стоїть у степері зліва. */
+/* Головна кнопка — кругла, зі значком обертання «крутити».
+   Вартість тут не показуємо: ставка стоїть окремим написом над кнопкою. */
 .playbtn {
-  justify-self: center;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 76px;
-  height: 58px;
+  width: 78px;
+  height: 78px;
   padding: 0;
+  border-radius: 50%;
   background: #4ec86a;
   border-top: 4px solid #86e79b;
   border-left: 4px solid #86e79b;
   border-right: 4px solid #2a8544;
   border-bottom: 4px solid #2a8544;
-  outline: 3px solid #0d0f13;
+  box-shadow: 0 0 0 3px #0d0f13, 0 4px 12px rgba(0,0,0,.5);
   cursor: pointer;
 }
-.playbtn-tri {
-  width: 0;
-  height: 0;
-  border-style: solid;
-  border-width: 15px 0 15px 24px;
-  border-color: transparent transparent transparent #08210f;
-  margin-left: 3px;   /* оптичний центр */
+.playbtn-spin {
+  width: 30px;
+  height: 30px;
+  stroke: #08210f;
+  fill: none;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .playbtn-wait { font: 800 22px inherit; color: #08210f; }
 .playbtn:hover:not(:disabled) { background: #5cd97a; }
@@ -305,7 +310,7 @@ html, body {
   border-bottom-color: #3a424e;
   cursor: default;
 }
-.playbtn:disabled .playbtn-tri { border-left-color: #2a3038; }
+.playbtn:disabled .playbtn-spin { stroke: #2a3038; }
 .playbtn:disabled .playbtn-wait { color: #2a3038; }
 
 /* ---- висувне меню-бургер ---- */
@@ -720,7 +725,7 @@ canvas {
    висувне меню для другорядного) — на ширших екранах просто
    даємо головній кнопці й степеру трохи більше повітря. */
 @media (min-width: 560px) {
-  .playbtn { width: 92px; height: 64px; }
-  .playbtn-tri { border-width: 17px 0 17px 27px; }
-  .bottombar { padding: 12px 20px; gap: 12px; }
+  .playbtn { width: 88px; height: 88px; }
+  .playbtn-spin { width: 34px; height: 34px; }
+  .control-row { gap: 20px; }
 }

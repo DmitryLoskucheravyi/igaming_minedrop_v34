@@ -43,7 +43,12 @@ export interface PlayerRecord {
   firstName: string;
 
   balance: number;
-  dryStreak: number;         // пустих ставок поспіль (для pity, CONFIG.pity)
+  /* Пустих прокрутів поспіль ОКРЕМО по кожній ставці: ключ — номінал
+     ставки, значення — довжина серії на ній. Кірка (в т.ч. форсована)
+     обнуляє лічильник СВОЄЇ ставки; промах — +1 до нього. Серія на
+     ставці 10 не має жодного стосунку до серії на ставці 250, тож
+     перемкнути гарантовану кірку на дорожчу ставку неможливо. */
+  dryStreaks: Record<number, number>;
 
   clientSeed: string;
   serverSeed: string;        // СЕКРЕТ. Ніколи не віддається до розкриття
@@ -125,7 +130,7 @@ export class PlayersService implements OnModuleInit, OnModuleDestroy {
       username: user.username,
       firstName: user.firstName,
       balance: CONFIG.startBalance,
-      dryStreak: 0,
+      dryStreaks: {},
       clientSeed: randomBytes(8).toString('hex'),
       serverSeed,
       serverSeedHash: serverSeedHash(serverSeed),
@@ -147,7 +152,7 @@ export class PlayersService implements OnModuleInit, OnModuleDestroy {
       firstName: rec.firstName,
       username: rec.username ?? null,
       balance: rec.balance,
-      dryStreak: rec.dryStreak,
+      dryStreaks: rec.dryStreaks,
       pityAt: CONFIG.pity,
       clientSeed: rec.clientSeed,
       serverSeedHash: rec.serverSeedHash,

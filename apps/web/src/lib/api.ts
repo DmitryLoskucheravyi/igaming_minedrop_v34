@@ -30,8 +30,10 @@ export interface PlayerState {
   firstName: string;
   username: string | null;
   balance: number;
-  /** пустих ставок поспіль; на pityAt наступна гарантовано дає кірку */
-  dryStreak: number;
+  /** пустих ставок поспіль ОКРЕМО по кожній ставці (ключ — номінал ставки);
+      коли лічильник ставки досягає pityAt, наступний прокрут на НІЙ
+      гарантовано дає кірку */
+  dryStreaks: Record<number, number>;
   pityAt: number;
   clientSeed: string;
   serverSeedHash: string;
