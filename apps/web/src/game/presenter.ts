@@ -97,6 +97,25 @@ const DIM_NEAR = 2;      // радіус повністю освітленої �
 const DIM_FADE = 1.6;    // на скількох клітинках світло згасає
 const DIM_MAX = 0.28;    // наскільки темнішає найдальше (0.28 ≈ 28%)
 
+/* ---- зум пальцями ----
+   Межі задані в частках CONFIG.viewCols. ZOOM_MIN 0.44 при viewCols 9.6
+   дає ~22 колонки в кадрі — усе поле з огорожею й запасом чорноти
+   навколо; ZOOM_MAX 2.4 — близько 4 колонок, коли хочеться роздивитись
+   блоки впритул. Фактичний розмір клітинки додатково обмежують
+   CONFIG.minCell / maxCell. */
+const ZOOM_MIN = 0.44;
+const ZOOM_MAX = 2.4;
+
+/* ---- ручне гортання поля ----
+   Один палець тягне кадр по вертикалі: гравець може відвести погляд і
+   роздивитись шахту, поки кірка працює. Щойно він припиняє гортати,
+   камера сама повертається до кірки — PAN_HOLD секунд «не чіпай».
+   Час рахується РЕАЛЬНИЙ, а не прискорений: на швидкості ×4 пауза має
+   лишатись тими самими п'ятьма секундами. */
+const PAN_HOLD = 5;       // секунд спокою до повернення фокуса на кірку
+const PAN_MIN_PX = 6;     // менший рух — це тап, а не гортання
+const PAN_LIMIT = 50;     // на скільки рядів можна відійти від кірки
+
 /* ---- плашки великого виграшу ----
    Пороги в іксах від ставки. Прив'язані до реального розподілу виплат
    (sim:final): x5 ≈ верхні 5% раундів, x15 ≈ 1%, x40 ≈ 0.1%. Тобто
@@ -164,6 +183,12 @@ export class Presenter {
      (крутиться рулетка): поле по центру, поверхня внизу екрана. */
   private camX = 0;
   private camXIdle = 0;
+  /* Масштаб від жесту двома пальцями. 1 — як у конфізі (viewCols),
+     більше — ближче, менше — далі. */
+  private zoom = 1;
+  /* Скільки ще секунд камера НЕ тягнеться за кіркою: гравець гортає
+     поле сам. Тікає реальним часом (див. PAN_HOLD). */
+  private panT = 0;
   private camY = 0;
   private camMin = 0;
   private shake = 0;
@@ -224,8 +249,98 @@ export class Presenter {
     this.primary();
   };
   private onClick = () => {
+    // під час/одразу після щипка клік не рахуємо — інакше зум пальцями
+    // закривав би екран результату
+    if (this.pinched) return;
     if (this.state === 'RESULT' && this.resultT >= RESULT_GRACE) this.closeResult();
   };
+
+  /* ---- ЗУМ ДВОМА ПАЛЬЦЯМИ ----
+     Стежимо за активними вказівниками самі, бо потрібна саме ВІДСТАНЬ
+     між двома, а готової події для цього немає. Порівнюємо поточну
+     відстань із попередньою і множимо масштаб на їхнє відношення —
+     виходить природно: розвів пальці вдвічі, наблизив удвічі.
+
+     Тільки масштаб, без панорами: камера й так сама тримає кірку в
+     центрі, і ручне зміщення з нею б воювало. */
+  private pointers = new Map<number, { x: number; y: number }>();
+  private pinchDist = 0;
+  private pinched = false;
+  /** накопичений рух пальця — щоб відрізнити тап від гортання */
+  private dragged = 0;
+
+  private pointerSpread(): number {
+    const pts = [...this.pointers.values()];
+    return pts.length < 2 ? 0 : Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+
+  private onPointerDown = (e: PointerEvent) => {
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    this.dragged = 0;
+    if (this.pointers.size === 2) {
+      this.pinchDist = this.pointerSpread();
+      this.pinched = true;
+    }
+  };
+
+  private onPointerMove = (e: PointerEvent) => {
+    const prev = this.pointers.get(e.pointerId);
+    if (!prev) return;
+    const dy = e.clientY - prev.y;
+    const dx = e.clientX - prev.x;
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (this.pointers.size === 2) {
+      const d = this.pointerSpread();
+      if (this.pinchDist > 0 && d > 0) this.setZoom(this.zoom * (d / this.pinchDist));
+      this.pinchDist = d;
+      return;
+    }
+
+    if (this.pointers.size !== 1) return;
+
+    /* ОДИН палець — гортання поля по вертикалі. Тягнемо кадр «за
+       вміст»: палець униз -> світ униз -> камера піднімається, тобто
+       camY меншає. Поки триває гортання (і PAN_HOLD секунд після),
+       камера за кіркою не тягнеться — див. update(). */
+    this.dragged += Math.hypot(dx, dy);
+    if (this.dragged < PAN_MIN_PX) return;   // це ще тап, а не жест
+
+    this.pinched = true;                     // клік після гортання не рахуємо
+    this.panT = PAN_HOLD;
+    this.camY -= dy / this.cell;
+
+    /* Не даємо загубитись: далі PAN_LIMIT рядів від кірки відходити
+       нема сенсу, а рендер там уперся б у ряди, давно викинуті
+       прунингом (їх довелось би перегенеровувати щокадру). */
+    const p = this.run?.picks[0];
+    if (p) {
+      const lo = p.y - PAN_LIMIT;
+      const hi = p.y + PAN_LIMIT;
+      if (this.camY < lo) this.camY = lo;
+      else if (this.camY > hi) this.camY = hi;
+    }
+  };
+
+  private onPointerUp = (e: PointerEvent) => {
+    this.pointers.delete(e.pointerId);
+    if (this.pointers.size < 2) this.pinchDist = 0;
+    /* Прапорець тримаємо до повного відпускання: браузер шле click уже
+       після того, як пальці зникли, і без цього щипок чи гортання
+       гасили б екран результату. */
+    if (this.pointers.size === 0 && this.pinched) {
+      setTimeout(() => { this.pinched = false; }, 120);
+    }
+  };
+
+  /** Масштаб у межах ZOOM_MIN..ZOOM_MAX. Публічний — знадобиться, якщо
+      колись з'явиться кнопка скидання масштабу. */
+  setZoom(z: number): void {
+    const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+    if (Math.abs(next - this.zoom) < 0.002) return;
+    this.zoom = next;
+    this.geometry();
+  }
 
   constructor(canvas: HTMLCanvasElement, onHud: (h: HudState) => void) {
     this.canvas = canvas;
@@ -243,6 +358,11 @@ export class Presenter {
     window.addEventListener('resize', this.onResize);
     document.addEventListener('keydown', this.onKey);
     this.canvas.addEventListener('click', this.onClick);
+    this.canvas.addEventListener('pointerdown', this.onPointerDown);
+    this.canvas.addEventListener('pointermove', this.onPointerMove);
+    this.canvas.addEventListener('pointerup', this.onPointerUp);
+    this.canvas.addEventListener('pointercancel', this.onPointerUp);
+    this.canvas.addEventListener('pointerleave', this.onPointerUp);
 
     /* window 'resize' у телеграм-мініапсі майже не спрацьовує:
        шторка/висота міняється через CSS-змінну --tg-viewport-stable-height
@@ -281,6 +401,11 @@ export class Presenter {
     window.removeEventListener('resize', this.onResize);
     document.removeEventListener('keydown', this.onKey);
     this.canvas.removeEventListener('click', this.onClick);
+    this.canvas.removeEventListener('pointerdown', this.onPointerDown);
+    this.canvas.removeEventListener('pointermove', this.onPointerMove);
+    this.canvas.removeEventListener('pointerup', this.onPointerUp);
+    this.canvas.removeEventListener('pointercancel', this.onPointerUp);
+    this.canvas.removeEventListener('pointerleave', this.onPointerUp);
     this.resizeObserver?.disconnect();
   }
 
@@ -886,20 +1011,29 @@ export class Presenter {
        має за нею встигати в будь-який бік. Обмеження знизу (camMin)
        лишається лише для стану БЕЗ забігу — щоб під рулеткою поверхня
        стояла там само, де й стояла. */
-    let tx = this.camXIdle;
-    let ty = this.camMin;
-    if (this.run) {
-      const alive = this.run.alive;
-      const p = alive.length ? alive[0] : this.run.picks[0];
-      if (p) {
-        tx = p.x - this.w / this.cell / 2;
-        ty = p.y - (this.h * CONFIG.camLead) / this.cell;
+    /* Гравець щойно гортав поле сам — камера не забирає в нього
+       керування, доки не мине PAN_HOLD. Час тут РЕАЛЬНИЙ (dtReal), а не
+       прискорений: на швидкості ×4 пауза інакше стискалась би до
+       секунди з чвертю. Коли час вийшов, звичайний лерп нижче сам
+       плавно приведе кадр назад до кірки — окремої анімації не треба. */
+    if (this.panT > 0) {
+      this.panT = Math.max(0, this.panT - dtReal);
+    } else {
+      let tx = this.camXIdle;
+      let ty = this.camMin;
+      if (this.run) {
+        const alive = this.run.alive;
+        const p = alive.length ? alive[0] : this.run.picks[0];
+        if (p) {
+          tx = p.x - this.w / this.cell / 2;
+          ty = p.y - (this.h * CONFIG.camLead) / this.cell;
+        }
       }
+      const k = Math.min(1, dt * CONFIG.camLerp);
+      this.camX += (tx - this.camX) * k;
+      this.camY += (ty - this.camY) * k;
+      if (!this.run && this.camY < this.camMin) this.camY = this.camMin;
     }
-    const k = Math.min(1, dt * CONFIG.camLerp);
-    this.camX += (tx - this.camX) * k;
-    this.camY += (ty - this.camY) * k;
-    if (!this.run && this.camY < this.camMin) this.camY = this.camMin;
 
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
@@ -931,13 +1065,24 @@ export class Presenter {
     this.canvas.width = this.w * dpr;
     this.canvas.height = this.h * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.geometry();
+  }
 
+  /* Похідна геометрія: розмір клітинки, межі камери, розміри рулетки.
+     Винесено з layout() окремо, бо зум пальцями міняє саме це і НЕ має
+     чіпати розмір канваса — перевиставлення canvas.width щокадру
+     жесту і чистить полотно, і смикає читання getBoundingClientRect. */
+  private geometry(): void {
     /* Розмір клітинки рахується від viewCols, а НЕ від cols: на екран
        навмисно влазить менше колонок, ніж є в полі. Інакше видно все
        поле одразу, і стежити камері нема за чим — вона стоїть на місці.
        Тепер поле ширше за екран, камера панорамує за кіркою, а біля
-       країв з'являється огорожа. */
-    this.cell = Math.max(CONFIG.minCell, Math.min(CONFIG.maxCell, this.w / CONFIG.viewCols));
+       країв з'являється огорожа.
+
+       zoom — жест пальцями: більше 1 наближає (менше колонок у кадрі),
+       менше 1 віддаляє. */
+    const view = CONFIG.viewCols / this.zoom;
+    this.cell = Math.max(CONFIG.minCell, Math.min(CONFIG.maxCell, this.w / view));
     // поле по центру, поки забігу немає
     this.camXIdle = (CONFIG.cols - this.w / this.cell) / 2;
 

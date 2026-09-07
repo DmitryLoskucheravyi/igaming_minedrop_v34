@@ -555,6 +555,10 @@ canvas {
   display: block;
   cursor: crosshair;
   image-rendering: pixelated;
+  /* Жест двома пальцями обробляє сама гра (зум камери), тому браузеру
+     його віддавати не можна — інакше він зробить власний зум сторінки
+     й канвас просто розтягнеться. */
+  touch-action: none;
 }
 
 .loader {

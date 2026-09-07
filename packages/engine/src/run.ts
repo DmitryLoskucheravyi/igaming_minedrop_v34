@@ -40,9 +40,8 @@ const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
    і межа за найглибшою зрізала б ряди, в яких відсталі ще копають.
    Саме на цьому клієнт розходився з сервером.
 
-   Запас 24 ряди — з великим перебором: найсильніший підкид (TNT,
-   6 клітинок/с проти гравітації 26) піднімає кірку менш ніж на
-   одну клітинку. Другий бік цього запасу — рендер: клієнт малює
+   Запас 24 ряди — з великим перебором: найсильніший підкид (вибух TNT)
+   піднімає кірку менш ніж на 2 клітинки. Другий бік цього запасу — рендер: клієнт малює
    приблизно camLead * висота_екрана / cell рядів вище кірки, і це
    має лишатись меншим за PRUNE_MARGIN. Страховка на випадок, якщо
    колись не залишиться, — Mine.peek() (див. world.ts). */
@@ -309,8 +308,8 @@ export class Run {
     let maxFall = P.maxFall;
     if (p.rubberT > 0) {
       p.rubberT = Math.max(0, p.rubberT - dt);
-      gravity *= CONFIG.rubber.boost;
-      maxFall *= CONFIG.rubber.boost;
+      gravity *= CONFIG.rubber.fallBoost;
+      maxFall *= CONFIG.rubber.fallBoost;
     }
 
     p.vy = Math.min(maxFall, p.vy + gravity * dt);
@@ -499,7 +498,28 @@ export class Run {
       p.hits++; this.hits++;
       p.rubberT = CONFIG.rubber.fallSec;
       this.events.push({ t: 'rubber', r, c, secs: CONFIG.rubber.fallSec, pick: idx });
-      this.bounce(p, dx, sideways, 1, CONFIG.rubber.boost);
+
+      /* Трамплін, а не «трохи сильніший відскок». Імпульс абсолютний
+         (CONFIG.rubber.kick) і ЗАВЖДИ має вертикальну складову.
+
+         Через звичайний bounce() це не працювало з двох причин:
+         надбавка рахувалась від навмисно слабкого bounceKick, а при
+         ударі ЗБОКУ та гілка вертикальної складової не дає взагалі —
+         тільки штовхає вбік. Тому на екрані був напис «ОТСКОК», а
+         стрибка не було. */
+      const away = dx === 0 ? (this.rnd() < 0.5 ? -1 : 1) : Math.sign(dx);
+      const kick = CONFIG.rubber.kick;
+      if (sideways) {
+        // збоку: відкидає вбік і помітно вгору
+        p.vx = clamp(away * kick * 0.85, -P.maxSideSpeed, P.maxSideSpeed);
+        p.vy = -kick * 0.55;
+      } else {
+        // зверху/знизу: майже чистий стрибок
+        p.vy = -kick;
+        p.vx = clamp(p.vx * 0.5 + away * kick * 0.35, -P.maxSideSpeed, P.maxSideSpeed);
+      }
+      p.rotV = clamp(p.rotV + away * P.spinKick * 1.5, -P.maxSpin, P.maxSpin);
+
       this.checkDead(p, idx);
       return;
     }
@@ -631,8 +651,27 @@ export class Run {
                            extra: blastGot * (chainMult - 1), pick: idx });
       }
 
-      p.vy = -P.tntBlast;
-      p.vx = clamp(p.vx + (this.rnd() - 0.5) * P.tntBlast, -P.maxSideSpeed, P.maxSideSpeed);
+      /* ВІДКИД ВІД ВИБУХУ — від епіцентру, а не завжди строго вгору:
+         видно, з якого боку рвонуло, і кірку зносить убік, а не лише
+         підкидає. Що ближче епіцентр до положення «під кіркою», то
+         сильніший підкид.
+
+         Вертикальну складову ЗАДАЄМО, а не додаємо. Кірка часто входить
+         у динаміт на повній швидкості падіння (maxFall), і доданий
+         імпульс просто потонув би в ній — саме тому старий підкид
+         (жорстко вгору, 6.0) піднімав менш ніж на клітинку й на екрані
+         не читався зовсім. Стеля maxRise сюди навмисно не діє: це вибух,
+         а не відскок від блока. */
+      const ex = p.x - (c + 0.5);
+      const ey = p.y - (r + 0.5);
+      const len = Math.hypot(ex, ey) || 1;
+      const fromBelow = Math.max(0, -ey / len);   // 1 — рвонуло рівно під кіркою
+
+      p.vy = -P.tntBlast * (0.6 + 0.4 * fromBelow);
+      p.vx = clamp(
+        p.vx * 0.35 + (ex / len) * P.tntBlast * 0.7 + (this.rnd() - 0.5) * P.tntBlast * 0.35,
+        -P.maxSideSpeed, P.maxSideSpeed,
+      );
       p.rotV += (this.rnd() < 0.5 ? -1 : 1) * P.spinKick * 1.2;
       this.checkDead(p, idx);
       return;
