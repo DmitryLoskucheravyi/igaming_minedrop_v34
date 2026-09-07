@@ -102,14 +102,14 @@ export function AddressesTab() {
           <tbody>
             {rows?.map((a) => (
               <tr key={a.id}>
-                <td><span className={`${s.mono} ${s.wrapAny}`}>{a.address}</span></td>
-                <td>{a.label || <span className={s.dim}>—</span>}</td>
-                <td className={s.num}>{a.pending}</td>
-                <td><span className={`${s.badge} ${a.active ? s.approved : s.expired}`}>
+                <td data-label="Адрес"><span className={`${s.mono} ${s.wrapAny}`}>{a.address}</span></td>
+                <td data-label="Заголовок">{a.label || <span className={s.dim}>—</span>}</td>
+                <td className={s.num} data-label="Заявок">{a.pending}</td>
+                <td data-label="Статус"><span className={`${s.badge} ${a.active ? s.approved : s.expired}`}>
                   {a.active ? 'активен' : 'выключен'}
                 </span></td>
-                <td>{when(a.createdAt)}</td>
-                <td>
+                <td data-label="Добавлен">{when(a.createdAt)}</td>
+                <td data-label="">
                   <div className={s.rowActions}>
                     <button type="button" className={s.btnSm} onClick={() => void toggle(a)}>
                       {a.active ? 'Выкл' : 'Вкл'}

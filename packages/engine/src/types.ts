@@ -6,8 +6,8 @@
 export type TierId = 'lvl2' | 'lvl3' | 'lvl4' | 'gold' | 'diamond';
 export type BlockId =
   | 'grass' | 'dirt' | 'stone' | 'coal' | 'redstone' | 'iron' | 'lapis' | 'gold' | 'diamond' | 'emerald'
-  | 'tnt' | 'magic' | 'enchant' | 'mult';
-export type BlockKind = 'solid' | 'tnt' | 'magic' | 'mult' | 'upgrade';
+  | 'tnt' | 'magic' | 'enchant' | 'mult' | 'grow' | 'rubber';
+export type BlockKind = 'solid' | 'tnt' | 'magic' | 'mult' | 'upgrade' | 'grow' | 'rubber';
 
 export interface Tier {
   id: TierId;
@@ -48,6 +48,12 @@ export type RunEvent =
   /* m — номінал блоку (x2, x5...), active — множник вікна після цього блоку,
      secs — на скільки секунд відкрито/подовжено вікно множення */
   | { t: 'mult'; r: number; c: number; m: number; active: number; secs: number; pick: number }
+  /* стрілка вгору: кірка тимчасово більшає. scale — сумарний розмір
+     після цього блоку (збільшення стакаються), stacks — скільки їх
+     активно, secs — на скільки секунд додалось саме це */
+  | { t: 'grow'; r: number; c: number; scale: number; stacks: number; secs: number; pick: number }
+  /* гумовий блок: посилений відскок + прискорене падіння на secs секунд */
+  | { t: 'rubber'; r: number; c: number; secs: number; pick: number }
   | { t: 'pickdead'; x: number; y: number; tier: TierId; pick: number }
   | { t: 'end'; reason: RunEndReason };
 

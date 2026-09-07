@@ -139,6 +139,15 @@ export class Pick {
   dead = false;
   /** скільки секунд поспіль кірка йде майже вертикально (див. STRAIGHT_SEC) */
   straightT = 0;
+  /** Поточний розмір кірки: множить і спрайт, і РАДІУС ЗІТКНЕННЯ
+      (див. collide). 1 — звичайна; далі CONFIG.grow.scale у степені
+      кількості активних збільшень. */
+  scale = 1;
+  /** Таймери активних збільшень. Кожне живе своє життя (CONFIG.grow.sec),
+      тому ефект спадає сходинками, а не зникає весь разом. */
+  growT: number[] = [];
+  /** скільки ще секунд діє прискорене падіння після гумового блоку */
+  rubberT = 0;
   /* Кулдаун — ОКРЕМО НА КОЖНУ клітинку (мапа, не одне останнє значення):
      удар тепер б'є ВСІ дотичні блоки за раз (див. collide()), тому
      "останній дотик" одним ключем більше не описує стан коректно —
@@ -282,7 +291,29 @@ export class Run {
       for (const [k, at] of p.lastHit) if (at < cutoff) p.lastHit.delete(k);
     }
 
-    p.vy = Math.min(P.maxFall, p.vy + P.gravity * dt);
+    /* Збільшення кірки — незалежні таймери. Кожен тікає сам, і щойно
+       якийсь вичерпався, розмір перераховується з тих, що лишились. */
+    if (p.growT.length) {
+      for (let i = p.growT.length - 1; i >= 0; i--) {
+        p.growT[i] -= dt;
+        if (p.growT[i] <= 0) p.growT.splice(i, 1);
+      }
+      p.scale = Math.pow(CONFIG.grow.scale, p.growT.length);
+    }
+
+    /* Після гумового блоку кірка не лише сильніше відскакує, а й швидше
+       падає — інакше «трамплін» відчувався б як пливкий стрибок у ваті.
+       Прискорення й стеля падіння множаться на той самий boost, і рівно
+       на fallSec секунд. */
+    let gravity = P.gravity;
+    let maxFall = P.maxFall;
+    if (p.rubberT > 0) {
+      p.rubberT = Math.max(0, p.rubberT - dt);
+      gravity *= CONFIG.rubber.boost;
+      maxFall *= CONFIG.rubber.boost;
+    }
+
+    p.vy = Math.min(maxFall, p.vy + gravity * dt);
     p.vx -= p.vx * P.airDrag * dt;
 
     /* Довго падає майже прямо вниз — штовхаємо вбік, до центру поля.
@@ -327,7 +358,9 @@ export class Run {
   }
 
   private collide(p: Pick): void {
-    const R = P.bodyR;
+    // радіус росте разом із кіркою (блок-стрілка), інакше «більша кірка»
+    // була б суто картинкою і нічого не міняла в грі
+    const R = P.bodyR * p.scale;
 
     // бічні стінки шахти
     if (p.x < R) { p.x = R; p.vx = Math.abs(p.vx) * P.wallBounce; }
@@ -342,9 +375,13 @@ export class Run {
        торкається кількох блоків, усі мають отримати удар разом.
        Порядок ітерації фіксований (rr потім cc за зростанням) — тому
        детермінізм між клієнтом і сервером не ламається. */
+    /* Вікно перебору — від радіуса, а не фіксовані 3x3: збільшена кірка
+       дістає далі, ніж на одну клітинку, і при жорсткому 3x3 половина
+       її тіла проходила б крізь блоки без дотику. */
     const cx = Math.floor(p.x), cy = Math.floor(p.y);
-    for (let rr = cy - 1; rr <= cy + 1 && !p.dead; rr++) {
-      for (let cc = cx - 1; cc <= cx + 1 && !p.dead; cc++) {
+    const reach = Math.ceil(R);
+    for (let rr = cy - reach; rr <= cy + reach && !p.dead; rr++) {
+      for (let cc = cx - reach; cc <= cx + reach && !p.dead; cc++) {
         const cell = this.mine.get(rr, cc);
         if (!cell || isWall(cell)) continue;
         const nx = clamp(p.x, cc, cc + 1);
@@ -422,6 +459,47 @@ export class Run {
       this.upgrades++;
       this.events.push({ t: 'magic', r, c, mult: p.enchantMult, lvl: p.enchantLvl, pick: idx });
       this.bounce(p, dx, sideways, 0.7);
+      this.checkDead(p, idx);
+      return;
+    }
+
+    /* СТРІЛКА ВГОРУ: кірка більшає в CONFIG.grow.scale разів.
+       Разом зі спрайтом росте радіус зіткнення (див. collide), тому за
+       крок вона зачіпає площу приблизно в scale² разів більшу. Через це
+       ж множимо запас HP: інакше кожен дотик коштує 1 HP, дотиків стає
+       вдев'ятеро більше, і «буф» убивав би кірку за частку секунди.
+       Не стакається: другий такий блок ламається без ефекту. */
+    if (def.kind === 'grow') {
+      this.mine.clear(r, c);
+      p.hp -= def.cost;
+      p.hits++; this.hits++;
+
+      /* Стакається: нове збільшення додає СВІЙ таймер, а розміри
+         перемножуються. Запас HP не чіпаємо навмисно — саме він, а не
+         радіус, визначає віддачу забігу (див. коментар у CONFIG.grow). */
+      if (p.growT.length < CONFIG.grow.maxStacks) {
+        p.growT.push(CONFIG.grow.sec);
+        p.scale = Math.pow(CONFIG.grow.scale, p.growT.length);
+        this.upgrades++;
+      }
+      this.events.push({ t: 'grow', r, c, scale: p.scale,
+                         stacks: p.growT.length, secs: CONFIG.grow.sec, pick: idx });
+      this.bounce(p, dx, sideways, 0.7);
+      this.checkDead(p, idx);
+      return;
+    }
+
+    /* ГУМА: трамплін. Відскок сильніший за звичайний на CONFIG.rubber.boost
+       (і вгору, і вбік — разом зі стелею maxRise, інакше приріст просто
+       зрізало б нею), а наступні fallSec секунд кірка симетрично швидше
+       падає — див. stepPick(). */
+    if (def.kind === 'rubber') {
+      this.mine.clear(r, c);
+      p.hp -= def.cost;
+      p.hits++; this.hits++;
+      p.rubberT = CONFIG.rubber.fallSec;
+      this.events.push({ t: 'rubber', r, c, secs: CONFIG.rubber.fallSec, pick: idx });
+      this.bounce(p, dx, sideways, 1, CONFIG.rubber.boost);
       this.checkDead(p, idx);
       return;
     }
@@ -581,21 +659,28 @@ export class Run {
     this.checkDead(p, idx);
   }
 
-  /* Відскок + перевертання. Саме звідси береться діагональ. */
-  private bounce(p: Pick, dx: number, sideways: boolean, k: number): void {
+  /* Відскок + перевертання. Саме звідси береться діагональ.
+
+     boost — множник СИЛИ відскоку (гумовий блок). Він піднімає і сам
+     імпульс, і стелю maxRise: без другого приріст просто зрізало б
+     стелею, і «сильний» відскок від гуми нічим не відрізнявся б від
+     звичайного. Стеля бічної швидкості (maxSideSpeed) лишається
+     спільною — це запобіжник фізики, а не налаштування відчуття. */
+  private bounce(p: Pick, dx: number, sideways: boolean, k: number, boost = 1): void {
     const dir = dx === 0 ? (this.rnd() < 0.5 ? -1 : 1) : Math.sign(dx);
 
     if (sideways) {
-      p.vx = dir * (Math.abs(p.vx) * P.restitution + P.sideKick) * k;
+      p.vx = dir * (Math.abs(p.vx) * P.restitution + P.sideKick * boost) * k;
       p.vy *= 0.55;
     } else {
       /* Удар знизу. Швидкість угору обрізається стелею: кірка важка,
          і «свічка» на пів екрана від одного удару в підлогу виглядає
          неправильно. Донизу (додатне vy) стеля не діє — там працює
          maxFall. */
-      p.vy = -(Math.abs(p.vy) * P.restitution + P.bounceKick) * k;
-      if (p.vy < -P.maxRise) p.vy = -P.maxRise;
-      p.vx += dir * (P.sideKick * 0.5 + this.rnd() * P.sideKickRand) * k;
+      p.vy = -(Math.abs(p.vy) * P.restitution + P.bounceKick * boost) * k;
+      const rise = P.maxRise * boost;
+      if (p.vy < -rise) p.vy = -rise;
+      p.vx += dir * (P.sideKick * 0.5 + this.rnd() * P.sideKickRand) * k * boost;
     }
 
     p.vx = clamp(p.vx, -P.maxSideSpeed, P.maxSideSpeed);

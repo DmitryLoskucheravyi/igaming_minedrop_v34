@@ -130,11 +130,51 @@ export const Render = {
     return h < p ? 'block.stone2' : 'block.stone';
   },
 
+  /* Блок-стрілка: кірка більшає втричі. Малюється кодом — картинки для
+     нього поки немає; щойно з'явиться, досить прописати skin у BLOCKS. */
+  growBlock(ctx: Ctx, x: number, y: number, s: number) {
+    // з'явиться картинка (skin у BLOCKS.grow) — вона й піде в діло
+    const img = Assets.get('block.grow');
+    if (img) { ctx.drawImage(img, x, y, s + 1, s + 1); return; }
+    this.panel(ctx, x + 2, y + 2, s - 3, s - 3, '#1f8f6d', 4);
+    const cx = x + s / 2, u = s / 16;
+    ctx.fillStyle = '#eafff6';
+    // держак
+    ctx.fillRect(cx - u * 1.6, y + s * 0.42, u * 3.2, s * 0.34);
+    // наконечник
+    ctx.beginPath();
+    ctx.moveTo(cx, y + s * 0.2);
+    ctx.lineTo(cx + u * 4.4, y + s * 0.5);
+    ctx.lineTo(cx - u * 4.4, y + s * 0.5);
+    ctx.closePath();
+    ctx.fill();
+  },
+
+  /* Гумовий блок — трамплін: посилений відскок і швидке падіння. */
+  rubberBlock(ctx: Ctx, x: number, y: number, s: number) {
+    const img = Assets.get('block.rubber');
+    if (img) { ctx.drawImage(img, x, y, s + 1, s + 1); return; }
+    this.panel(ctx, x + 2, y + 2, s - 3, s - 3, '#a3306f', 4);
+    // «пружина»: три дуги, щоб зчитувалось як щось пружне
+    ctx.strokeStyle = '#ffc2e4';
+    ctx.lineWidth = Math.max(2, s * 0.07);
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const yy = y + s * (0.34 + i * 0.16);
+      ctx.beginPath();
+      ctx.moveTo(x + s * 0.26, yy);
+      ctx.quadraticCurveTo(x + s / 2, yy - s * 0.16, x + s * 0.74, yy);
+      ctx.stroke();
+    }
+  },
+
   /* Блок. cell = { id, dmg, seed, m }, row — номер ряду (для скінів,
      що залежать від глибини) */
   block(ctx: Ctx, x: number, y: number, s: number, cell: Cell, row = 0) {
     const def = BLOCKS[cell.id];
     if (def.kind === 'mult') { this.multBlock(ctx, x, y, s, cell.m || 2); return; }
+    if (def.kind === 'grow') { this.growBlock(ctx, x, y, s); return; }
+    if (def.kind === 'rubber') { this.rubberBlock(ctx, x, y, s); return; }
     const key = cell.id === 'stone' ? this.stoneSkin(row, cell.seed) : 'block.' + cell.id;
     const img = Assets.get(key);
     if (img) {
@@ -172,6 +212,16 @@ export const Render = {
       ctx.fillStyle = 'rgba(255,255,255,.10)';
       ctx.fillRect(x + px, y + py, w, Math.max(1, u * 0.4));
     }
+  },
+
+  /* Затемнення клітинок, далеких від кірки. Зона навколо неї лишається
+     з тим самим освітленням, що й раніше, а все, що далі за DIM_NEAR
+     клітинок, гасне до DIM_MAX. Перехід плавний — різка межа читалась би
+     як кругла пляма-ліхтарик, а не як «сюди не дістає світло». */
+  dim(ctx: Ctx, x: number, y: number, s: number, a: number) {
+    if (a <= 0.004) return;
+    ctx.fillStyle = 'rgba(0,0,8,' + a.toFixed(3) + ')';
+    ctx.fillRect(x, y, s + 1, s + 1);
   },
 
   /* Затемнення з глибиною — відчуття, що лізеш углиб */

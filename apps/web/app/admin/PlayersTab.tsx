@@ -92,15 +92,15 @@ export function PlayersTab() {
           <tbody>
             {players?.map((p) => (
               <tr key={p.telegramId}>
-                <td className={s.player}>
+                <td className={s.player} data-label="Игрок">
                   <div className="name">{p.firstName || 'Без имени'}</div>
                   <div className="sub">{p.username ? '@' + p.username : 'ID ' + p.telegramId}</div>
                 </td>
-                <td className={s.num}><span className={s.balance}>{rub(p.balance)}</span></td>
-                <td className={s.num}>{p.nonce}</td>
-                <td className={s.num}>{p.dryStreak}</td>
-                <td>{when(p.seenAt)}</td>
-                <td className={s.num}>
+                <td className={s.num} data-label="Баланс ₽"><span className={s.balance}>{rub(p.balance)}</span></td>
+                <td className={s.num} data-label="Nonce">{p.nonce}</td>
+                <td className={s.num} data-label="Серия">{p.dryStreak}</td>
+                <td data-label="Был">{when(p.seenAt)}</td>
+                <td className={s.num} data-label="">
                   <button type="button" className={s.addBtn} aria-label="Пополнить"
                     onClick={() => { setTarget(p); setAmount(0); setErr(null); }}>+</button>
                 </td>

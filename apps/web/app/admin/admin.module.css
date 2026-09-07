@@ -345,3 +345,97 @@
   font-weight: 700;
   cursor: help;
 }
+
+/* ============================================================
+   ТЕЛЕФОН
+
+   Головна проблема CRM на вузькому екрані — таблиці. Горизонтальний
+   скрол у `.tableWrap` формально рятує, але користуватись ним не можна:
+   заголовки лишаються за кадром, і незрозуміло, яке число ти зараз
+   бачиш. Тому нижче 720px рядок таблиці перетворюється на КАРТКУ, а
+   підпис кожної комірки береться з data-label у розмітці.
+
+   Комірки без підпису (кнопки дій, порожній стан) мають data-label="",
+   тож ::before у них порожній — окремих правил не треба.
+   ============================================================ */
+@media (max-width: 720px) {
+  .shell { padding: 14px 12px 32px; }
+
+  .head { gap: 10px; margin-bottom: 16px; }
+  .head h1 { font-size: 18px; }
+
+  /* вкладки лишаються в один рядок, а «хто зайшов + вихід» падає під них */
+  .tab { padding: 10px 10px; font-size: 12px; }
+  .who {
+    order: 10;
+    width: 100%;
+    margin-left: 0;
+    padding: 10px 0 2px;
+    justify-content: space-between;
+  }
+
+  /* ---- таблиця -> картки ---- */
+  .tableWrap {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow-x: visible;
+  }
+  .table, .table tbody, .table tr, .table td { display: block; width: 100%; }
+  .table thead { display: none; }
+
+  .table tr {
+    background: #12171c;
+    border: 1px solid #2a333c;
+    border-radius: 12px;
+    margin-bottom: 10px;
+  }
+  .table tbody tr:hover td { background: transparent; }
+
+  .table td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    white-space: normal;
+    padding: 9px 14px;
+    border-bottom: 1px solid #1c232a;
+    text-align: right;
+  }
+  .table tr td:last-child { border-bottom: none; }
+  .table td.num { text-align: right; }
+
+  .table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font: 600 10px ui-monospace, monospace;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #7c8590;
+    text-align: left;
+  }
+
+  /* гравець: ім'я поруч із підписом, нік — окремим рядком під ним */
+  .table td.player { flex-wrap: wrap; }
+  .table td.player .name { flex: 1 1 auto; }
+  .table td.player .sub { flex: 1 1 100%; }
+
+  /* кнопки дій тиснуться до правого краю й переносяться */
+  .table td .rowActions { flex-wrap: wrap; justify-content: flex-end; }
+  .table td .addBtn { margin-left: auto; }
+
+  /* порожній стан і «Загрузка…» — на всю ширину картки */
+  .table td .empty { flex: 1 1 100%; padding: 26px 8px; }
+
+  /* адреса гаманця довга — хай ламається, а не розсуває картку */
+  .table td .wrapAny { max-width: 100% !important; }
+
+  /* ---- форми ---- */
+  .addrForm { flex-direction: column; align-items: stretch; }
+  .addrForm .input, .addrForm .input.short { flex: 1 1 auto; width: 100%; }
+  .addrForm .confirm { width: 100%; }
+
+  .modal { width: 100%; max-width: none; }
+  .actions { flex-direction: column-reverse; }
+  .actions .confirm, .actions .cancel { width: 100%; }
+}

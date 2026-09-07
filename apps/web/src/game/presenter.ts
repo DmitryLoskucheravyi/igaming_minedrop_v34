@@ -88,6 +88,33 @@ const TOAST_MAX = 3;             // скільки тостів одночасн
    у фізиці межа шахти є завжди, незалежно від того, що намальовано. */
 const FENCE_COLS = 1;
 
+/* ---- освітлення навколо кірки ----
+   Зона, у якій кірка зараз працює, лишається такою ж яскравою, як була;
+   усе, що далі за DIM_NEAR клітинок від будь-якої кірки, гасне до
+   DIM_MAX. Перехід розтягнутий на DIM_FADE клітинок — різка межа
+   читалась би як круглий ліхтарик, а не як природний спад світла. */
+const DIM_NEAR = 2;      // радіус повністю освітленої зони, у клітинках
+const DIM_FADE = 1.6;    // на скількох клітинках світло згасає
+const DIM_MAX = 0.28;    // наскільки темнішає найдальше (0.28 ≈ 28%)
+
+/* ---- плашки великого виграшу ----
+   Пороги в іксах від ставки. Прив'язані до реального розподілу виплат
+   (sim:final): x5 ≈ верхні 5% раундів, x15 ≈ 1%, x40 ≈ 0.1%. Тобто
+   «BIG WIN» справді рідкісний, а не з'являється через раз — інакше
+   плашка нічого не означає. Береться найвищий досягнутий поріг. */
+const WIN_TIERS: readonly { at: number; text: string; color: string }[] = [
+  { at: 5, text: 'BIG WIN', color: '#5ce08a' },
+  { at: 15, text: 'MEGA WIN', color: '#ffd34d' },
+  { at: 40, text: 'EPIC WIN', color: '#ff9a3c' },
+  { at: 100, text: 'JACKPOT', color: '#ff6ad5' },
+];
+
+function winTier(x: number): { text: string; color: string } | null {
+  let hit: { text: string; color: string } | null = null;
+  for (const t of WIN_TIERS) if (x >= t.at) hit = t;
+  return hit;
+}
+
 export class Presenter {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -752,6 +779,24 @@ export class Presenter {
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
           text: label, color: '#ffe0b3', size: 0.22 });
         this.pushLog(label, '#ffe0b3');
+      } else if (e.t === 'grow') {
+        // СТРІЛКА ВГОРУ: кірка більшає (разом із радіусом зіткнення й HP)
+        this.burst(e.c + 0.5, e.r + 0.5, '#3ad1a0', 46, 2.6);
+        this.shake = 20;
+        this.flash = 0.45; this.flashColor = '#3ad1a0';
+        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.7,
+          text: 'X' + e.scale + '  ' + e.secs + 'с', color: '#8ff5d5', size: 0.3 });
+        this.pushLog(
+          e.stacks > 1 ? 'Рост X' + e.scale + ' (' + e.stacks + ' подряд)' : 'Рост X' + e.scale,
+          '#8ff5d5');
+        haptic('win');
+      } else if (e.t === 'rubber') {
+        // ГУМА: трамплін — сильний відскок і швидке падіння після нього
+        this.burst(e.c + 0.5, e.r + 0.5, '#ff7ec4', 30, 2.2);
+        this.shake = Math.max(this.shake, 14);
+        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.1,
+          text: 'ОТСКОК!', color: '#ffb8de', size: 0.24 });
+        haptic('hit');
       } else if (e.t === 'pickdead') {
         this.burst(e.x, e.y, '#8a939f', 22, 1.4);
         this.shake = Math.max(this.shake, 12);
@@ -983,10 +1028,16 @@ export class Presenter {
     const c0 = Math.floor(this.camX) - 1;
     const c1 = Math.ceil(this.camX + this.w / cell) + 1;
 
+    /* Джерела світла — живі кірки. Беремо їх один раз на кадр, а не на
+       кожну клітинку. Немає забігу — немає й затемнення: під рулеткою
+       поле має виглядати так само, як раніше. */
+    const lights = this.run ? this.run.alive : [];
+
     for (let r = r0; r <= r1; r++) {
       const y = this.sy(r);
       for (let c = c0; c <= c1; c++) {
         const x = this.sx(c);
+        const dark = this.dimAt(lights, r, c);
 
         /* За краєм поля — огорожа завширшки FENCE_COLS, далі нічого:
            там лишається чорний фон, який уже залив drawSky(). Огорожа
@@ -998,6 +1049,7 @@ export class Presenter {
           if (c >= -FENCE_COLS && c < CONFIG.cols + FENCE_COLS) {
             Render.fence(ctx, x, y, cell);
             Render.shade(ctx, x, y, cell, r);
+            Render.dim(ctx, x, y, cell, dark);
           }
           continue;
         }
@@ -1011,8 +1063,24 @@ export class Presenter {
         if (!b || 'wall' in b) continue;
         Render.block(ctx, x, y, cell, b, r);
         Render.shade(ctx, x, y, cell, r);
+        Render.dim(ctx, x, y, cell, dark);
       }
     }
+  }
+
+  /* Наскільки затемнити клітинку (r, c): 0 поруч із кіркою, DIM_MAX
+     далеко від неї. Рахуємо від НАЙБЛИЖЧОЇ кірки — якщо їх колись стане
+     кілька, кожна світить сама за себе. Відстань беремо до центру
+     клітинки, тому світло рівномірне навколо кірки, а не квадратне. */
+  private dimAt(lights: readonly { x: number; y: number }[], r: number, c: number): number {
+    if (!lights.length) return 0;
+    let best = Infinity;
+    for (const p of lights) {
+      const d = Math.hypot(p.x - (c + 0.5), p.y - (r + 0.5));
+      if (d < best) best = d;
+    }
+    if (best <= DIM_NEAR) return 0;
+    return DIM_MAX * Math.min(1, (best - DIM_NEAR) / DIM_FADE);
   }
 
   private drawParticles(ctx: CanvasRenderingContext2D): void {
@@ -1030,11 +1098,14 @@ export class Presenter {
     for (const p of this.run.picks) {
       const x = this.sx(p.x);
       const y = this.sy(p.y);
+      // розмір спрайту йде за p.scale — тим самим, що й радіус зіткнення
+      const size = this.cell * 1.5 * p.scale;
       if (p.dead) ctx.globalAlpha = 0.25;
-      Render.pickaxe(ctx, x, y, this.cell * 1.5, p.tier, p.rot, p.enchanted);
+      Render.pickaxe(ctx, x, y, size, p.tier, p.rot, p.enchanted);
       ctx.globalAlpha = 1;
       if (!p.dead && this.state === 'RUNNING') {
-        Render.hpLabel(ctx, x, y - this.cell * 0.92, p.hp, p.hpMax, this.cell);
+        // підпис HP тримається над спрайтом, тож теж їде за розміром
+        Render.hpLabel(ctx, x, y - size * 0.62, p.hp, p.hpMax, this.cell);
       }
     }
   }
@@ -1215,6 +1286,22 @@ export class Presenter {
     const bw = Math.min(420, this.w - 40), bh = 176;
     const bx = (this.w - bw) / 2, by = this.h / 2 - bh / 2;
     ctx.globalAlpha = a;
+
+    /* Плашка великого виграшу — НАД панеллю, щоб не тіснити цифри
+       всередині неї. З'являється з коротким «наїздом» (масштаб від 1.6
+       до 1) і легким пульсом: без руху великий напис читається як
+       статичний ярлик, а не як подія. */
+    const tier = winTier(round.cost > 0 ? round.payout / round.cost : 0);
+    if (tier) {
+      const pop = Math.max(1, 1.6 - this.resultT * 4);
+      const pulse = 1 + Math.sin(this.resultT * 6) * 0.03;
+      const size = Math.round(Math.min(this.w * 0.11, 44) * pop * pulse);
+      ctx.save();
+      ctx.globalAlpha = a;
+      Render.text(ctx, tier.text, this.w / 2, by - 26,
+        '900 ' + size + 'px ui-monospace, monospace', tier.color);
+      ctx.restore();
+    }
 
     Render.panel(ctx, bx, by, bw, bh, '#2c323b', 5);
     const mid = bx + bw / 2;

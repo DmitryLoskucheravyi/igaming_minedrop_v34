@@ -70,14 +70,14 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
           <tbody>
             {rows?.map((p) => (
               <tr key={p.id}>
-                <td className={s.player}>
+                <td className={s.player} data-label="Игрок">
                   <div className="name">{p.player?.firstName || 'ID ' + p.telegramId}</div>
                   <div className="sub">
                     {p.player?.username ? '@' + p.player.username : 'ID ' + p.telegramId}
                   </div>
                 </td>
-                <td className={s.num}>{rub(p.amount)}</td>
-                <td className={s.num}>
+                <td className={s.num} data-label="₽">{rub(p.amount)}</td>
+                <td className={s.num} data-label="USDT">
                   {p.usdtAmount}
                   {/* Курс на момент створення заявки не приїхав з біржі —
                       сума порахована по запасному значенню. Це треба
@@ -88,11 +88,11 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                     </span>
                   )}
                 </td>
-                <td>
+                <td data-label="Адрес">
                   <div className={`${s.mono} ${s.wrapAny}`} style={{ maxWidth: 220 }}>{p.address}</div>
                   {p.addressLabel && <div className={s.dim}>{p.addressLabel}</div>}
                 </td>
-                <td>
+                <td data-label="Статус">
                   <span className={`${s.badge} ${s[p.status]}`}>{STATUS_RU[p.status]}</span>
                   {p.status === 'pending' && (
                     <div className={`${s.timer} ${p.expiresAt - now < 5 * 60000 ? s.urgent : ''}`}>
@@ -101,8 +101,8 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                   )}
                   {p.adminNote && <div className={s.dim}>{p.adminNote}</div>}
                 </td>
-                <td>{when(p.createdAt)}</td>
-                <td>
+                <td data-label="Создана">{when(p.createdAt)}</td>
+                <td data-label="">
                   {p.status === 'pending' ? (
                     <div className={s.rowActions}>
                       <button type="button" className={`${s.btnSm} ${s.ok}`} disabled={busyId === p.id}
