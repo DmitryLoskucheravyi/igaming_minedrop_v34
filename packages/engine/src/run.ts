@@ -460,7 +460,7 @@ export class Run {
         this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId,
                            healOnly: true, topUp, pick: idx });
       }
-      this.bounce(p, dx, sideways, 0.7);
+      this.bounce(p, dx, sideways, 0.7 * this.hitBounce(p, dx, dy));
       this.checkDead(p, idx);
       return;
     }
@@ -482,7 +482,7 @@ export class Run {
       p.enchanted = true;
       this.upgrades++;
       this.events.push({ t: 'magic', r, c, mult: p.enchantMult, lvl: p.enchantLvl, pick: idx });
-      this.bounce(p, dx, sideways, 0.7);
+      this.bounce(p, dx, sideways, 0.7 * this.hitBounce(p, dx, dy));
       this.checkDead(p, idx);
       return;
     }
@@ -508,7 +508,7 @@ export class Run {
       }
       this.events.push({ t: 'grow', r, c, scale: p.scale,
                          stacks: p.growT.length, secs: CONFIG.grow.sec, pick: idx });
-      this.bounce(p, dx, sideways, 0.7);
+      this.bounce(p, dx, sideways, 0.7 * this.hitBounce(p, dx, dy));
       this.checkDead(p, idx);
       return;
     }
@@ -544,7 +544,7 @@ export class Run {
       const boost = R.speedUp;
       const hitSpeed = Math.abs(sideways ? p.vx : p.vy);
       const kick = clamp(hitSpeed * R.restitution, R.minKick, R.maxKick)
-        * boost * (0.9 + this.rnd() * 0.2);
+        * boost * this.hitBounce(p, dx, dy) * (0.9 + this.rnd() * 0.2);
       /* Стеля бічної швидкості теж масштабується: інакше пришвидшена
          дуга летіла б угору швидко, а вбік — з колишньою швидкістю,
          і рух перекосило б у вертикаль. */
@@ -591,7 +591,7 @@ export class Run {
       }
       if (this.multActive > this.multChain) this.multChain = this.multActive;
       this.events.push({ t: 'mult', r, c, m, active: this.multActive, secs, pick: idx });
-      this.bounce(p, dx, sideways, 1);
+      this.bounce(p, dx, sideways, this.hitBounce(p, dx, dy));
       this.checkDead(p, idx);
       return;
     }
@@ -746,8 +746,39 @@ export class Run {
       this.events.push({ t: 'crack', r, c, id: def.id, stage: cell.dmg, of: def.tough, pick: idx });
     }
 
-    this.bounce(p, dx, sideways, 1);
+    this.bounce(p, dx, sideways, this.hitBounce(p, dx, dy));
     this.checkDead(p, idx);
+  }
+
+  /* Наскільки пружним буде цей удар: 1 — як було раніше.
+
+     Кірка не куля. Головка важка — удар нею глухий; ручка легка —
+     від неї кірку відкидає сильніше. Рахуємо, наскільки напрямок на
+     блок збігається з напрямком головки, і інтерполюємо між
+     headBounce і handleBounce.
+
+     Напрямок головки виводимо з rot: за побудовою при rot = restRot
+     вона дивиться ВНИЗ, тобто в бік (0, +1). Кут «вниз» — це PI/2,
+     отже зсув між rot і справжнім кутом головки сталий.
+
+     Друга частина — розмір: велика кірка стрибає гірше, бо маса
+     росте швидше за силу удару. */
+  private hitBounce(p: Pick, dx: number, dy: number): number {
+    const len = Math.hypot(dx, dy);
+    let k = 1;
+    if (len > 1e-6) {
+      const head = p.rot - P.restRot + Math.PI / 2;
+      // 1 — блок точно з боку головки, -1 — з боку ручки
+      const align = (Math.cos(head) * dx + Math.sin(head) * dy) / len;
+      const t = (align + 1) / 2;                       // 0 ручка .. 1 головка
+      k = P.handleBounce + (P.headBounce - P.handleBounce) * t;
+    }
+    if (p.scale > 1) {
+      // scale росте степенями CONFIG.grow.scale, тож і гасіння степеневе
+      const steps = Math.log(p.scale) / Math.log(CONFIG.grow.scale);
+      k *= Math.pow(P.sizeDamp, steps);
+    }
+    return k;
   }
 
   /* Відскок + перевертання. Саме звідси береться діагональ.
