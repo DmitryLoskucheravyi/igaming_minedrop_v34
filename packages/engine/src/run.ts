@@ -506,8 +506,10 @@ export class Run {
        зрізало б нею), а наступні fallSec секунд кірка симетрично швидше
        падає — див. stepPick(). */
     if (def.kind === 'rubber') {
-      this.mine.clear(r, c);
-      p.hp -= def.cost;
+      /* НЕ ламається — блок лишається в шахті. Тому й this.mine.clear()
+         тут немає, і cost у нього 0: дотик безкоштовний. Удар усе одно
+         рахуємо, щоб страховка maxHits покривала й нескінченне
+         стрибання по слайму. */
       p.hits++; this.hits++;
       p.rubberT = CONFIG.rubber.fallSec;
       this.events.push({ t: 'rubber', r, c, secs: CONFIG.rubber.fallSec, pick: idx });
@@ -521,7 +523,11 @@ export class Run {
          тільки штовхає вбік. Тому на екрані був напис «ОТСКОК», а
          стрибка не було. */
       const away = dx === 0 ? (this.rnd() < 0.5 ? -1 : 1) : Math.sign(dx);
-      const kick = CONFIG.rubber.kick;
+      /* Невеликий розкид сили. Блок незламний, тож кірка може впасти на
+         нього знову; за строго однакового імпульсу вона зайшла б у
+         ідеальний цикл і стрибала б на місці до кінця таймера.
+         Випадковість — з того самого потоку rnd(), детермінізм цілий. */
+      const kick = CONFIG.rubber.kick * (0.9 + this.rnd() * 0.2);
       if (sideways) {
         // збоку: відкидає вбік і помітно вгору
         p.vx = clamp(away * kick * 0.85, -P.maxSideSpeed, P.maxSideSpeed);
