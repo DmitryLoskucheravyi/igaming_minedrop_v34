@@ -18,7 +18,7 @@
 import {
   BLOCKS, CONFIG, Mine, MULT_WINDOW_SEC, PRUNE_MARGIN, Run, SIM_DT, TIER_BY_ID,
   buildSetup, createRun, streamRoot,
-  type RoundResult, type RoundSetup, type Tier,
+  type RoundResult, type RoundSetup, type Tier, type TierId,
 } from '@minedrop/engine';
 import { Api, ApiError, type PlayerState } from '../lib/api';
 import {
@@ -58,6 +58,9 @@ export interface HudState {
   speed: number;
   /** автоплей: раунди йдуть один за одним, поки вистачає балансу */
   autoplay: boolean;
+  /** множник ціни бонус баю на кожну кірку (ціна = ставка * множник).
+      Приходить із сервера — клієнт лише показує. */
+  buyPrices: Record<string, number>;
   fair: { serverSeedHash: string; clientSeed: string; nonce: number } | null;
   error: string | null;
   /** профіль гравця з телеграма: імʼя і @нік (або ID, якщо ніка нема).
@@ -96,7 +99,7 @@ const FENCE_COLS = 1;
    читалась би як круглий ліхтарик, а не як природний спад світла. */
 const DIM_NEAR = 2;      // радіус повністю освітленої зони, у клітинках
 const DIM_FADE = 1.6;    // на скількох клітинках світло згасає
-const DIM_MAX = 0.28;    // наскільки темнішає найдальше (0.28 ≈ 28%)
+const DIM_MAX = 0.42;    // наскільки темнішає найдальше. 0.28 -> 0.42, в 1.5 раза
 
 /* ---- зум пальцями ----
    Межі задані в частках CONFIG.viewCols. ZOOM_MIN 0.44 при viewCols 9.6
@@ -588,7 +591,23 @@ export class Presenter {
     this.emit();
   }
 
-  private async startRound(): Promise<void> {
+  /** Ціна бонуски для кірки за поточної ставки, у рублях. */
+  buyPrice(tier: TierId): number {
+    const k = this.player?.config?.buyPrices?.[tier] ?? CONFIG.buy.price[tier] ?? 0;
+    return Math.round(this.bet * k);
+  }
+
+  /** БОНУС БАЙ: купити гарантовану кірку. Гроші й результат рахує
+      сервер — тут лише перевірка «чи є сенс питати». */
+  buyBonus(tier: TierId): void {
+    if (this.busy) return;
+    if (this.state !== 'IDLE' && this.state !== 'RESULT') return;
+    if (this.balance < this.buyPrice(tier)) { this.notEnough(); return; }
+    if (this.state === 'RESULT') this.closeResult();
+    void this.startRound(tier);
+  }
+
+  private async startRound(buy?: TierId): Promise<void> {
     this.busy = true;
     this.error = null;
     this.verified = null;
@@ -602,7 +621,7 @@ export class Presenter {
     const key = roundKey();
     let res;
     try {
-      res = await Api.play(this.bet, key);
+      res = await Api.play(this.bet, key, buy);
     } catch (e) {
       if (e instanceof ApiError) {
         // сервер відповів і відмовив — ретраїти нема сенсу
@@ -615,7 +634,7 @@ export class Presenter {
       }
       // мережа впала: одна повторна спроба тим самим ключем
       try {
-        res = await Api.play(this.bet, key);
+        res = await Api.play(this.bet, key, buy);
       } catch (e2) {
         this.busy = false;
         this.autoplay = false;
@@ -636,13 +655,13 @@ export class Presenter {
 
     /* Розбираємо сид САМІ. Якщо сервер прислав спини, яких із цього
        сида не виходить, — це не наша гра, і про це треба сказати вголос. */
-    this.setup = buildSetup(round.seed, round.pity);
+    this.setup = buildSetup(round.seed, round.pity, round.buy);
     if (this.setup.spins.join() !== round.spins.join()
       || this.setup.tiers.join() !== round.tiers.join()
       || this.setup.startCols.join() !== round.startCols.join()) {
       this.verified = false;
-      this.setup = { mode: 'bet', spins: round.spins, tiers: round.tiers,
-                     startCols: round.startCols, pity: round.pity };
+      this.setup = { mode: round.mode, spins: round.spins, tiers: round.tiers,
+                     startCols: round.startCols, pity: round.pity, bonus: !!round.buy };
     }
 
     this.spinIndex = 0;
@@ -650,7 +669,7 @@ export class Presenter {
     this.stageTarget = 0;
     this.resultT = 0;
     this.acc = 0;
-    this.newMine(round.seed);
+    this.newMine(round.seed, !!round.buy);
     this.nextSpin();
     this.emit();
   }
@@ -778,8 +797,8 @@ export class Presenter {
 
   /* ---------------- шахта ---------------- */
 
-  private newMine(seed: string): void {
-    this.mine = new Mine(CONFIG.cols, streamRoot(seed, 'mine'));
+  private newMine(seed: string, bonus = false): void {
+    this.mine = new Mine(CONFIG.cols, streamRoot(seed, 'mine'), bonus);
     this.run = null;
     this.particles = [];
     this.popups = [];
@@ -823,6 +842,7 @@ export class Presenter {
       verified: this.verified,
       speed: this.speed,
       autoplay: this.autoplay,
+      buyPrices: p?.config?.buyPrices ?? CONFIG.buy.price,
       fair: this.round?.fair ?? (p ? { serverSeedHash: p.serverSeedHash, clientSeed: p.clientSeed, nonce: p.nonce } : null),
       error: this.error,
       profile: p

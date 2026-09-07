@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { CONFIG, resolveRound, roundCost } from '@minedrop/engine';
-import type { RoundMode, RoundResult } from '@minedrop/engine';
+import { CONFIG, TIER_BY_ID, resolveRound, roundCost } from '@minedrop/engine';
+import type { RoundMode, RoundResult, TierId } from '@minedrop/engine';
 import { PlayersService, type PlayerRecord } from '../players/players.service';
 import { FairnessService } from '../fairness/fairness.service';
 
@@ -33,7 +33,8 @@ export class RoundsService {
     private readonly fairness: FairnessService,
   ) {}
 
-  play(rec: PlayerRecord, bet: number, mode: RoundMode, idempotencyKey?: string): RoundResult {
+  play(rec: PlayerRecord, bet: number, mode: RoundMode,
+       idempotencyKey?: string, buy?: TierId): RoundResult {
     /* Ретрай того самого запиту не має списувати ставку вдруге.
        У вебв'ю телеграма мережа рветься регулярно, тож це не
        теоретичний випадок. */
@@ -44,7 +45,7 @@ export class RoundsService {
       if (hit) return hit.round;
     }
 
-    const round = this.settle(rec, bet, mode);
+    const round = this.settle(rec, bet, mode, buy);
     if (key) this.recent.set(key, { at: Date.now(), round });
     return round;
   }
@@ -54,12 +55,25 @@ export class RoundsService {
     for (const [k, v] of this.recent) if (v.at < cutoff) this.recent.delete(k);
   }
 
-  private settle(rec: PlayerRecord, bet: number, mode: RoundMode): RoundResult {
+  private settle(rec: PlayerRecord, bet: number, mode: RoundMode, buy?: TierId): RoundResult {
     if (!CONFIG.bets.includes(bet as never)) {
       throw new BadRequestException(`Ставка должна быть одной из: ${CONFIG.bets.join(', ')}`);
     }
 
-    const cost = roundCost(mode, bet);
+    /* БОНУС БАЙ. Кірку називає клієнт, тому перевіряємо тут: неіснуючий
+       тір або тір без ціни — відмова. Ціну бере рушій із CONFIG.buy,
+       клієнт її лише показує і на неї не впливає. */
+    if (buy && (!TIER_BY_ID[buy] || !CONFIG.buy.price[buy])) {
+      throw new BadRequestException('Неизвестная кирка');
+    }
+    /* Режим виводиться з buy, а не з того, що написав клієнт. Просити
+       бонуску, не назвавши кірку, — суперечливий запит: мовчки зіграти
+       звичайну ставку за цінником бонуски було б найгіршим варіантом. */
+    if (mode === 'buy' && !buy) {
+      throw new BadRequestException('Не выбрана кирка для бонус бая');
+    }
+
+    const cost = roundCost(mode, bet, buy);
     if (rec.balance < cost) throw new BadRequestException('Недостаточно монет');
 
     const balanceBefore = rec.balance;
@@ -69,24 +83,28 @@ export class RoundsService {
        не дає на ставці 250 — тож набити промахи по 10 і зняти гарантовану
        кірку на 250 не вийде. Перемкнувся туди-сюди — серія кожної ставки
        чекає на місці. */
+    /* Куплена кірка гарантована сама по собі, тож серію промахів вона
+       не витрачає: pity лишається на місці й спрацює на звичайній
+       ставці, як і мав. */
     const streak = rec.dryStreaks[bet] ?? 0;
-    const pity = streak >= CONFIG.pity;
+    const pity = !buy && streak >= CONFIG.pity;
 
     const { seed, nonce } = this.fairness.nextSeed(rec);
-    const resolved = resolveRound(seed, mode, bet, pity);
+    const resolved = resolveRound(seed, mode, bet, pity, buy);
 
     rec.balance += resolved.payout;
 
     /* Лічильник пустих прокрутів цієї ставки: кірка (у т.ч. форсована)
        -> 0, промах -> +1. Інші ставки не чіпаємо. */
-    const nextStreak = resolved.setup.tiers.length ? 0 : streak + 1;
+    const nextStreak = buy ? streak : (resolved.setup.tiers.length ? 0 : streak + 1);
     rec.dryStreaks[bet] = nextStreak;
 
     const result: RoundResult = {
       roundId: randomUUID(),
-      mode,
+      mode: resolved.setup.mode,
       bet,
       cost,
+      buy,
       seed,
       spins: resolved.setup.spins,
       tiers: resolved.setup.tiers,

@@ -22,6 +22,8 @@ export interface RoundSetup {
   tiers: TierId[];        // кірки, що йдуть у шахту
   startCols: number[];    // з яких колонок стартують
   pity: boolean;          // цей прокрут форсований (гарантована кірка після серії пустих)
+  /** шахта з підвищеним спавном множників і зачарувань (режим 'buy') */
+  bonus: boolean;
 }
 
 /* ---------------- рулетка ---------------- */
@@ -50,20 +52,34 @@ function spinBet(rnd: Rng, pity: boolean): { spins: SpinResult[]; tiers: TierId[
 /** Що випало в раунді. Без фізики — клієнт кличе це, щоб крутити рулетку.
     pity — сервер вирішує його зі свого лічильника пустих ставок і кладе
     в RoundResult; клієнт передає сюди те саме значення. */
-export function buildSetup(seed: string, pity = false): RoundSetup {
+export function buildSetup(seed: string, pity = false, buy?: TierId): RoundSetup {
+  /* БОНУС БАЙ: рулетка не крутиться взагалі — гравець уже заплатив за
+     конкретну кірку. Стартова колонка береться з того самого потоку
+     'cols', тому решта раунду відтворюється як звичайно. */
+  const colRnd = stream(seed, 'cols');
+  if (buy) {
+    return {
+      mode: 'buy',
+      spins: [buy],
+      tiers: [buy],
+      startCols: [Math.floor(colRnd() * CONFIG.cols)],
+      pity: false,
+      bonus: true,
+    };
+  }
+
   const reelRnd = stream(seed, 'reel');
   const { spins, tiers } = spinBet(reelRnd, pity);
 
-  const colRnd = stream(seed, 'cols');
   const startCols = tiers.length ? [Math.floor(colRnd() * CONFIG.cols)] : [];
 
-  return { mode: 'bet', spins, tiers, startCols, pity };
+  return { mode: 'bet', spins, tiers, startCols, pity, bonus: false };
 }
 
 /** Шахта + забіг, готові крокувати. Клієнт тикає їх сам, у ритмі кадрів. */
 export function createRun(seed: string, setup: RoundSetup): { mine: Mine; run: Run } | null {
   if (!setup.tiers.length) return null;
-  const mine = new Mine(CONFIG.cols, streamRoot(seed, 'mine'));
+  const mine = new Mine(CONFIG.cols, streamRoot(seed, 'mine'), setup.bonus);
   const run = new Run(
     setup.tiers.map((id) => TIER_BY_ID[id]),
     mine,
@@ -102,8 +118,10 @@ export interface Resolved {
 
 /** Повний прогін раунду до кінця. Це і є «серверна правда».
     mode лишається в сигнатурі для сумісності (завжди 'bet'). */
-export function resolveRound(seed: string, _mode: RoundMode, bet: number, pity = false): Resolved {
-  const setup = buildSetup(seed, pity);
+export function resolveRound(
+  seed: string, _mode: RoundMode, bet: number, pity = false, buy?: TierId,
+): Resolved {
+  const setup = buildSetup(seed, pity, buy);
   const made = createRun(seed, setup);
   const run = made ? made.run.runToEnd() : null;
   const sim = summarize(run);
@@ -119,9 +137,13 @@ export function resolveRound(seed: string, _mode: RoundMode, bet: number, pity =
   };
 }
 
-/** Ціна входу в раунд = ставка. */
-export function roundCost(_mode: RoundMode, bet: number): number {
-  return bet;
+/** Ціна входу. Звичайна ставка — сама ставка; бонус бай — ставка,
+    помножена на ціну обраної кірки (CONFIG.buy.price). */
+export function roundCost(_mode: RoundMode, bet: number, buy?: TierId): number {
+  if (!buy) return bet;
+  const k = CONFIG.buy.price[buy];
+  if (!k) throw new Error(`немає ціни для кірки ${buy}`);
+  return Math.round(bet * k);
 }
 
 export { tierIndex };

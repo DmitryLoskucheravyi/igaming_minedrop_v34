@@ -11,7 +11,7 @@
    TELEGRAM_BOT_TOKEN і це не продакшн.
    ============================================================ */
 
-import type { RoundResult } from '@minedrop/engine';
+import type { RoundResult, TierId } from '@minedrop/engine';
 import { devUserId, initData } from './telegram';
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api';
@@ -21,6 +21,8 @@ export interface PublicConfig {
   spinsPerBet: number;
   payoutK: number;
   maxWinX: number;
+  /** множник ціни бонус баю на кожну кірку (ціна = ставка * множник) */
+  buyPrices: Record<string, number>;
   /** курс для косметичного перерахунку балансу в USDT / зірки */
   rates: { rubPerUsdt: number; rubPerStar: number; updatedAt: number };
 }
@@ -137,11 +139,12 @@ export const Api = {
 
   /* Ключ ідемпотентності: у вебв'ю телеграма запит може обірватись і
      піти повторно. Без ключа це друга списана ставка. */
-  play(bet: number, key = newKey()) {
+  /** buy — купити гарантовану кірку (бонус бай). Ціну рахує сервер. */
+  play(bet: number, key = newKey(), buy?: TierId) {
     return call<{ round: RoundResult; player: PlayerState }>('/rounds/play', {
       method: 'POST',
       headers: { 'x-idempotency-key': key },
-      body: JSON.stringify({ bet, mode: 'bet' }),
+      body: JSON.stringify(buy ? { bet, mode: 'buy', buy } : { bet, mode: 'bet' }),
     });
   },
 

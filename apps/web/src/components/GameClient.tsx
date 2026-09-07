@@ -24,12 +24,14 @@
    ============================================================ */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { TierId } from '@minedrop/engine';
 import { Presenter, type HudState } from '../game/presenter';
 import {
   CURRENCIES, CURRENCY_META, FALLBACK_RATES, fmtAmount, fmtWhole,
   loadCurrency, saveCurrency, type CurrencyCode, type Rates,
 } from '../lib/currency';
 import { FairPanel } from './FairPanel';
+import { BonusBuyModal } from './BonusBuyModal';
 import { DepositModal } from './DepositModal';
 import { PaymentsPanel } from './PaymentsPanel';
 
@@ -43,6 +45,7 @@ const EMPTY: HudState = {
   dryStreak: 0,
   pityAt: 7,
   rates: FALLBACK_RATES,
+  buyPrices: {},
   busy: false,
   resultEmpty: false,
   verified: null,
@@ -77,6 +80,7 @@ export function GameClient() {
   const gameRef = useRef<Presenter | null>(null);
   const [hud, setHud] = useState<HudState>(EMPTY);
   const [showFair, setShowFair] = useState(false);
+  const [showBuy, setShowBuy] = useState(false);
   const [showDeposit, setShowDeposit] = useState(false);
   const [showPayments, setShowPayments] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -114,6 +118,11 @@ export function GameClient() {
   const refreshPlayer = useCallback(() => { void gameRef.current?.refreshPlayer(); }, []);
 
   const spin = useCallback(() => gameRef.current?.primary(), []);
+  /* Бонус бай: купівля запускає раунд одразу, тож вікно закриваємо. */
+  const buyBonus = useCallback((tier: TierId) => {
+    setShowBuy(false);
+    gameRef.current?.buyBonus(tier);
+  }, []);
   const setBet = useCallback((b: number) => gameRef.current?.setBet(b), []);
   const cycleSpeed = useCallback(() => gameRef.current?.cycleSpeed(), []);
   const toggleAutoplay = useCallback(() => gameRef.current?.toggleAutoplay(), []);
@@ -356,6 +365,13 @@ export function GameClient() {
           <button type="button" className="drawer-btn" onClick={() => { setMenuOpen(false); setShowDeposit(true); }}>
             ПОПОЛНИТЬ БАЛАНС
           </button>
+          <button
+            type="button"
+            className="drawer-btn accent"
+            onClick={() => { setMenuOpen(false); setShowBuy(true); }}
+          >
+            БОНУС БАЙ
+          </button>
           <button type="button" className="drawer-btn" onClick={openPayments}>
             ИСТОРИЯ ПЛАТЕЖЕЙ
           </button>
@@ -365,6 +381,17 @@ export function GameClient() {
         </aside>
       </div>
 
+      {showBuy && (
+        <BonusBuyModal
+          bet={hud.bet}
+          balance={hud.balance}
+          buyPrices={hud.buyPrices}
+          currency={currency}
+          rates={hud.rates}
+          onBuy={buyBonus}
+          onClose={() => setShowBuy(false)}
+        />
+      )}
       {showFair && <FairPanel fair={hud.fair} onClose={() => setShowFair(false)} />}
       {showDeposit && (
         <DepositModal

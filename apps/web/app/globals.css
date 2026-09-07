@@ -847,3 +847,105 @@ canvas {
   .playbtn-spin { width: 34px; height: 34px; }
   .control-row { gap: 20px; }
 }
+
+/* ============================================================
+   БОНУС БАЙ — слайдер кірок
+   ============================================================ */
+.buy-lead { margin: 0 0 14px; }
+
+.buy-slider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* гортання пальцем обробляємо самі, браузеру горизонталь не віддаємо */
+  touch-action: pan-y;
+}
+
+.buy-arrow {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 64px;
+  font: 700 26px ui-monospace, monospace;
+  line-height: 1;
+  color: #dfe4ea;
+  background: #4a525d;
+  border-top: 3px solid #6b7480;
+  border-left: 3px solid #6b7480;
+  border-right: 3px solid #333c47;
+  border-bottom: 3px solid #333c47;
+  outline: 2px solid #0d0f13;
+  cursor: pointer;
+}
+.buy-arrow:hover:not(:disabled) { background: #58616e; }
+.buy-arrow:disabled { opacity: .3; cursor: default; }
+
+.buy-slide {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 10px;
+  background: #1b1f26;
+  border-top: 3px solid #0d0f13;
+  border-left: 3px solid #0d0f13;
+  border-right: 3px solid #3a424e;
+  border-bottom: 3px solid #3a424e;
+}
+.buy-pick {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.buy-name {
+  font: 800 17px ui-monospace, monospace;
+  letter-spacing: .14em;
+  text-shadow: 2px 2px 0 rgba(0,0,0,.7);
+}
+.buy-stats {
+  display: flex;
+  gap: 16px;
+  font: 700 11px ui-monospace, monospace;
+  color: #8b95a3;
+}
+.buy-stats b { color: #dfe4ea; }
+.buy-coef {
+  font: 700 10px ui-monospace, monospace;
+  letter-spacing: .1em;
+  color: #7a8595;
+}
+
+/* крапки-індикатор: активна підсвічена */
+.buy-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px 0 4px;
+}
+.buy-dot {
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 0;
+  background: #3a424e;
+  outline: 2px solid #0d0f13;
+  cursor: pointer;
+}
+.buy-dot.on { background: #ffd34d; }
+
+.buy-go { margin-top: 6px; }
+.buy-go:disabled { opacity: .45; cursor: default; }
+.buy-note { margin: 10px 0 0; text-align: center; }
+
+/* «БОНУС БАЙ» у меню — акцентна, це головна платна дія */
+.drawer-btn.accent {
+  background: #b8860b;
+  border-top-color: #e0ab2c;
+  border-left-color: #e0ab2c;
+  border-right-color: #6d4f06;
+  border-bottom-color: #6d4f06;
+  color: #fff8dc;
+}
+.drawer-btn.accent:hover { background: #c9951a; }

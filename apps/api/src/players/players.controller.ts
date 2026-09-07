@@ -54,6 +54,9 @@ function publicConfig(rates: RatesService) {
     spinsPerBet: CONFIG.spinsPerBet,
     payoutK: CONFIG.payoutK,
     maxWinX: CONFIG.maxWinX,
+    /* Множники ціни бонус баю. Клієнт їх ПОКАЗУЄ, але не вирішує:
+       списує сервер за своїм CONFIG.buy, тож розійтись вони не можуть. */
+    buyPrices: CONFIG.buy.price,
     rates: rates.snapshot(),
   };
 }

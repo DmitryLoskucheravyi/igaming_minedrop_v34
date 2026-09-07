@@ -20,7 +20,8 @@
     "sim:tiers": "tsx sim/tierdiag.ts",
     "sim:fair": "tsx sim/fairness.ts",
     "sim:e2e": "tsx sim/e2e.ts",
-    "make:initdata": "tsx sim/make-initdata.ts"
+    "make:initdata": "tsx sim/make-initdata.ts",
+    "sim:buy": "tsx sim/buy.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

@@ -119,10 +119,16 @@ export class Mine {
      у ньому ряд. */
   private readonly oreCache = new Map<number, Map<string, BlockId>>();
 
+  /** Бонусна шахта (куплена кірка): щедріші ваги множників і столів
+      зачарування. Прапорець зберігається на шахті, бо ряди генеруються
+      лениво — і клієнт мусить будувати їх із тим самим значенням. */
+  readonly bonus: boolean;
+
   /** root — корінь порядкового сида (streamRoot(seed, 'mine')) */
-  constructor(cols: number, root: number) {
+  constructor(cols: number, root: number, bonus = false) {
     this.cols = cols || CONFIG.cols;
     this.root = root | 0;
+    this.bonus = bonus;
   }
 
   private oreMapFor(regionId: number): Map<string, BlockId> {
@@ -132,7 +138,7 @@ export class Mine {
   }
 
   genRow(r: number): (Cell | null)[] {
-    const w = depthWeights(r);
+    const w = depthWeights(r, this.bonus);
     const rnd: Rng = rowRng(this.root, r);
     const row: (Cell | null)[] = new Array(this.cols);
 

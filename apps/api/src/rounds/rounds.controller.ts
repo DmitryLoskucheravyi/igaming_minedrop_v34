@@ -1,6 +1,7 @@
 import { Body, Controller, Headers, Post, UseGuards } from '@nestjs/common';
 import { IsIn, IsInt, IsOptional, Min } from 'class-validator';
-import type { RoundMode } from '@minedrop/engine';
+import { TIERS } from '@minedrop/engine';
+import type { RoundMode, TierId } from '@minedrop/engine';
 import { RoundsService } from './rounds.service';
 import { PlayersService } from '../players/players.service';
 import { TelegramAuthGuard, TgUser } from '../telegram/telegram-auth.guard';
@@ -10,10 +11,17 @@ class PlayDto {
   @IsInt() @Min(1)
   bet!: number;
 
-  /* Бонуску прибрано — лишився єдиний режим. Поле лишаємо
-     необов'язковим для сумісності зі старим клієнтом. */
-  @IsOptional() @IsIn(['bet'])
+  /* Режим клієнта тут довідковий: справжній визначає наявність buy,
+     і саме його рушій кладе в RoundResult.mode. Тримаємо поле, щоб не
+     ламати старих клієнтів, але рішення на нього не спираються. */
+  @IsOptional() @IsIn(['bet', 'buy'])
   mode: RoundMode = 'bet';
+
+  /* БОНУС БАЙ: яку кірку купують. Саме це поле й вирішує режим і ціну.
+     Ціну рахує сервер із CONFIG.buy — клієнт її лише показує. Список
+     тірів беремо з рушія, щоб DTO не розходився з конфігом. */
+  @IsOptional() @IsIn(TIERS.map((t) => t.id))
+  buy?: TierId;
 }
 
 @Controller('rounds')
@@ -33,7 +41,7 @@ export class RoundsController {
     @Headers('x-idempotency-key') key?: string,
   ) {
     const rec = this.players.findOrCreate(user);
-    const round = this.rounds.play(rec, dto.bet, dto.mode, key);
+    const round = this.rounds.play(rec, dto.bet, dto.mode, key, dto.buy);
     return { round, player: this.players.publicState(rec) };
   }
 }
