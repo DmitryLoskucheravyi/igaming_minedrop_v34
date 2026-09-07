@@ -282,9 +282,18 @@ export class Presenter {
     return pts.length < 2 ? 0 : Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
   }
 
+  /* Жести (зум і гортання) працюють ТІЛЬКИ поки кірка в шахті.
+     Поза забігом на екрані рулетка й декоративна шахта — рухати й
+     масштабувати там нічого, а випадковий щипок чи протяжка лише
+     збивали б кадр перед наступною ставкою. */
+  private get canGesture(): boolean {
+    return !!this.run && (this.state === 'RUNNING' || this.state === 'DROPDONE');
+  }
+
   private onPointerDown = (e: PointerEvent) => {
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     this.dragged = 0;
+    if (!this.canGesture) return;
     if (this.pointers.size === 2) {
       this.pinchDist = this.pointerSpread();
       this.pinched = true;
@@ -297,6 +306,7 @@ export class Presenter {
     const dy = e.clientY - prev.y;
     const dx = e.clientX - prev.x;
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!this.canGesture) return;
 
     if (this.pointers.size === 2) {
       const d = this.pointerSpread();
@@ -776,6 +786,9 @@ export class Presenter {
   }
 
   private closeResult(): void {
+    // ручне гортання належало тому забігу — на головному екрані камера
+    // має стояти там, де стоїть, без залишкової паузи
+    this.panT = 0;
     this.round = null;
     this.setup = null;
     this.run = null;
