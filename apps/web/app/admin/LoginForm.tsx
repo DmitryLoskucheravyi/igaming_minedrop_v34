@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import s from './admin.module.css';
-import { api, setToken, type AdminMe } from './lib';
+import { api, setTokens, type AdminMe, type Tokens } from './lib';
 
 export function LoginForm({ onDone, theme }: { onDone: (admin: AdminMe) => void; theme: 'dark' | 'light' }) {
   const [login, setLogin] = useState('');
@@ -18,11 +18,11 @@ export function LoginForm({ onDone, theme }: { onDone: (admin: AdminMe) => void;
     if (!login.trim() || !password) return;
     setBusy(true); setErr(null);
     try {
-      const r = await api<{ token: string; admin: AdminMe }>('/login', {
+      const r = await api<Tokens & { admin: AdminMe }>('/login', {
         method: 'POST',
         body: JSON.stringify({ login: login.trim(), password }),
       });
-      setToken(r.token);
+      setTokens(r);
       setPassword('');
       onDone(r.admin);
     } catch (e) {

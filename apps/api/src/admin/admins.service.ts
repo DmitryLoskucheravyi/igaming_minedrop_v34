@@ -7,7 +7,10 @@ import { ENV, type Env } from '../config/env';
 import { MongoService } from '../db/mongo.service';
 import { RateLimiter } from '../common/rate-limit';
 import { AdminStore } from './admin-store';
-import { adminView, type AdminRecord, type AdminSession, type AdminView } from './admin.types';
+import {
+  adminView, type AdminRecord, type AdminRefresh, type AdminSession, type AdminView,
+  type Tokens,
+} from './admin.types';
 
 /* ============================================================
    ADMINS — облікові записи CRM і сесії до неї.
@@ -25,9 +28,16 @@ import { adminView, type AdminRecord, type AdminSession, type AdminView } from '
    просто нема з чим увійти. Це безпечний дефолт — жодного пароля
    за замовчуванням у коді немає.
 
-   СЕСІЇ. Непрозорий токен (32 випадкові байти) у пам'яті процесу.
-   Рестарт API = повторний вхід. Це навмисно: токен ніде не
-   зберігається, отже й витекти з бази не може.
+   СЕСІЇ. Пара непрозорих токенів (по 32 випадкові байти) у пам'яті
+   процесу. Рестарт API = повторний вхід; це навмисно, токени ніде не
+   зберігаються, отже й витекти з бази не можуть.
+
+   access живе ACCESS_TTL і йде в кожному запиті. refresh живе
+   ADMIN_SESSION_TTL_H годин і приймається ЛИШЕ на /admin/refresh.
+   Обмін РОТАЦІЙНИЙ: кожен refresh одноразовий, натомість видається
+   нова пара. Якщо той самий refresh приходить удруге — це означає, що
+   копія токена в когось іще, тому гаситься вся родина, а не тільки
+   цей токен.
 
    ПЕРЕБІР. scrypt свідомо повільний (десятки мс), тому сам по собі
    він і є вузьким місцем при переборі — але ним же можна забити
@@ -41,6 +51,10 @@ const SCRYPT_KEYLEN = 64;
    заблокувати чужий акаунт, просто довбаючи його логін. */
 const LOGIN_ATTEMPTS = new RateLimiter(8, 15 * 60_000);
 
+/* Час життя access-токена. Коротко настільки, щоб вкрадений швидко
+   протух, і достатньо, щоб не смикати обмін на кожній дії. */
+const ACCESS_TTL_MS = 15 * 60_000;
+
 function hashPassword(password: string, salt: string): Buffer {
   return scryptSync(password, salt, SCRYPT_KEYLEN);
 }
@@ -49,7 +63,8 @@ function hashPassword(password: string, salt: string): Buffer {
 export class AdminsService implements OnModuleInit {
   private readonly log = new Logger(AdminsService.name);
   private readonly admins = new Map<string, AdminRecord>();     // id -> запис
-  private readonly sessions = new Map<string, AdminSession>();  // токен -> сесія
+  private readonly sessions = new Map<string, AdminSession>();  // access -> сесія
+  private readonly refreshes = new Map<string, AdminRefresh>(); // refresh -> запис
   private store: AdminStore | null = null;
 
   constructor(
@@ -141,8 +156,7 @@ export class AdminsService implements OnModuleInit {
   /* ---- вхід / вихід ---- */
 
   /** Логін у CRM. Кидає 401 при невірних даних, 429 при переборі. */
-  login(loginRaw: string, password: string, from: string):
-  { token: string; expiresAt: number; admin: AdminView } {
+  login(loginRaw: string, password: string, from: string): Tokens & { admin: AdminView } {
     const login = loginRaw.trim().toLowerCase();
     const key = `${login}|${from}`;
 
@@ -164,22 +178,92 @@ export class AdminsService implements OnModuleInit {
     LOGIN_ATTEMPTS.reset(key);
     rec.lastLoginAt = Date.now();
     void this.persist(rec);
-
-    const ttlMs = Math.max(1, this.env.adminSessionTtlH) * 60 * 60 * 1000;
-    const session: AdminSession = {
-      token: randomBytes(32).toString('hex'),
-      adminId: rec.id,
-      login: rec.login,
-      expiresAt: Date.now() + ttlMs,
-    };
-    this.sessions.set(session.token, session);
     this.log.log(`вхід у CRM: ${rec.login} (${from})`);
 
-    return { token: session.token, expiresAt: session.expiresAt, admin: adminView(rec) };
+    return { ...this.issuePair(rec), admin: adminView(rec) };
   }
 
+  /** Обміняти refresh на нову пару. Старий після цього недійсний. */
+  refresh(token: string): Tokens {
+    this.sweep();
+    const rec = this.refreshes.get(token);
+    if (!rec) throw new UnauthorizedException('Сессия истекла — войди заново');
+
+    /* Токен уже витрачали. Легальний клієнт так не робить: він щоразу
+       зберігає новий. Отже копія в чужих руках — гасимо всю родину,
+       щоб і зловмисник, і справжній власник пішли логінитись наново. */
+    if (rec.usedAt) {
+      this.dropFamily(rec.familyId);
+      this.log.warn(`повторне використання refresh (${rec.login}) — сесію скинуто повністю`);
+      throw new UnauthorizedException('Сессия сброшена из соображений безопасности');
+    }
+    if (rec.expiresAt <= Date.now()) {
+      this.refreshes.delete(token);
+      throw new UnauthorizedException('Сессия истекла — войди заново');
+    }
+
+    const admin = this.admins.get(rec.adminId);
+    if (!admin) {
+      this.dropFamily(rec.familyId);
+      throw new UnauthorizedException('Аккаунт больше не существует');
+    }
+
+    rec.usedAt = Date.now();
+    // старий access тієї ж родини теж більше не потрібен
+    for (const [t, sess] of this.sessions) {
+      if (sess.familyId === rec.familyId) this.sessions.delete(t);
+    }
+    return this.issuePair(admin, rec.familyId);
+  }
+
+  /** Вихід гасить сесію ЦІЛКОМ: і access, і всі refresh тієї ж родини.
+      Інакше після «виходу» лишався б живий refresh, яким можна було б
+      відновити доступ. */
   logout(token: string): void {
-    this.sessions.delete(token);
+    const sess = this.sessions.get(token);
+    if (sess) this.dropFamily(sess.familyId);
+    else this.sessions.delete(token);
+  }
+
+  /* Явний тип у familyId навмисно: без нього TypeScript виводить із
+     randomUUID() літеральний шаблон `${string}-${string}-...`, і в цей
+     параметр не можна передати звичайний рядок із наявної родини. */
+  private issuePair(rec: AdminRecord, familyId: string = randomUUID()): Tokens {
+    const now = Date.now();
+    const refreshTtl = Math.max(1, this.env.adminSessionTtlH) * 60 * 60 * 1000;
+
+    const access: AdminSession = {
+      token: randomBytes(32).toString('hex'),
+      adminId: rec.id, login: rec.login, familyId,
+      expiresAt: now + ACCESS_TTL_MS,
+    };
+    const refresh: AdminRefresh = {
+      token: randomBytes(32).toString('hex'),
+      adminId: rec.id, login: rec.login, familyId,
+      expiresAt: now + refreshTtl,
+    };
+    this.sessions.set(access.token, access);
+    this.refreshes.set(refresh.token, refresh);
+
+    return {
+      token: access.token,
+      expiresAt: access.expiresAt,
+      refresh: refresh.token,
+      refreshExpiresAt: refresh.expiresAt,
+    };
+  }
+
+  private dropFamily(familyId: string): void {
+    for (const [t, s] of this.sessions) if (s.familyId === familyId) this.sessions.delete(t);
+    for (const [t, r] of this.refreshes) if (r.familyId === familyId) this.refreshes.delete(t);
+  }
+
+  /* Витрачені refresh тримаємо до їхнього ж строку — саме вони й
+     ловлять повторне використання. Далі викидаємо. */
+  private sweep(): void {
+    const now = Date.now();
+    for (const [t, s] of this.sessions) if (s.expiresAt <= now) this.sessions.delete(t);
+    for (const [t, r] of this.refreshes) if (r.expiresAt <= now) this.refreshes.delete(t);
   }
 
   /** Жива сесія за токеном або null. Побіжно чистить протухлі. */

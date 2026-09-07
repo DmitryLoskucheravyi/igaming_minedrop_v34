@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import s from './admin.module.css';
-import { api, getToken, setToken, UNAUTHORIZED_EVENT, type AdminMe } from './lib';
+import { api, getRefresh, getToken, setTokens, UNAUTHORIZED_EVENT, type AdminMe } from './lib';
 import { LoginForm } from './LoginForm';
 import { PlayersTab } from './PlayersTab';
 import { RequestsTab } from './RequestsTab';
@@ -58,7 +58,9 @@ export default function AdminPage() {
      процесу API, тому після його рестарту токен у localStorage валідним
      уже не буде, і це нормально. */
   useEffect(() => {
-    if (!getToken()) { setAuth('out'); return; }
+    /* Достатньо будь-якого з двох: access міг протухнути, поки вкладка
+       була закрита, і api() обміняє його на новий сам. */
+    if (!getToken() && !getRefresh()) { setAuth('out'); return; }
     let alive = true;
     api<{ admin: AdminMe }>('/me')
       .then((r) => { if (alive) { setAdmin(r.admin); setAuth('in'); } })
@@ -90,7 +92,7 @@ export default function AdminPage() {
 
   const logout = useCallback(async () => {
     try { await api('/logout', { method: 'POST' }); } catch { /* усе одно виходимо */ }
-    setToken(null);
+    setTokens(null);
     setAdmin(null);
     setAuth('out');
   }, []);

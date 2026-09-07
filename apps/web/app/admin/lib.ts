@@ -16,17 +16,66 @@ export const when = (ms: number) =>
     { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 const TOKEN_KEY = 'minedrop.adminToken';
+const REFRESH_KEY = 'minedrop.adminRefresh';
 export const UNAUTHORIZED_EVENT = 'minedrop:admin-unauthorized';
 
-export function getToken(): string | null {
-  try { return window.localStorage.getItem(TOKEN_KEY); } catch { return null; }
+export interface Tokens {
+  token: string;
+  expiresAt: number;
+  refresh: string;
+  refreshExpiresAt: number;
 }
 
-export function setToken(token: string | null): void {
+const read = (k: string): string | null => {
+  try { return window.localStorage.getItem(k); } catch { return null; }
+};
+const write = (k: string, v: string | null): void => {
   try {
-    if (token) window.localStorage.setItem(TOKEN_KEY, token);
-    else window.localStorage.removeItem(TOKEN_KEY);
+    if (v) window.localStorage.setItem(k, v);
+    else window.localStorage.removeItem(k);
   } catch { /* приватний режим — сесія проживе до перезавантаження */ }
+};
+
+export const getToken = () => read(TOKEN_KEY);
+export const getRefresh = () => read(REFRESH_KEY);
+
+/** Зберегти пару. null очищає обидва — це і є вихід. */
+export function setTokens(t: Tokens | null): void {
+  write(TOKEN_KEY, t?.token ?? null);
+  write(REFRESH_KEY, t?.refresh ?? null);
+}
+
+/* Обмін протухлого access на нову пару.
+
+   Проміс СПІЛЬНИЙ на всі запити: сторінка легко робить три запити
+   одночасно, усі три отримають 401 в один момент, і без цього кожен
+   пішов би міняти токен сам. А обмін ротаційний — другий такий запит
+   прийшов би вже з витраченим refresh, і сервер справедливо вирішив би,
+   що токен украли, та скинув би сесію повністю. */
+let refreshing: Promise<boolean> | null = null;
+
+function refreshTokens(): Promise<boolean> {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    const refresh = getRefresh();
+    if (!refresh) return false;
+    try {
+      const res = await fetch('/api/admin/refresh', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh }),
+      });
+      if (!res.ok) return false;
+      setTokens(await res.json() as Tokens);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshing = null;
+    }
+  })();
+  return refreshing;
 }
 
 export class AdminApiError extends Error {
@@ -36,7 +85,7 @@ export class AdminApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+export async function api<T>(path: string, init?: RequestInit, allowRetry = true): Promise<T> {
   const token = getToken();
   const res = await fetch('/api/admin' + path, {
     cache: 'no-store',
@@ -49,8 +98,15 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
+    /* access живе хвилини, тому 401 — це очікуваний стан, а не поломка.
+       Пробуємо обміняти refresh і повторити запит РІВНО ОДИН раз: якщо
+       не вийшло, сесії справді немає. init тут перевикористовується
+       безпечно — тіло завжди рядок, а не потік. */
+    if (res.status === 401 && allowRetry && getRefresh()) {
+      if (await refreshTokens()) return api<T>(path, init, false);
+    }
     if (res.status === 401) {
-      setToken(null);
+      setTokens(null);
       window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
     }
     const body = await res.json().catch(() => ({}));

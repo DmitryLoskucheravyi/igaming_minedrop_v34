@@ -1,5 +1,6 @@
 import {
-  Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Req, UseGuards,
+  Body, Controller, Get, HttpCode, HttpException, HttpStatus,
+  NotFoundException, Param, Post, Req, UseGuards,
 } from '@nestjs/common';
 import {
   IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength,
@@ -7,7 +8,12 @@ import {
 import { PlayersService } from '../players/players.service';
 import { PaymentsService } from '../payments/payments.service';
 import { WithdrawService } from '../withdrawals/withdraw.service';
-import { clientKey } from '../common/rate-limit';
+import { RateLimiter, clientKey } from '../common/rate-limit';
+
+/* Обмін токенів відкритий назовні, тому має свій ліміт. 60 на хвилину —
+   з великим запасом для живого клієнта (він міняє раз на 15 хвилин) і
+   мало для перебору. */
+const REFRESH_LIMIT = new RateLimiter(60, 60_000);
 import { AdminsService } from './admins.service';
 import { AdminAuthGuard, CurrentAdmin, bearerFrom, type AdminRequest } from './admin-auth.guard';
 import type { AdminSession } from './admin.types';
@@ -29,6 +35,11 @@ class LoginDto {
 
   @IsString() @MinLength(1) @MaxLength(200)
   password!: string;
+}
+
+class RefreshDto {
+  @IsString() @MinLength(32) @MaxLength(200)
+  refresh!: string;
 }
 
 class TopUpDto {
@@ -73,6 +84,22 @@ export class AdminController {
   @HttpCode(200)
   login(@Body() dto: LoginDto, @Req() req: AdminRequest) {
     return this.admins.login(dto.login, dto.password, clientKey(req.headers, req.ip));
+  }
+
+  /* Обмін refresh на нову пару. Публічний, як і вхід: access тут за
+     побудовою вже протух, тож гардом його не перевіриш. Ліміт частоти
+     обов'язковий — маршрут відкритий. */
+  @Post('refresh')
+  @HttpCode(200)
+  refresh(@Body() dto: RefreshDto, @Req() req: AdminRequest) {
+    const key = clientKey(req.headers, req.ip);
+    if (!REFRESH_LIMIT.take(key)) {
+      throw new HttpException(
+        `Слишком часто. Попробуй через ${REFRESH_LIMIT.retryAfterSec(key)} с`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    return this.admins.refresh(dto.refresh);
   }
 
   @Post('logout')

@@ -39,11 +39,38 @@ export const adminView = (a: AdminRecord): AdminView => ({
   lastLoginAt: a.lastLoginAt,
 });
 
-/** Активна сесія CRM. Живе в пам'яті процесу — рестарт API вимагає
-    нового входу, і це навмисно: токени нікуди не витікають. */
+/* ---- ПАРА ТОКЕНІВ ----
+   access — короткий, іде в КОЖНОМУ запиті. Живе хвилини, тому вкрадений
+     дає зловмиснику вузьке вікно.
+   refresh — довгий, іде ЛИШЕ в один маршрут (/admin/refresh) і тільки
+     щоб обміняти себе на нову пару.
+
+   familyId зв'язує їх у «родину»: усі пари, що виросли з одного входу,
+   мають спільний id. Це дає дві речі — вихід гасить сесію цілком, а
+   повторне використання вже витраченого refresh (ознака того, що його
+   хтось перехопив) гасить усю родину, а не лише цей токен. */
 export interface AdminSession {
   token: string;
   adminId: string;
   login: string;
+  familyId: string;
   expiresAt: number;
+}
+
+export interface AdminRefresh {
+  token: string;
+  adminId: string;
+  login: string;
+  familyId: string;
+  expiresAt: number;
+  /** коли його вже обміняли. Другий обмін тим самим токеном — тривога */
+  usedAt?: number;
+}
+
+/** Те, що віддаємо клієнту при вході й при обміні. */
+export interface Tokens {
+  token: string;            // access
+  expiresAt: number;
+  refresh: string;
+  refreshExpiresAt: number;
 }
