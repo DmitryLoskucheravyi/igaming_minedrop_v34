@@ -22,8 +22,33 @@ import { AddressesTab } from './AddressesTab';
 
 type Tab = 'players' | 'requests' | 'addresses';
 type Auth = 'checking' | 'in' | 'out';
+type Theme = 'dark' | 'light';
+
+const THEME_KEY = 'minedrop.adminTheme';
+
+/* Тему читаємо ПІСЛЯ монтування: на сервері localStorage немає, і якби
+   ми вгадували її під час рендера, розмітка сервера не збіглася б із
+   клієнтською. */
+function useTheme(): [Theme, () => void] {
+  const [theme, setTheme] = useState<Theme>('dark');
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(THEME_KEY);
+      if (v === 'light' || v === 'dark') setTheme(v);
+    } catch { /* приватний режим — лишається типова */ }
+  }, []);
+  const toggle = useCallback(() => {
+    setTheme((t) => {
+      const next: Theme = t === 'dark' ? 'light' : 'dark';
+      try { window.localStorage.setItem(THEME_KEY, next); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  return [theme, toggle];
+}
 
 export default function AdminPage() {
+  const [theme, toggleTheme] = useTheme();
   const [auth, setAuth] = useState<Auth>('checking');
   const [admin, setAdmin] = useState<AdminMe | null>(null);
   const [tab, setTab] = useState<Tab>('players');
@@ -71,16 +96,20 @@ export default function AdminPage() {
   }, []);
 
   if (auth === 'checking') {
-    return <div className={s.shell}><div className={s.empty}>Проверяю сессию…</div></div>;
+    return (
+      <div className={s.shell} data-theme={theme}>
+        <div className={s.empty}>Проверяю сессию…</div>
+      </div>
+    );
   }
   if (auth === 'out') {
-    return <LoginForm onDone={(a) => { setAdmin(a); setAuth('in'); }} />;
+    return <LoginForm theme={theme} onDone={(a) => { setAdmin(a); setAuth('in'); }} />;
   }
 
   const btn = (id: Tab) => `${s.tab} ${tab === id ? s.on : ''}`;
 
   return (
-    <div className={s.shell}>
+    <div className={s.shell} data-theme={theme}>
       <div className={s.tabs}>
         <button type="button" className={btn('players')} onClick={() => setTab('players')}>
           Игроки
@@ -94,6 +123,15 @@ export default function AdminPage() {
 
         <div className={s.who}>
           <span className={s.dim}>{admin?.login}</span>
+          <button
+            type="button"
+            className={s.themeBtn}
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+            aria-label="Сменить тему"
+          >
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
           <button type="button" className={s.btnSm} onClick={() => void logout()}>Выйти</button>
         </div>
       </div>

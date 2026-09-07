@@ -5,6 +5,7 @@
    різниця лише в тому, чия це адреса. */
 
 import s from './admin.module.css';
+import { DateField } from './DateField';
 
 export interface ReqFilter {
   min: string;
@@ -58,16 +59,14 @@ export function Filters({ value, onChange, shown, total, addressLabel }: Props) 
         <input className={s.input} type="number" inputMode="numeric"
           value={value.max} onChange={(e) => set({ max: e.target.value })} />
       </label>
-      <label className={s.filterField}>
+      <div className={s.filterField}>
         <span>Дата с</span>
-        <input className={s.input} type="date"
-          value={value.from} onChange={(e) => set({ from: e.target.value })} />
-      </label>
-      <label className={s.filterField}>
+        <DateField value={value.from} onChange={(from) => set({ from })} />
+      </div>
+      <div className={s.filterField}>
         <span>по</span>
-        <input className={s.input} type="date"
-          value={value.to} onChange={(e) => set({ to: e.target.value })} />
-      </label>
+        <DateField value={value.to} onChange={(to) => set({ to })} />
+      </div>
       <label className={`${s.filterField} ${s.filterWide}`}>
         <span>{addressLabel}</span>
         <input className={s.input} placeholder="часть адреса"

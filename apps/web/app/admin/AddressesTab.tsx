@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import s from './admin.module.css';
 import { api, when, type AdminAddress } from './lib';
+import { useAsk } from './Ask';
 
 export function AddressesTab() {
   const [rows, setRows] = useState<AdminAddress[] | null>(null);
@@ -10,6 +11,7 @@ export function AddressesTab() {
   const [address, setAddress] = useState('');
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
+  const ask = useAsk();
 
   const load = useCallback(async () => {
     try {
@@ -46,7 +48,7 @@ export function AddressesTab() {
   };
 
   const rename = async (a: AdminAddress) => {
-    const next = prompt('Заголовок адреса (для тебя, чтобы различать)', a.label ?? '');
+    const next = await ask.prompt('Заголовок адреса', 'Чтобы не путать адреса между собой', a.label ?? '');
     if (next === null) return;
     try {
       await api(`/addresses/${a.id}`, { method: 'POST', body: JSON.stringify({ label: next }) });
@@ -57,8 +59,10 @@ export function AddressesTab() {
   };
 
   const remove = async (a: AdminAddress) => {
-    if (a.pending > 0 && !confirm(`На адресе ${a.pending} активн. заявок. Всё равно удалить?`)) return;
-    if (a.pending === 0 && !confirm('Удалить адрес?')) return;
+    const text = a.pending > 0
+      ? `На адресе ${a.pending} активн. заявок. Всё равно удалить?`
+      : 'Удалить адрес?';
+    if (!(await ask.confirm(text, true))) return;
     try {
       await api(`/addresses/${a.id}/delete`, { method: 'POST', body: JSON.stringify({}) });
       await load();
@@ -129,6 +133,7 @@ export function AddressesTab() {
           </tbody>
         </table>
       </div>
+      {ask.dialog}
     </>
   );
 }

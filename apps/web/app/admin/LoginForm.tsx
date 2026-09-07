@@ -8,7 +8,7 @@ import { useState } from 'react';
 import s from './admin.module.css';
 import { api, setToken, type AdminMe } from './lib';
 
-export function LoginForm({ onDone }: { onDone: (admin: AdminMe) => void }) {
+export function LoginForm({ onDone, theme }: { onDone: (admin: AdminMe) => void; theme: 'dark' | 'light' }) {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -33,7 +33,7 @@ export function LoginForm({ onDone }: { onDone: (admin: AdminMe) => void }) {
   };
 
   return (
-    <div className={s.loginWrap}>
+    <div className={s.loginWrap} data-theme={theme}>
       <form
         className={s.loginBox}
         onSubmit={(e) => { e.preventDefault(); void submit(); }}

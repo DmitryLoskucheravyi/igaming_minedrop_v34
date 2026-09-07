@@ -20,6 +20,7 @@ import {
   type AdminPayment, type AdminWithdraw,
 } from './lib';
 import { EMPTY_FILTER, Filters, passes, type ReqFilter } from './Filters';
+import { useAsk } from './Ask';
 
 function mmss(ms: number): string {
   const t = Math.max(0, Math.floor(ms / 1000));
@@ -35,6 +36,7 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const ask = useAsk();
 
   /* Фільтри свої на кожну підвкладку: пошук по нашій адресі й по адресі
      гравця — це різні пошуки, і скидати один, перемкнувшись на інший,
@@ -65,8 +67,8 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
     return () => { clearInterval(p); clearInterval(t); };
   }, [load]);
 
-  const act = async (path: string, confirmText?: string) => {
-    if (confirmText && !confirm(confirmText)) return;
+  const act = async (path: string, confirmText?: string, danger = false) => {
+    if (confirmText && !(await ask.confirm(confirmText, danger))) return;
     setBusyId(path); setErr(null);
     try {
       await api(path, { method: 'POST', body: JSON.stringify({}) });
@@ -166,7 +168,7 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                             onClick={() => void act(`/payments/${p.id}/approve`)}>Зачислить</button>
                           <button type="button" className={`${s.btnSm} ${s.no}`}
                             disabled={busyId !== null}
-                            onClick={() => void act(`/payments/${p.id}/reject`, 'Отклонить заявку?')}>Отклонить</button>
+                            onClick={() => void act(`/payments/${p.id}/reject`, 'Отклонить заявку на депозит?', true)}>Отклонить</button>
                         </div>
                       ) : <span className={s.dim}>—</span>}
                     </td>
@@ -244,7 +246,7 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                           <button type="button" className={`${s.btnSm} ${s.no}`}
                             disabled={busyId !== null}
                             onClick={() => void act(`/withdrawals/${w.id}/reject`,
-                              `Отклонить? ${rub(w.amount)} ₽ вернутся игроку на баланс.`)}>Отклонить</button>
+                              `Отклонить? ${rub(w.amount)} ₽ вернутся игроку на баланс.`, true)}>Отклонить</button>
                         </div>
                       ) : <span className={s.dim}>—</span>}
                     </td>
@@ -263,6 +265,7 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
           </div>
         </>
       )}
+      {ask.dialog}
     </>
   );
 }
