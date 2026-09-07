@@ -898,9 +898,16 @@ export class Presenter {
         this.burst(e.c + 0.5, e.r + 0.5, '#ffd34d', 44, 2.4);
         this.shake = 22;
         this.flash = 0.45; this.flashColor = '#ffd34d';
+        // secs 0 — бонуска: множник стакнутий до кінця забігу, таймера нема
+        const mtext = e.secs > 0
+          ? 'X' + e.active + ' · ' + e.secs + 'с'
+          : 'X' + Math.round(e.active);
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.8,
-          text: 'X' + e.active + ' · ' + e.secs + 'с', color: '#ffe98a', size: 0.34 });
-        this.pushLog('Множитель X' + e.active + ' на ' + e.secs + 'с', '#ffe98a');
+          text: mtext, color: '#ffe98a', size: 0.34 });
+        this.pushLog(
+          e.secs > 0 ? 'Множитель X' + e.active + ' на ' + e.secs + 'с'
+                     : 'Множитель X' + e.m + ' -> X' + Math.round(e.active),
+          '#ffe98a');
         haptic('hit');
       } else if (e.t === 'tnt') {
         this.burst(e.c + 0.5, e.r + 0.5, '#ff8a2b', 46, 3);
@@ -1463,9 +1470,22 @@ export class Presenter {
      що спадає, — під сумарним виграшем. Пульсує, коли лишається < 4с. */
   private drawMultWindow(ctx: CanvasRenderingContext2D): void {
     const run = this.run;
-    if (!run || this.state !== 'RUNNING' || run.multWindowT <= 0 || run.multActive <= 1) return;
+    if (!run || this.state !== 'RUNNING' || run.multActive <= 1) return;
+    /* У бонусці множники стакаються назавжди — вікна немає, і перевірка
+       multWindowT там завжди хибна. Без цієї гілки індикатор у бонусці
+       не з'являвся б узагалі, хоча множник саме там і найбільший. */
+    if (!run.multPermanent && run.multWindowT <= 0) return;
 
     const y = 78 + this.topInset;
+
+    if (run.multPermanent) {
+      Render.text(ctx, 'X' + Math.round(run.multActive), this.w / 2, y,
+        '800 24px ui-monospace, monospace', '#ffd34d');
+      Render.text(ctx, 'ДО КОНЦА ЗАБЕГА', this.w / 2, y + 16,
+        '700 10px ui-monospace, monospace', '#b08a2a');
+      return;
+    }
+
     const frac = Math.max(0, Math.min(1, run.multWindowT / MULT_WINDOW_SEC));
     const secs = Math.max(1, Math.ceil(run.multWindowT));
     const urgent = run.multWindowT < 4;

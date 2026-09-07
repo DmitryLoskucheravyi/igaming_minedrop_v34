@@ -98,7 +98,7 @@ export const Render = {
     ctx.fillStyle = 'rgba(255,255,255,.14)';
     ctx.fillRect(x + 2, y + 2, s - 3, (s - 3) * 0.34);
     this.text(ctx, 'X' + m, x + s / 2, y + s * 0.63,
-      '800 ' + Math.round(s * (m >= 100 ? 0.3 : 0.42)) + 'px ui-monospace, monospace', '#fff8dc');
+      '800 ' + Math.round(s * (m >= 25 ? 0.32 : 0.42)) + 'px ui-monospace, monospace', '#fff8dc');
   },
 
   /* Огорожа поля. Не клітинка сітки: межа шахти існує у фізиці сама

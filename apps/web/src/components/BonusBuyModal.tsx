@@ -15,7 +15,7 @@
    тут його лише показують, списує сервер за власним конфігом.
    ============================================================ */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { TIERS, type TierId } from '@minedrop/engine';
 import { CURRENCY_META, fmtWhole, type CurrencyCode, type Rates } from '../lib/currency';
 import { Modal } from './Modal';
@@ -29,18 +29,25 @@ interface Props {
   rates: Rates;
   onBuy: (tier: TierId) => void;
   onClose: () => void;
+  /* Обраний слайд живе ЗЗОВНІ, у GameClient: вікно розмонтовується при
+     закритті, і власний стан скидався б на першу кірку. Гравець, який
+     обирає між золотою та алмазною, щоразу починав би з дерев'яної. */
+  index: number;
+  onIndex: (n: number) => void;
 }
 
 /* Мінімальний свайп, щоб гортання не спрацьовувало від тремтіння
    пальця під час звичайного тапу по кнопці. */
 const SWIPE_MIN_PX = 40;
 
-export function BonusBuyModal({ bet, balance, buyPrices, currency, rates, onBuy, onClose }: Props) {
-  const [i, setI] = useState(0);
+export function BonusBuyModal({
+  bet, balance, buyPrices, currency, rates, onBuy, onClose, index, onIndex,
+}: Props) {
   const touch = useRef<{ x: number; y: number } | null>(null);
 
   const last = TIERS.length - 1;
-  const go = useCallback((n: number) => setI(Math.max(0, Math.min(last, n))), [last]);
+  const i = Math.max(0, Math.min(last, index));
+  const go = useCallback((n: number) => onIndex(Math.max(0, Math.min(last, n))), [last, onIndex]);
 
   // стрілки клавіатури — щоб слайдер працював і з десктопа
   useEffect(() => {

@@ -81,6 +81,8 @@ export function GameClient() {
   const [hud, setHud] = useState<HudState>(EMPTY);
   const [showFair, setShowFair] = useState(false);
   const [showBuy, setShowBuy] = useState(false);
+  // обраний слайд бонуски переживає закриття вікна — див. BonusBuyModal
+  const [buySlide, setBuySlide] = useState(0);
   const [showDeposit, setShowDeposit] = useState(false);
   const [showPayments, setShowPayments] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -402,6 +404,8 @@ export function GameClient() {
           rates={hud.rates}
           onBuy={buyBonus}
           onClose={() => setShowBuy(false)}
+          index={buySlide}
+          onIndex={setBuySlide}
         />
       )}
       {showFair && <FairPanel fair={hud.fair} onClose={() => setShowFair(false)} />}

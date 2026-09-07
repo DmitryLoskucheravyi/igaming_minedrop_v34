@@ -20,7 +20,9 @@
    механіка форми — у config.ts (ORE_VEINS).
    ============================================================ */
 
-import { BLOCKS, CONFIG, depthWeights, ORE_REGION_ROWS, ORE_VEINS, type VeinSpec } from './config';
+import {
+  BLOCKS, CONFIG, MULT_TABLE_BONUS, depthWeights, ORE_REGION_ROWS, ORE_VEINS, type VeinSpec,
+} from './config';
 import { pickWeighted, pickWeightedKey, rowRng, type Rng } from './rng';
 import type { BlockId } from './types';
 
@@ -153,7 +155,10 @@ export class Mine {
         dmg: 0,
         seed: ((r * 73856093) ^ (c * 19349663)) & 0x7fffffff,
       };
-      if (k === 'mult') cell.m = pickWeighted(CONFIG.mult.table, rnd).m;
+      // у бонусці великі ікси важчі — див. MULT_TABLE_BONUS
+      if (k === 'mult') {
+        cell.m = pickWeighted(this.bonus ? MULT_TABLE_BONUS : CONFIG.mult.table, rnd).m;
+      }
       row[c] = cell;
     }
     return row;

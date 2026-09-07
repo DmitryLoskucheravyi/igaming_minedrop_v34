@@ -209,6 +209,13 @@ export class Run {
 
   private pruneIn = PRUNE_EVERY;
 
+  /* У БОНУСЦІ множники СТАКАЮТЬСЯ і не згасають: кожен спійманий ікс
+     домножується до активного й діє до кінця забігу. У звичайній грі
+     працює вікно на MULT_WINDOW_SEC секунд, де береться більший із
+     двох. Ознаку беремо з самої шахти — вона вже знає, що бонусна, і
+     тягнути окремий прапорець крізь конструктор не треба. */
+  get multPermanent(): boolean { return this.mine.bonus; }
+
   constructor(tiers: Tier[], mine: Mine, opts: RunOptions) {
     this.mine = mine;
     this.rnd = opts.rnd;
@@ -236,8 +243,9 @@ export class Run {
     this.time += dt;
     this.steps++;
 
-    /* Вікно множника цокає незалежно від того, чи хтось зараз копає. */
-    if (this.multWindowT > 0) {
+    /* Вікно множника цокає незалежно від того, чи хтось зараз копає.
+       У бонусці вікна немає — множник стакнутий назавжди. */
+    if (!this.multPermanent && this.multWindowT > 0) {
       this.multWindowT -= dt;
       if (this.multWindowT <= 0) { this.multWindowT = 0; this.multActive = 1; }
     }
@@ -324,9 +332,9 @@ export class Run {
       /* Пришвидшення часу, а не «важча кірка»: швидкості множимо на
          speedUp, прискорення — на його КВАДРАТ. Інакше дуга не
          прискорилась би, а просто стала нижчою. */
-      const s = CONFIG.rubber.speedUp;
-      gravity *= s * s;
-      maxFall *= s;
+      const sp = CONFIG.rubber.speedUp;
+      gravity *= sp * sp;
+      maxFall *= sp;
     }
 
     p.vy = Math.min(maxFall, p.vy + gravity * dt);
@@ -518,33 +526,37 @@ export class Run {
       p.rubberT = CONFIG.rubber.fallSec;
       this.events.push({ t: 'rubber', r, c, secs: CONFIG.rubber.fallSec, pick: idx });
 
-      /* Трамплін, а не «трохи сильніший відскок». Імпульс абсолютний
-         (CONFIG.rubber.kick) і ЗАВЖДИ має вертикальну складову.
+      /* Відскок ЗАВЖДИ має вертикальну складову — через звичайний
+         bounce() це не працювало: при ударі збоку та гілка тільки
+         штовхає вбік, тож на екрані був напис «ОТСКОК», а стрибка не
+         було.
 
-         Через звичайний bounce() це не працювало з двох причин:
-         надбавка рахувалась від навмисно слабкого bounceKick, а при
-         ударі ЗБОКУ та гілка вертикальної складової не дає взагалі —
-         тільки штовхає вбік. Тому на екрані був напис «ОТСКОК», а
-         стрибка не було. */
+         Сила береться від ШВИДКОСТІ УДАРУ, як у слизі в майнкрафті:
+         частка restitution від того, з чим прилетіли, у межах
+         minKick..maxKick. Раніше імпульс був константою, і легкий
+         дотик підкидав рівно так само, як падіння з висоти.
+
+         Невеликий розкид зверху потрібен, бо блок незламний: за строго
+         однакового імпульсу кірка зайшла б у ідеальний цикл і стрибала
+         б на місці. Випадковість — із того самого потоку rnd(). */
       const away = dx === 0 ? (this.rnd() < 0.5 ? -1 : 1) : Math.sign(dx);
-      /* Невеликий розкид сили. Блок незламний, тож кірка може впасти на
-         нього знову; за строго однакового імпульсу вона зайшла б у
-         ідеальний цикл і стрибала б на місці до кінця таймера.
-         Випадковість — з того самого потоку rnd(), детермінізм цілий. */
-      const boost = CONFIG.rubber.speedUp;
-      const kick = CONFIG.rubber.kick * boost * (0.9 + this.rnd() * 0.2);
+      const R = CONFIG.rubber;
+      const boost = R.speedUp;
+      const hitSpeed = Math.abs(sideways ? p.vx : p.vy);
+      const kick = clamp(hitSpeed * R.restitution, R.minKick, R.maxKick)
+        * boost * (0.9 + this.rnd() * 0.2);
       /* Стеля бічної швидкості теж масштабується: інакше пришвидшена
          дуга летіла б угору швидко, а вбік — з колишньою швидкістю,
          і рух перекосило б у вертикаль. */
       const side = P.maxSideSpeed * boost;
       if (sideways) {
-        // збоку: відкидає вбік і помітно вгору
-        p.vx = clamp(away * kick * 0.85, -side, side);
-        p.vy = -kick * 0.55;
+        // збоку: відкидає вбік і трохи вгору
+        p.vx = clamp(away * kick * 0.6, -side, side);
+        p.vy = -kick * 0.45;
       } else {
         // зверху/знизу: майже чистий стрибок
         p.vy = -kick;
-        p.vx = clamp(p.vx * 0.5 + away * kick * 0.35, -side, side);
+        p.vx = clamp(p.vx * 0.5 + away * kick * 0.3, -side, side);
       }
       p.rotV = clamp(p.rotV + away * P.spinKick * 1.5, -P.maxSpin, P.maxSpin);
 
@@ -558,15 +570,27 @@ export class Run {
       p.hp -= def.cost;
       p.hits++; this.hits++;
       this.mults++;
-      /* Не іксуємо вже зібране. Відкриваємо/подовжуємо вікно: активний
-         множник = більший із двох (не перемножуємо), таймер — на повні
-         MULT_WINDOW_SEC. Окремої стелі тут немає й не треба: множники
-         не перемножуються, тож активний ніколи не перевищить найбільший
-         номінал у CONFIG.mult.table. */
-      this.multActive = Math.max(this.multActive, m);
-      this.multWindowT = MULT_WINDOW_SEC;
+      /* Звичайна гра: не іксуємо вже зібране, а відкриваємо/подовжуємо
+         вікно. Активний множник = більший із двох (НЕ перемножуємо),
+         таймер — на повні MULT_WINDOW_SEC.
+
+         Бонуска: вікна немає взагалі, номінали СКЛАДАЮТЬСЯ і діють до
+         кінця забігу — x2, потім x3, потім x10 дають x15, а не x60.
+         Перший спійманий блок задає множник рівно своїм номіналом, тож
+         стартова одиниця (яка означає «множника ще нема») у суму не
+         входить. secs: 0 у події означає «без таймера», клієнт малює
+         такий множник без смужки часу. */
+      let secs = MULT_WINDOW_SEC;
+      if (this.multPermanent) {
+        const base = this.multActive <= 1 ? 0 : this.multActive;
+        this.multActive = Math.min(CONFIG.buy.multCap, base + m);
+        secs = 0;
+      } else {
+        this.multActive = Math.max(this.multActive, m);
+        this.multWindowT = MULT_WINDOW_SEC;
+      }
       if (this.multActive > this.multChain) this.multChain = this.multActive;
-      this.events.push({ t: 'mult', r, c, m, active: this.multActive, secs: MULT_WINDOW_SEC, pick: idx });
+      this.events.push({ t: 'mult', r, c, m, active: this.multActive, secs, pick: idx });
       this.bounce(p, dx, sideways, 1);
       this.checkDead(p, idx);
       return;
