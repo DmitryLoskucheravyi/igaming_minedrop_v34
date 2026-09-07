@@ -77,6 +77,33 @@ export interface PaymentsInfo {
   maxRub: number;
 }
 
+/* ---- виведення коштів ----
+   Дзеркало депозиту, але баланс списується В МОМЕНТ ЗАЯВКИ, а не при
+   погодженні. Тому кожна операція тут міняє баланс просто зараз. */
+export type WithdrawStatus = 'pending' | 'approved' | 'rejected' | 'canceled';
+
+export interface Withdraw {
+  id: string;
+  telegramId: number;
+  method: 'usdt_trc20';
+  amount: number;        // ₽ списано з балансу
+  usdtAmount: number;    // скільки відправлять
+  rate: number;
+  rateApprox?: boolean;
+  address: string;       // адреса ГРАВЦЯ, куди слати
+  status: WithdrawStatus;
+  createdAt: number;
+  resolvedAt?: number;
+  adminNote?: string;
+}
+
+export interface WithdrawInfo {
+  active: Withdraw | null;
+  history: Withdraw[];
+  minRub: number;
+  maxRub: number;
+}
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -177,6 +204,27 @@ export const Api = {
     return call<Payment>('/payments', {
       method: 'POST',
       body: JSON.stringify({ amount, method: 'usdt_trc20' }),
+    });
+  },
+
+  /** Історія виводів + активна заявка. */
+  withdrawals() {
+    return call<WithdrawInfo>('/withdrawals/me');
+  },
+
+  /** Заявка на вивід. Баланс списується одразу, тому у відповіді
+      приходить і свіжий стан гравця. */
+  createWithdraw(amount: number, address: string) {
+    return call<{ withdraw: Withdraw; player: PlayerState }>('/withdrawals', {
+      method: 'POST',
+      body: JSON.stringify({ amount, address, method: 'usdt_trc20' }),
+    });
+  },
+
+  /** Скасувати власну заявку — гроші повертаються на баланс. */
+  cancelWithdraw(id: string) {
+    return call<{ withdraw: Withdraw; player: PlayerState }>(`/withdrawals/${id}/cancel`, {
+      method: 'POST',
     });
   },
 };

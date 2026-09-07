@@ -164,6 +164,24 @@ export class PlayersService implements OnModuleInit {
     return this.players.get(telegramId);
   }
 
+  /** Списати з балансу. Використовується для РЕЗЕРВУ під виведення:
+      гроші йдуть з балансу в момент заявки, а не коли адмін її погодить.
+
+      Інакше гравець міг би замовити виплату й далі грати цими самими
+      грошима: програв — на балансі нуль, а заявка все одно чекає
+      виплати. Повертає розрізнений результат, щоб той, хто кличе, не
+      сплутав «немає гравця» з «не вистачає коштів». */
+  charge(telegramId: number, amount: number, by = 'система'):
+  { ok: true; balance: number } | { ok: false; reason: 'no-player' | 'low-balance' } {
+    const rec = this.players.get(telegramId);
+    if (!rec) return { ok: false, reason: 'no-player' };
+    if (rec.balance < amount) return { ok: false, reason: 'low-balance' };
+    rec.balance -= amount;
+    this.persist(rec);
+    this.log.warn(`списання (${by}): ${telegramId} -${amount} -> ${rec.balance}`);
+    return { ok: true, balance: rec.balance };
+  }
+
   /** Ручне поповнення балансу. Повертає новий баланс або null, якщо
       такого гравця нема — той, хто кличе, ЗОБОВ'ЯЗАНИЙ це перевірити:
       null означає, що гроші не нараховані. */

@@ -982,3 +982,23 @@ canvas {
   color: #fff8dc;
 }
 .drawer-btn.accent:hover { background: #c9951a; }
+
+/* ---- виведення коштів ---- */
+.wd-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 4px;
+  font-size: 12px;
+}
+.wd-cancel {
+  margin-top: 14px;
+  background: #6b3a3a;
+  border-top-color: #8f5050;
+  border-left-color: #8f5050;
+  border-right-color: #3d2020;
+  border-bottom-color: #3d2020;
+}
+.wd-cancel:hover:not(:disabled) { background: #7d4444; }
+.dep-chip:disabled { opacity: .4; cursor: default; }

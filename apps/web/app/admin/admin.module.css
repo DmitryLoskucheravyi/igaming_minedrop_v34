@@ -358,6 +358,60 @@
    Комірки без підпису (кнопки дій, порожній стан) мають data-label="",
    тож ::before у них порожній — окремих правил не треба.
    ============================================================ */
+/* ---- підвкладки заявок (депозити / виводи) ---- */
+.subTabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.subTab {
+  font: 600 12px inherit;
+  color: #8a94a0;
+  background: #151b21;
+  border: 1px solid #2a333c;
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+.subTab:hover { color: #cdd3da; }
+.subTab.on { color: #e6e9ee; background: #1e262e; border-color: #3d4c59; }
+.subTab .dot { margin-left: 6px; }
+
+/* ---- фільтри заявок ---- */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: #12171c;
+  border: 1px solid #2a333c;
+  border-radius: 10px;
+}
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 130px;
+}
+.filterField > span {
+  font: 600 10px ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #7c8590;
+}
+.filterField .input { width: 100%; font-size: 13px; padding: 7px 9px; }
+.filterWide { flex: 1 1 220px; }
+.filterFoot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  padding-bottom: 2px;
+}
+.filterFoot .dim { margin-top: 0; }
+
 @media (max-width: 720px) {
   .shell { padding: 14px 12px 32px; }
 
@@ -434,6 +488,14 @@
   .addrForm { flex-direction: column; align-items: stretch; }
   .addrForm .input, .addrForm .input.short { flex: 1 1 auto; width: 100%; }
   .addrForm .confirm { width: 100%; }
+
+  /* фільтри в дві колонки, пошук по гаманцю — на всю ширину */
+  .filters { gap: 8px; padding: 10px; }
+  .filterField { flex: 1 1 calc(50% - 4px); }
+  .filterWide { flex: 1 1 100%; }
+  .filterFoot { flex: 1 1 100%; margin-left: 0; justify-content: space-between; }
+
+  .subTab { flex: 1 1 auto; text-align: center; }
 
   .modal { width: 100%; max-width: none; }
   .actions { flex-direction: column-reverse; }

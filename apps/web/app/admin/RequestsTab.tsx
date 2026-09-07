@@ -1,25 +1,57 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+/* ============================================================
+   ЗАЯВКИ — дві підвкладки: депозити і виводи.
+
+   Вони поруч, бо це один робочий процес («що чекає на мене»), але
+   таблиці різні: у депозиті адреса НАША (куди гравець переказує), у
+   виводі — ГРАВЦЯ (куди переказуємо ми). Плутати їх не можна, тому
+   підпис колонки різний.
+
+   Головна різниця в грошах: депозит зараховує баланс при погодженні,
+   а вивід уже списав його при створенні заявки. Тому відхилення
+   виводу ПОВЕРТАЄ гроші, а відхилення депозиту нічого не рухає.
+   ============================================================ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import s from './admin.module.css';
-import { api, rub, when, STATUS_RU, type AdminPayment } from './lib';
+import {
+  api, rub, when, STATUS_RU, WITHDRAW_STATUS_RU,
+  type AdminPayment, type AdminWithdraw,
+} from './lib';
+import { EMPTY_FILTER, Filters, passes, type ReqFilter } from './Filters';
 
 function mmss(ms: number): string {
   const t = Math.max(0, Math.floor(ms / 1000));
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 }
 
+type Kind = 'deposit' | 'withdraw';
+
 export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) {
-  const [rows, setRows] = useState<AdminPayment[] | null>(null);
+  const [kind, setKind] = useState<Kind>('deposit');
+  const [deps, setDeps] = useState<AdminPayment[] | null>(null);
+  const [wds, setWds] = useState<AdminWithdraw[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
+  /* Фільтри свої на кожну підвкладку: пошук по нашій адресі й по адресі
+     гравця — це різні пошуки, і скидати один, перемкнувшись на інший,
+     було б прикро. */
+  const [depFilter, setDepFilter] = useState<ReqFilter>(EMPTY_FILTER);
+  const [wdFilter, setWdFilter] = useState<ReqFilter>(EMPTY_FILTER);
+
   const load = useCallback(async () => {
     try {
-      const body = await api<{ payments: AdminPayment[]; pending: number }>('/payments');
-      setRows(body.payments);
-      onPending?.(body.pending);
+      const [d, w] = await Promise.all([
+        api<{ payments: AdminPayment[]; pending: number }>('/payments'),
+        api<{ withdrawals: AdminWithdraw[]; pending: number }>('/withdrawals'),
+      ]);
+      setDeps(d.payments);
+      setWds(w.withdrawals);
+      // бейдж на вкладці — сумарно, бо обидва типи чекають на ту саму людину
+      onPending?.(d.pending + w.pending);
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -33,96 +65,204 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
     return () => { clearInterval(p); clearInterval(t); };
   }, [load]);
 
-  const act = async (id: string, action: 'approve' | 'reject') => {
-    if (action === 'reject' && !confirm('Отклонить заявку?')) return;
-    setBusyId(id); setErr(null);
+  const act = async (path: string, confirmText?: string) => {
+    if (confirmText && !confirm(confirmText)) return;
+    setBusyId(path); setErr(null);
     try {
-      await api(`/payments/${id}/${action}`, { method: 'POST', body: JSON.stringify({}) });
+      await api(path, { method: 'POST', body: JSON.stringify({}) });
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally { setBusyId(null); }
   };
 
+  const shownDeps = useMemo(
+    () => (deps ?? []).filter((p) => passes(depFilter, p.amount, p.createdAt, p.address)),
+    [deps, depFilter]);
+  const shownWds = useMemo(
+    () => (wds ?? []).filter((w) => passes(wdFilter, w.amount, w.createdAt, w.address)),
+    [wds, wdFilter]);
+
+  const depPending = (deps ?? []).filter((p) => p.status === 'pending').length;
+  const wdPending = (wds ?? []).filter((w) => w.status === 'pending').length;
+
+  const sub = (id: Kind) => `${s.subTab} ${kind === id ? s.on : ''}`;
+
   return (
     <>
       <div className={s.head}>
         <h1>Заявки</h1>
-        {rows && <span className={s.count}>{rows.length}</span>}
         <button type="button" className={s.refresh} onClick={() => void load()}>Обновить</button>
+      </div>
+
+      <div className={s.subTabs}>
+        <button type="button" className={sub('deposit')} onClick={() => setKind('deposit')}>
+          Депозиты{depPending > 0 && <span className={s.dot}>{depPending}</span>}
+        </button>
+        <button type="button" className={sub('withdraw')} onClick={() => setKind('withdraw')}>
+          Выводы{wdPending > 0 && <span className={s.dot}>{wdPending}</span>}
+        </button>
       </div>
 
       {err && <div className={s.err}>{err}</div>}
 
-      <div className={s.tableWrap}>
-        <table className={s.table}>
-          <thead>
-            <tr>
-              <th>Игрок</th>
-              <th className={s.num}>₽</th>
-              <th className={s.num}>USDT</th>
-              <th>Адрес</th>
-              <th>Статус</th>
-              <th>Создана</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {rows?.map((p) => (
-              <tr key={p.id}>
-                <td className={s.player} data-label="Игрок">
-                  <div className="name">{p.player?.firstName || 'ID ' + p.telegramId}</div>
-                  <div className="sub">
-                    {p.player?.username ? '@' + p.player.username : 'ID ' + p.telegramId}
-                  </div>
-                </td>
-                <td className={s.num} data-label="₽">{rub(p.amount)}</td>
-                <td className={s.num} data-label="USDT">
-                  {p.usdtAmount}
-                  {/* Курс на момент створення заявки не приїхав з біржі —
-                      сума порахована по запасному значенню. Це треба
-                      звірити ДО підтвердження, а не після. */}
-                  {p.rateApprox && (
-                    <span className={s.approx} title={`Курс приблизный: ${rub(p.rate)} ₽ за USDT (биржа не ответила). Сверь сумму перед подтверждением.`}>
-                      ≈
-                    </span>
-                  )}
-                </td>
-                <td data-label="Адрес">
-                  <div className={`${s.mono} ${s.wrapAny}`} style={{ maxWidth: 220 }}>{p.address}</div>
-                  {p.addressLabel && <div className={s.dim}>{p.addressLabel}</div>}
-                </td>
-                <td data-label="Статус">
-                  <span className={`${s.badge} ${s[p.status]}`}>{STATUS_RU[p.status]}</span>
-                  {p.status === 'pending' && (
-                    <div className={`${s.timer} ${p.expiresAt - now < 5 * 60000 ? s.urgent : ''}`}>
-                      {mmss(p.expiresAt - now)}
-                    </div>
-                  )}
-                  {p.adminNote && <div className={s.dim}>{p.adminNote}</div>}
-                </td>
-                <td data-label="Создана">{when(p.createdAt)}</td>
-                <td data-label="">
-                  {p.status === 'pending' ? (
-                    <div className={s.rowActions}>
-                      <button type="button" className={`${s.btnSm} ${s.ok}`} disabled={busyId === p.id}
-                        onClick={() => void act(p.id, 'approve')}>Подтвердить</button>
-                      <button type="button" className={`${s.btnSm} ${s.no}`} disabled={busyId === p.id}
-                        onClick={() => void act(p.id, 'reject')}>Отклонить</button>
-                    </div>
-                  ) : <span className={s.dim}>—</span>}
-                </td>
-              </tr>
-            ))}
-            {rows && rows.length === 0 && (
-              <tr><td colSpan={7}><div className={s.empty}>Заявок ещё не было</div></td></tr>
-            )}
-            {!rows && !err && (
-              <tr><td colSpan={7}><div className={s.empty}>Загрузка…</div></td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {kind === 'deposit' ? (
+        <>
+          <Filters
+            value={depFilter}
+            onChange={setDepFilter}
+            shown={shownDeps.length}
+            total={deps?.length ?? 0}
+            addressLabel="Кошелёк приёма"
+          />
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead>
+                <tr>
+                  <th>Игрок</th>
+                  <th className={s.num}>₽</th>
+                  <th className={s.num}>USDT</th>
+                  <th>Кошелёк приёма</th>
+                  <th>Статус</th>
+                  <th>Создана</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {shownDeps.map((p) => (
+                  <tr key={p.id}>
+                    <td className={s.player} data-label="Игрок">
+                      <div className="name">{p.player?.firstName || 'ID ' + p.telegramId}</div>
+                      <div className="sub">
+                        {p.player?.username ? '@' + p.player.username : 'ID ' + p.telegramId}
+                      </div>
+                    </td>
+                    <td className={s.num} data-label="₽">{rub(p.amount)}</td>
+                    <td className={s.num} data-label="USDT">
+                      {p.usdtAmount}
+                      {p.rateApprox && (
+                        <span className={s.approx} title={`Курс приблизный: ${rub(p.rate)} ₽ за USDT. Сверь сумму.`}>≈</span>
+                      )}
+                    </td>
+                    <td data-label="Кошелёк приёма">
+                      <div className={`${s.mono} ${s.wrapAny}`} style={{ maxWidth: 220 }}>{p.address}</div>
+                      {p.addressLabel && <div className={s.dim}>{p.addressLabel}</div>}
+                    </td>
+                    <td data-label="Статус">
+                      <span className={`${s.badge} ${s[p.status]}`}>{STATUS_RU[p.status]}</span>
+                      {p.status === 'pending' && (
+                        <div className={`${s.timer} ${p.expiresAt - now < 5 * 60000 ? s.urgent : ''}`}>
+                          {mmss(p.expiresAt - now)}
+                        </div>
+                      )}
+                      {p.adminNote && <div className={s.dim}>{p.adminNote}</div>}
+                    </td>
+                    <td data-label="Создана">{when(p.createdAt)}</td>
+                    <td data-label="">
+                      {p.status === 'pending' ? (
+                        <div className={s.rowActions}>
+                          <button type="button" className={`${s.btnSm} ${s.ok}`}
+                            disabled={busyId !== null}
+                            onClick={() => void act(`/payments/${p.id}/approve`)}>Зачислить</button>
+                          <button type="button" className={`${s.btnSm} ${s.no}`}
+                            disabled={busyId !== null}
+                            onClick={() => void act(`/payments/${p.id}/reject`, 'Отклонить заявку?')}>Отклонить</button>
+                        </div>
+                      ) : <span className={s.dim}>—</span>}
+                    </td>
+                  </tr>
+                ))}
+                {deps && shownDeps.length === 0 && (
+                  <tr><td colSpan={7}><div className={s.empty}>
+                    {deps.length ? 'Под фильтр ничего не подходит' : 'Заявок ещё не было'}
+                  </div></td></tr>
+                )}
+                {!deps && !err && (
+                  <tr><td colSpan={7}><div className={s.empty}>Загрузка…</div></td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className={s.dim} style={{ marginBottom: 10 }}>
+            Деньги у игрока уже списаны при создании заявки. «Выплачено» просто
+            закрывает её, «Отклонить» — возвращает сумму на баланс.
+          </p>
+          <Filters
+            value={wdFilter}
+            onChange={setWdFilter}
+            shown={shownWds.length}
+            total={wds?.length ?? 0}
+            addressLabel="Кошелёк игрока"
+          />
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead>
+                <tr>
+                  <th>Игрок</th>
+                  <th className={s.num}>₽</th>
+                  <th className={s.num}>USDT</th>
+                  <th>Куда отправить</th>
+                  <th>Статус</th>
+                  <th>Создана</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {shownWds.map((w) => (
+                  <tr key={w.id}>
+                    <td className={s.player} data-label="Игрок">
+                      <div className="name">{w.player?.firstName || 'ID ' + w.telegramId}</div>
+                      <div className="sub">
+                        {w.player?.username ? '@' + w.player.username : 'ID ' + w.telegramId}
+                      </div>
+                    </td>
+                    <td className={s.num} data-label="₽">{rub(w.amount)}</td>
+                    <td className={s.num} data-label="USDT">
+                      {w.usdtAmount}
+                      {w.rateApprox && (
+                        <span className={s.approx} title={`Курс приблизный: ${rub(w.rate)} ₽ за USDT. Сверь сумму перед отправкой.`}>≈</span>
+                      )}
+                    </td>
+                    <td data-label="Куда отправить">
+                      <div className={`${s.mono} ${s.wrapAny}`} style={{ maxWidth: 220 }}>{w.address}</div>
+                    </td>
+                    <td data-label="Статус">
+                      <span className={`${s.badge} ${s[w.status] ?? ''}`}>{WITHDRAW_STATUS_RU[w.status]}</span>
+                      {w.adminNote && <div className={s.dim}>{w.adminNote}</div>}
+                    </td>
+                    <td data-label="Создана">{when(w.createdAt)}</td>
+                    <td data-label="">
+                      {w.status === 'pending' ? (
+                        <div className={s.rowActions}>
+                          <button type="button" className={`${s.btnSm} ${s.ok}`}
+                            disabled={busyId !== null}
+                            onClick={() => void act(`/withdrawals/${w.id}/approve`,
+                              `Отправил ${w.usdtAmount} USDT на ${w.address}?`)}>Выплачено</button>
+                          <button type="button" className={`${s.btnSm} ${s.no}`}
+                            disabled={busyId !== null}
+                            onClick={() => void act(`/withdrawals/${w.id}/reject`,
+                              `Отклонить? ${rub(w.amount)} ₽ вернутся игроку на баланс.`)}>Отклонить</button>
+                        </div>
+                      ) : <span className={s.dim}>—</span>}
+                    </td>
+                  </tr>
+                ))}
+                {wds && shownWds.length === 0 && (
+                  <tr><td colSpan={7}><div className={s.empty}>
+                    {wds.length ? 'Под фильтр ничего не подходит' : 'Заявок на вывод ещё не было'}
+                  </div></td></tr>
+                )}
+                {!wds && !err && (
+                  <tr><td colSpan={7}><div className={s.empty}>Загрузка…</div></td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </>
   );
 }

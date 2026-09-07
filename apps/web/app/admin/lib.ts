@@ -91,6 +91,30 @@ export interface AdminPayment {
   player: { firstName: string; username: string | null; balance: number } | null;
 }
 
+export type WithdrawStatus = 'pending' | 'approved' | 'rejected' | 'canceled';
+
+export interface AdminWithdraw {
+  id: string;
+  telegramId: number;
+  amount: number;        // ₽, уже списані з балансу гравця
+  usdtAmount: number;
+  rate: number;
+  rateApprox?: boolean;
+  address: string;       // адреса ГРАВЦЯ — саме сюди слати
+  status: WithdrawStatus;
+  createdAt: number;
+  resolvedAt?: number;
+  adminNote?: string;
+  player: { firstName: string; username: string | null; balance: number } | null;
+}
+
+export const WITHDRAW_STATUS_RU: Record<WithdrawStatus, string> = {
+  pending: 'ожидает',
+  approved: 'выплачено',
+  rejected: 'отклонено',
+  canceled: 'отменено',
+};
+
 export interface AdminAddress {
   id: string;
   address: string;

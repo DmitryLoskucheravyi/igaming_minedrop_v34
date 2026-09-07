@@ -6,6 +6,7 @@ import {
 } from 'class-validator';
 import { PlayersService } from '../players/players.service';
 import { PaymentsService } from '../payments/payments.service';
+import { WithdrawService } from '../withdrawals/withdraw.service';
 import { clientKey } from '../common/rate-limit';
 import { AdminsService } from './admins.service';
 import { AdminAuthGuard, CurrentAdmin, bearerFrom, type AdminRequest } from './admin-auth.guard';
@@ -61,6 +62,7 @@ export class AdminController {
   constructor(
     private readonly players: PlayersService,
     private readonly payments: PaymentsService,
+    private readonly withdraw: WithdrawService,
     private readonly admins: AdminsService,
   ) {}
 
@@ -155,6 +157,39 @@ export class AdminController {
   @UseGuards(AdminAuthGuard)
   payReject(@Param('id') id: string, @Body() dto: RejectDto) {
     return this.payments.reject(id, dto.note);
+  }
+
+  /* ---- заявки на виведення ---- */
+
+  /** Усі виводи: pending зверху, з ім'ям гравця й адресою, КУДИ слати. */
+  @Get('withdrawals')
+  @UseGuards(AdminAuthGuard)
+  wdList() {
+    const rows = this.withdraw.listAll().map((w) => {
+      const pl = this.players.byId(w.telegramId);
+      return {
+        ...w,
+        player: pl
+          ? { firstName: pl.firstName, username: pl.username ?? null, balance: pl.balance }
+          : null,
+      };
+    });
+    return { withdrawals: rows, count: rows.length,
+             pending: rows.filter((w) => w.status === 'pending').length };
+  }
+
+  /** Кошти відправлено. Баланс не чіпається — його списано ще при заявці. */
+  @Post('withdrawals/:id/approve')
+  @UseGuards(AdminAuthGuard)
+  wdApprove(@Param('id') id: string) {
+    return this.withdraw.approve(id);
+  }
+
+  /** Відмова. Гроші повертаються гравцю на баланс. */
+  @Post('withdrawals/:id/reject')
+  @UseGuards(AdminAuthGuard)
+  wdReject(@Param('id') id: string, @Body() dto: RejectDto) {
+    return this.withdraw.reject(id, dto.note);
   }
 
   /* ---- адреси для прийому ---- */

@@ -8,11 +8,12 @@ import { RoundsModule } from './rounds/rounds.module';
 import { RatesModule } from './rates/rates.module';
 import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
+import { WithdrawModule } from './withdrawals/withdraw.module';
 
 @Module({
   imports: [
     ConfigModule, DbModule, RatesModule, TelegramModule, PlayersModule,
-    FairnessModule, RoundsModule, PaymentsModule, AdminModule,
+    FairnessModule, RoundsModule, PaymentsModule, WithdrawModule, AdminModule,
   ],
 })
 export class AppModule {}

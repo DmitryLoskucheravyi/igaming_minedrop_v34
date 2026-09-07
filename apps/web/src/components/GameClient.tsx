@@ -33,6 +33,7 @@ import {
 import { FairPanel } from './FairPanel';
 import { BonusBuyModal } from './BonusBuyModal';
 import { DepositModal } from './DepositModal';
+import { WithdrawModal } from './WithdrawModal';
 import { PaymentsPanel } from './PaymentsPanel';
 
 const EMPTY: HudState = {
@@ -84,6 +85,7 @@ export function GameClient() {
   // обраний слайд бонуски переживає закриття вікна — див. BonusBuyModal
   const [buySlide, setBuySlide] = useState(0);
   const [showDeposit, setShowDeposit] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const [showPayments, setShowPayments] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Іконку профілю кладемо файлом у public/. Поки її нема (або не
@@ -386,6 +388,13 @@ export function GameClient() {
           >
             БОНУС БАЙ
           </button>
+          <button
+            type="button"
+            className="drawer-btn"
+            onClick={() => { setMenuOpen(false); setShowWithdraw(true); }}
+          >
+            ВЫВОД СРЕДСТВ
+          </button>
           <button type="button" className="drawer-btn" onClick={openPayments}>
             ИСТОРИЯ ПЛАТЕЖЕЙ
           </button>
@@ -413,6 +422,15 @@ export function GameClient() {
         <DepositModal
           onClose={() => setShowDeposit(false)}
           onResolved={refreshPlayer}
+        />
+      )}
+      {showWithdraw && (
+        <WithdrawModal
+          balance={hud.balance}
+          currency={currency}
+          rates={hud.rates}
+          onClose={() => setShowWithdraw(false)}
+          onBalance={refreshPlayer}
         />
       )}
       {showPayments && <PaymentsPanel onClose={() => setShowPayments(false)} />}
