@@ -321,8 +321,12 @@ export class Run {
     let maxFall = P.maxFall;
     if (p.rubberT > 0) {
       p.rubberT = Math.max(0, p.rubberT - dt);
-      gravity *= CONFIG.rubber.fallBoost;
-      maxFall *= CONFIG.rubber.fallBoost;
+      /* Пришвидшення часу, а не «важча кірка»: швидкості множимо на
+         speedUp, прискорення — на його КВАДРАТ. Інакше дуга не
+         прискорилась би, а просто стала нижчою. */
+      const s = CONFIG.rubber.speedUp;
+      gravity *= s * s;
+      maxFall *= s;
     }
 
     p.vy = Math.min(maxFall, p.vy + gravity * dt);
@@ -527,15 +531,20 @@ export class Run {
          нього знову; за строго однакового імпульсу вона зайшла б у
          ідеальний цикл і стрибала б на місці до кінця таймера.
          Випадковість — з того самого потоку rnd(), детермінізм цілий. */
-      const kick = CONFIG.rubber.kick * (0.9 + this.rnd() * 0.2);
+      const boost = CONFIG.rubber.speedUp;
+      const kick = CONFIG.rubber.kick * boost * (0.9 + this.rnd() * 0.2);
+      /* Стеля бічної швидкості теж масштабується: інакше пришвидшена
+         дуга летіла б угору швидко, а вбік — з колишньою швидкістю,
+         і рух перекосило б у вертикаль. */
+      const side = P.maxSideSpeed * boost;
       if (sideways) {
         // збоку: відкидає вбік і помітно вгору
-        p.vx = clamp(away * kick * 0.85, -P.maxSideSpeed, P.maxSideSpeed);
+        p.vx = clamp(away * kick * 0.85, -side, side);
         p.vy = -kick * 0.55;
       } else {
         // зверху/знизу: майже чистий стрибок
         p.vy = -kick;
-        p.vx = clamp(p.vx * 0.5 + away * kick * 0.35, -P.maxSideSpeed, P.maxSideSpeed);
+        p.vx = clamp(p.vx * 0.5 + away * kick * 0.35, -side, side);
       }
       p.rotV = clamp(p.rotV + away * P.spinKick * 1.5, -P.maxSpin, P.maxSpin);
 
