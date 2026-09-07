@@ -228,6 +228,30 @@ html, body {
 }
 .controls > * { pointer-events: auto; }
 
+/* Бонус бай просто на полі — над ставкою. Золотий, бо це єдина платна
+   дія в нижній панелі й вона має читатись окремо від сірих кнопок. */
+.buybtn {
+  font: 800 11px ui-monospace, monospace;
+  letter-spacing: .16em;
+  color: #fff8dc;
+  background: #b8860b;
+  border-top: 3px solid #e0ab2c;
+  border-left: 3px solid #e0ab2c;
+  border-right: 3px solid #6d4f06;
+  border-bottom: 3px solid #6d4f06;
+  outline: 2px solid #0d0f13;
+  padding: 7px 16px;
+  cursor: pointer;
+  text-shadow: 1px 1px 0 rgba(0,0,0,.5);
+}
+.buybtn:hover:not(:disabled) { background: #c9951a; }
+.buybtn:active:not(:disabled) {
+  border-color: #6d4f06;
+  border-right-color: #e0ab2c;
+  border-bottom-color: #e0ab2c;
+}
+.buybtn:disabled { opacity: .4; cursor: default; }
+
 .bet-readout {
   font: 700 15px ui-monospace, monospace;
   color: #ffd34d;
@@ -261,12 +285,14 @@ html, body {
    зникають із потоку, рядок не перебудовується, і кнопка швидкості
    лишається рівно на своєму місці, замість того щоб стрибнути в центр. */
 .pity,
+.buybtn,
 .bet-readout,
 .control-core,
 .autobtn {
   transition: transform .3s cubic-bezier(.4, 0, .2, 1), opacity .2s ease;
 }
 .controls.playing .pity,
+.controls.playing .buybtn,
 .controls.playing .bet-readout,
 .controls.playing .control-core,
 .controls.playing .autobtn {
@@ -281,8 +307,9 @@ html, body {
 
 /* Хто просив менше руху — тому просто згасання, без їзди. */
 @media (prefers-reduced-motion: reduce) {
-  .pity, .bet-readout, .control-core, .autobtn { transition: opacity .2s ease; }
+  .pity, .buybtn, .bet-readout, .control-core, .autobtn { transition: opacity .2s ease; }
   .controls.playing .pity,
+  .controls.playing .buybtn,
   .controls.playing .bet-readout,
   .controls.playing .control-core,
   .controls.playing .autobtn { transform: none; }

@@ -239,6 +239,18 @@ export function GameClient() {
             </div>
           )}
 
+          {/* Бонус бай доступний і з поля, не тільки з меню: це платна
+              дія, за якою тягнуться, не відкриваючи бургер. На час
+              розіграшу з'їжджає вниз разом з рештою панелі. */}
+          <button
+            type="button"
+            className="buybtn"
+            onClick={() => setShowBuy(true)}
+            disabled={roundInFlight}
+          >
+            БОНУС БАЙ
+          </button>
+
           <div className="bet-readout">
             <Money rub={hud.bet} currency={currency} rates={hud.rates} whole />
           </div>
