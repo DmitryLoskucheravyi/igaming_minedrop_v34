@@ -368,6 +368,8 @@ html, body {
 
 /* Швидкість: x1 — приглушено, x2..x4 — бурштин + число */
 .speedbtn .speed-num { font: 800 15px ui-monospace, monospace; }
+/* двоцифрові швидкості (тимчасові x10/x25) інакше не влазять у кружок */
+.speedbtn .speed-num.small { font-size: 11px; letter-spacing: -.04em; }
 .speedbtn.fast {
   color: #08210f;
   background: #ffd34d;

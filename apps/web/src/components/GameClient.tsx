@@ -266,7 +266,7 @@ export function GameClient() {
               title={'Скорость игры ×' + hud.speed}
             >
               {hud.speed > 1
-                ? <span className="speed-num">{hud.speed}×</span>
+                ? <span className={'speed-num' + (hud.speed >= 10 ? ' small' : '')}>{hud.speed}×</span>
                 : (
                   <svg className="ic-stroke" viewBox="0 0 24 24" aria-hidden="true">
                     <polyline points="5 5 12 12 5 19" />
