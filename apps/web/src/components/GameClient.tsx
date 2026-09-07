@@ -53,6 +53,10 @@ const EMPTY: HudState = {
   profile: null,
 };
 
+/* Стани, під час яких раунд реально розігрується на полі. Саме тоді
+   нижня панель кнопок їде вниз, звільняючи місце під живий лог. */
+const PLAYING_STATES: HudState['state'][] = ['SPIN', 'RISE', 'RUNNING', 'DROPDONE'];
+
 /* Сума + іконка валюти. whole — велика сума (баланс, ставка): у рублях
    ціле; дрібна (напр. частина виграшу) — з дробом. */
 function Money({ rub, currency, rates, whole }: {
@@ -118,6 +122,13 @@ export function GameClient() {
   // прокруту до падіння кірки) — щойно з'являється RESULT (чи ми в
   // IDLE), знову можна міняти ставку одразу, без тапу по екрану.
   const roundInFlight = hud.state !== 'IDLE' && hud.state !== 'RESULT';
+
+  /* Розіграш іде — нижня панель з'їжджає вниз (див. globals.css).
+     Живий лог виграшу малюється на канвасі якраз у цій смузі, і кнопки
+     його просто перекривали. Лишається тільки кнопка швидкості: саме
+     нею є сенс користуватись під час польоту.
+     LOADING/ERROR сюди не входять — там ховати нема чого. */
+  const playing = PLAYING_STATES.includes(hud.state);
   // Робастніше за indexOf-по-точному-значенню: якщо hud.bet раптом не
   // збігається буквально з жодним значенням у hud.bets (напр. після
   // оновлення конфігу), indexOf дає -1, і Math.max(0,-1) тихо трактує
@@ -203,7 +214,7 @@ export function GameClient() {
 
         {/* Плаваюче керування: прозорий фон, по центру знизу. Ставка над
             круглою кнопкою «крутити», по боках — «−» / «+». */}
-        <div className="controls">
+        <div className={'controls' + (playing ? ' playing' : '')}>
           {hud.dryStreak > 0 && (
             <div className={'pity' + (hud.dryStreak >= hud.pityAt ? ' ready' : '')}>
               {hud.dryStreak >= hud.pityAt ? (

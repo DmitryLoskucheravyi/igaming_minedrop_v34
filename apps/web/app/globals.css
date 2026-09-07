@@ -250,6 +250,44 @@ html, body {
   gap: 12px;
 }
 
+/* ---- панель їде вниз на час розіграшу ----
+   Живий лог виграшу («Уголь +12») малюється на канвасі внизу екрана,
+   рівно там, де стоять кнопки, — і вони його перекривали. Тому поки
+   кірка летить, усе, чим під час польоту однаково не користуються,
+   з'їжджає вниз і згасає. Лишається кнопка швидкості: вона єдина
+   потрібна саме в цей момент.
+
+   Ховаємо трансформом, а не display:none, навмисно: елементи не
+   зникають із потоку, рядок не перебудовується, і кнопка швидкості
+   лишається рівно на своєму місці, замість того щоб стрибнути в центр. */
+.pity,
+.bet-readout,
+.control-core,
+.autobtn {
+  transition: transform .3s cubic-bezier(.4, 0, .2, 1), opacity .2s ease;
+}
+.controls.playing .pity,
+.controls.playing .bet-readout,
+.controls.playing .control-core,
+.controls.playing .autobtn {
+  transform: translateY(130px);
+  opacity: 0;
+  pointer-events: none;
+}
+/* Окремо по самих кнопках: правило `.control-row button` вище повертає
+   їм pointer-events, і схована кнопка «ГРАТИ» лишалась би клікабельною
+   попри opacity 0. */
+.controls.playing .control-core button { pointer-events: none; }
+
+/* Хто просив менше руху — тому просто згасання, без їзди. */
+@media (prefers-reduced-motion: reduce) {
+  .pity, .bet-readout, .control-core, .autobtn { transition: opacity .2s ease; }
+  .controls.playing .pity,
+  .controls.playing .bet-readout,
+  .controls.playing .control-core,
+  .controls.playing .autobtn { transform: none; }
+}
+
 .stepbtn {
   width: 46px;
   height: 46px;

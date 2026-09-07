@@ -92,6 +92,21 @@ export function tntChainBonus(chain: number): number {
    Стіл зачарування (p.enchantMult) — окремий механізм, вікна не чіпає. */
 export const MULT_WINDOW_SEC = 15;
 
+/* ---- ЗРИВ ІЗ ВЕРТИКАЛІ ----
+   Кірка охоче звалюється «під себе»: пробила колонку блоків і далі
+   падає майже вертикально тим самим тунелем. Гри в цьому мало — поле
+   широке, а працює одна вузька смуга.
+
+   Тому лічимо, скільки часу кірка рухається майже без горизонтальної
+   складової, і після STRAIGHT_SEC даємо їй бічний імпульс. Напрямок —
+   до ЦЕНТРУ поля (а не випадковий): так той самий механізм заразом
+   відліплює кірку від стінки, біля якої вона інакше тупцює. Випадкова
+   тут лише сила поштовху, і береться вона з того самого потоку
+   this.rnd(), тому детермінізм клієнт/сервер не страждає. */
+export const STRAIGHT_SEC = 0.7;    // скільки терпіти вертикальний рух
+export const STRAIGHT_VX = 1.3;     // нижче цього |vx| рух вважається вертикальним
+export const STRAIGHT_PUSH = 3.0;   // база бічного імпульсу
+
 /* Одна кірка — тіло у фізиці */
 export class Pick {
   level: number;
@@ -122,6 +137,8 @@ export class Pick {
   hits = 0;
   depth = 0;
   dead = false;
+  /** скільки секунд поспіль кірка йде майже вертикально (див. STRAIGHT_SEC) */
+  straightT = 0;
   /* Кулдаун — ОКРЕМО НА КОЖНУ клітинку (мапа, не одне останнє значення):
      удар тепер б'є ВСІ дотичні блоки за раз (див. collide()), тому
      "останній дотик" одним ключем більше не описує стан коректно —
@@ -267,6 +284,24 @@ export class Run {
 
     p.vy = Math.min(P.maxFall, p.vy + P.gravity * dt);
     p.vx -= p.vx * P.airDrag * dt;
+
+    /* Довго падає майже прямо вниз — штовхаємо вбік, до центру поля.
+       Див. коментар біля STRAIGHT_SEC. */
+    if (Math.abs(p.vx) < STRAIGHT_VX) {
+      p.straightT += dt;
+      if (p.straightT >= STRAIGHT_SEC) {
+        p.straightT = 0;
+        const mid = this.mine.cols / 2;
+        const off = p.x - mid;
+        // рівно посередині напрямок неоднозначний — там кидаємо монетку
+        const dir = Math.abs(off) < 1 ? (this.rnd() < 0.5 ? -1 : 1) : -Math.sign(off);
+        p.vx = clamp(p.vx + dir * STRAIGHT_PUSH * (0.6 + this.rnd() * 0.8),
+                     -P.maxSideSpeed, P.maxSideSpeed);
+        p.rotV = clamp(p.rotV + dir * P.spinKick * 0.5, -P.maxSpin, P.maxSpin);
+      }
+    } else {
+      p.straightT = 0;
+    }
     /* Оберт — суто анімація (collide() кутом не користується). Модель —
        маятник: важча головка тягне кірку в положення restRot («головкою
        вниз»). Слабка пружина (rotPull) + гасіння (spinDamp) + стеля
@@ -554,7 +589,12 @@ export class Run {
       p.vx = dir * (Math.abs(p.vx) * P.restitution + P.sideKick) * k;
       p.vy *= 0.55;
     } else {
+      /* Удар знизу. Швидкість угору обрізається стелею: кірка важка,
+         і «свічка» на пів екрана від одного удару в підлогу виглядає
+         неправильно. Донизу (додатне vy) стеля не діє — там працює
+         maxFall. */
       p.vy = -(Math.abs(p.vy) * P.restitution + P.bounceKick) * k;
+      if (p.vy < -P.maxRise) p.vy = -P.maxRise;
       p.vx += dir * (P.sideKick * 0.5 + this.rnd() * P.sideKickRand) * k;
     }
 

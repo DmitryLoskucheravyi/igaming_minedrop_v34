@@ -101,11 +101,42 @@ export const Render = {
       '800 ' + Math.round(s * (m >= 100 ? 0.3 : 0.42)) + 'px ui-monospace, monospace', '#fff8dc');
   },
 
-  /* Блок. cell = { id, dmg, seed, m } */
-  block(ctx: Ctx, x: number, y: number, s: number, cell: Cell) {
+  /* Огорожа поля. Не клітинка сітки: межа шахти існує у фізиці сама
+     (Mine.get за краєм повертає WALL), а це лише робить її видимою —
+     щоб поле не обривалось у порожнечу, коли камера їде за кіркою. */
+  fence(ctx: Ctx, x: number, y: number, s: number) {
+    const img = Assets.get('fence');
+    if (img) { ctx.drawImage(img, x, y, s + 1, s + 1); return; }
+    ctx.fillStyle = '#3a4048';
+    ctx.fillRect(x, y, s + 1, s + 1);
+    ctx.fillStyle = 'rgba(255,255,255,.06)';
+    ctx.fillRect(x, y, s, 3);
+  },
+
+  /* Другий скін каменю — з глибиною булижник витісняє звичайний.
+     Це чиста косметика: клітинка лишається тим самим `stone` (цінність
+     0, міцність 1), міняється тільки картинка. Тому вибір робиться
+     тут, а не в рушії: у сітці нового блоку не з'явилось, і на
+     математику це не впливає ніяк.
+
+     Вибір детермінований від cell.seed — інакше блок миготів би між
+     двома скінами щокадру. */
+  stoneSkin(row: number, seed: number): string {
+    // 0 до 4-го ряду, далі росте і з 12-го булижник переважає
+    const p = 0.85 * Math.max(0, Math.min(1, (row - 4) / 8));
+    if (p <= 0) return 'block.stone';
+    // дешевий хеш сида в [0,1): сид уже розріджений, вистачає перемішування
+    const h = (Math.imul(seed | 0, 2246822519) >>> 8) / 0x1000000;
+    return h < p ? 'block.stone2' : 'block.stone';
+  },
+
+  /* Блок. cell = { id, dmg, seed, m }, row — номер ряду (для скінів,
+     що залежать від глибини) */
+  block(ctx: Ctx, x: number, y: number, s: number, cell: Cell, row = 0) {
     const def = BLOCKS[cell.id];
     if (def.kind === 'mult') { this.multBlock(ctx, x, y, s, cell.m || 2); return; }
-    const img = Assets.get('block.' + cell.id);
+    const key = cell.id === 'stone' ? this.stoneSkin(row, cell.seed) : 'block.' + cell.id;
+    const img = Assets.get(key);
     if (img) {
       ctx.drawImage(img, x, y, s + 1, s + 1);   // +1 щоб не було щілин між блоками
     } else {

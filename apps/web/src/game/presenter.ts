@@ -83,6 +83,10 @@ const SPEEDS = [1, 2, 3, 4];     // прискорення програванн�
 const AUTOPLAY_HOLD = 0.9;       // скільки показувати результат перед авто-наступним раундом
 const TOAST_LIFE = 1.6;          // скільки секунд живе один push-тост живого логу
 const TOAST_MAX = 3;             // скільки тостів одночасно на екрані (старіші зникають)
+/* Огорожа — рівно ОДИН шар блоків за кожним краєм поля. Далі нічого:
+   чорний фон, який уже залив drawSky(). Огорожа суто декоративна —
+   у фізиці межа шахти є завжди, незалежно від того, що намальовано. */
+const FENCE_COLS = 1;
 
 export class Presenter {
   private canvas: HTMLCanvasElement;
@@ -127,6 +131,12 @@ export class Presenter {
   /* подача */
   private stage = 0;
   private stageTarget = 0;
+  /* Камера стежить за кіркою по ОБОХ осях і тримає її по центру екрана.
+     camX/camY — координата лівого верхнього кута видимої області в
+     клітинках. camXIdle/camMin — де стоїть камера, поки забігу немає
+     (крутиться рулетка): поле по центру, поверхня внизу екрана. */
+  private camX = 0;
+  private camXIdle = 0;
   private camY = 0;
   private camMin = 0;
   private shake = 0;
@@ -148,7 +158,6 @@ export class Presenter {
 
   /* геометрія */
   private w = 0; private h = 0; private cell = 0;
-  private fieldW = 0; private fieldX = 0;
   private itemW = 0; private itemH = 0;
   private frameW = 0; private frameH = 0;
 
@@ -610,6 +619,7 @@ export class Presenter {
     this.toasts = [];
     this.enchantMult = 1;
     this.camY = this.camMin;
+    this.camX = this.camXIdle;
   }
 
   /* Фон під рулеткою. Ні на що не впливає, тому сид довільний. */
@@ -619,6 +629,7 @@ export class Presenter {
     this.particles = [];
     this.popups = [];
     this.camY = this.camMin;
+    this.camX = this.camXIdle;
   }
 
   /* ---------------- HUD ---------------- */
@@ -822,17 +833,28 @@ export class Presenter {
       if (this.run.over) this.onRunOver();
     }
 
-    // камера тримає найглибшу живу кірку
-    let target = this.camMin;
+    /* Камера тримає кірку по центру екрана й ходить за нею по обох осях.
+
+       Раніше вона їхала ТІЛЬКИ вниз (`if (target > camY)`) і тільки по
+       вертикалі — по суті стеля, що повзе за найглибшою кіркою. Тепер
+       кірка відскакує вгору й ходить по всій ширині поля, тому камера
+       має за нею встигати в будь-який бік. Обмеження знизу (camMin)
+       лишається лише для стану БЕЗ забігу — щоб під рулеткою поверхня
+       стояла там само, де й стояла. */
+    let tx = this.camXIdle;
+    let ty = this.camMin;
     if (this.run) {
       const alive = this.run.alive;
-      const lead = alive.length ? Math.max(...alive.map((p) => p.y)) : this.run.depth;
-      target = lead - (this.h * CONFIG.camLead) / this.cell;
+      const p = alive.length ? alive[0] : this.run.picks[0];
+      if (p) {
+        tx = p.x - this.w / this.cell / 2;
+        ty = p.y - (this.h * CONFIG.camLead) / this.cell;
+      }
     }
-    if (target > this.camY || !this.run) {
-      this.camY += (target - this.camY) * Math.min(1, dt * CONFIG.camLerp);
-    }
-    if (this.camY < this.camMin) this.camY = this.camMin;
+    const k = Math.min(1, dt * CONFIG.camLerp);
+    this.camX += (tx - this.camX) * k;
+    this.camY += (ty - this.camY) * k;
+    if (!this.run && this.camY < this.camMin) this.camY = this.camMin;
 
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
@@ -865,9 +887,14 @@ export class Presenter {
     this.canvas.height = this.h * dpr;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    this.cell = Math.max(CONFIG.minCell, Math.min(CONFIG.maxCell, this.w / CONFIG.cols));
-    this.fieldW = this.cell * CONFIG.cols;
-    this.fieldX = (this.w - this.fieldW) / 2;
+    /* Розмір клітинки рахується від viewCols, а НЕ від cols: на екран
+       навмисно влазить менше колонок, ніж є в полі. Інакше видно все
+       поле одразу, і стежити камері нема за чим — вона стоїть на місці.
+       Тепер поле ширше за екран, камера панорамує за кіркою, а біля
+       країв з'являється огорожа. */
+    this.cell = Math.max(CONFIG.minCell, Math.min(CONFIG.maxCell, this.w / CONFIG.viewCols));
+    // поле по центру, поки забігу немає
+    this.camXIdle = (CONFIG.cols - this.w / this.cell) / 2;
 
     /* Рамка вікна рулетки — растрове зображення (рамка.png) з фіксованим
        співвідношенням сторін, тому розмір комірки-символу тепер похідна
@@ -886,10 +913,13 @@ export class Presenter {
 
     // найвища точка камери: поки крутиться рулетка, поверхня стоїть низько
     this.camMin = -(this.h * CONFIG.camIdle) / this.cell;
-    if (this.camY < this.camMin) this.camY = this.camMin;
+    // під час забігу камера вільна (стежить за кіркою) — підтягуємо її
+    // до межі лише в стані спокою, інакше зміна розміру екрана смикала б
+    // кадр посеред польоту
+    if (!this.run && this.camY < this.camMin) this.camY = this.camMin;
   }
 
-  private sx(x: number): number { return this.fieldX + x * this.cell; }
+  private sx(x: number): number { return (x - this.camX) * this.cell; }
   private sy(y: number): number { return (y - this.camY) * this.cell; }
 
   /* ---------------- DRAW ---------------- */
@@ -907,7 +937,6 @@ export class Presenter {
     this.drawPopups(ctx);
     ctx.restore();
 
-    this.drawWalls(ctx);
 
     if (this.flash > 0) {
       ctx.globalAlpha = this.flash * 0.5;
@@ -951,9 +980,28 @@ export class Presenter {
     const cell = this.cell;
     const r0 = Math.max(0, Math.floor(this.camY) - 1);
     const r1 = Math.ceil(this.camY + this.h / cell) + 1;
+    const c0 = Math.floor(this.camX) - 1;
+    const c1 = Math.ceil(this.camX + this.w / cell) + 1;
+
     for (let r = r0; r <= r1; r++) {
       const y = this.sy(r);
-      for (let c = 0; c < CONFIG.cols; c++) {
+      for (let c = c0; c <= c1; c++) {
+        const x = this.sx(c);
+
+        /* За краєм поля — огорожа завширшки FENCE_COLS, далі нічого:
+           там лишається чорний фон, який уже залив drawSky(). Огорожа
+           не існує в сітці й ні на що не впливає: межа шахти й так є у
+           фізиці (Mine.get за краєм повертає WALL), просто досі її не
+           було видно — при фіксованій камері край поля збігався з краєм
+           екрана. */
+        if (c < 0 || c >= CONFIG.cols) {
+          if (c >= -FENCE_COLS && c < CONFIG.cols + FENCE_COLS) {
+            Render.fence(ctx, x, y, cell);
+            Render.shade(ctx, x, y, cell, r);
+          }
+          continue;
+        }
+
         /* peek(), а не get(): рендер не має права створювати стан гри.
            get() для ряду, викинутого прунингом, згенерував би його
            наново — ЦІЛИМ — і поклав у кеш, після чого кірка зіткнулася б
@@ -961,8 +1009,7 @@ export class Presenter {
            із сервером через саме лише малювання. Див. Mine.peek(). */
         const b = this.mine.peek(r, c);
         if (!b || 'wall' in b) continue;
-        const x = this.sx(c);
-        Render.block(ctx, x, y, cell, b);
+        Render.block(ctx, x, y, cell, b, r);
         Render.shade(ctx, x, y, cell, r);
       }
     }
@@ -1005,18 +1052,6 @@ export class Presenter {
     ctx.globalAlpha = 1;
   }
 
-  /* Стіни шахти по боках, якщо поле вужче за екран */
-  private drawWalls(ctx: CanvasRenderingContext2D): void {
-    if (this.fieldX <= 0) return;
-    const right = this.fieldX + this.fieldW;
-    ctx.fillStyle = '#05070a';
-    ctx.fillRect(0, 0, this.fieldX, this.h);
-    // ширина, а не координата: третій аргумент fillRect — саме ширина,
-    // і раніше сюди йшло this.fieldX + 2 (працювало лише тому, що поле
-    // центроване, тобто зліва й справа лишається порівну)
-    ctx.fillRect(right, 0, Math.max(0, this.w - right), this.h);
-  }
-
   /* Історія ставок. На широкому екрані — колонка зліва; на телефоні
      вона б з'їла пів поля, тому там компактна стрічка зверху зліва.
      Раніше на вузькому екрані історії не було ВЗАГАЛІ — тобто на
@@ -1045,6 +1080,14 @@ export class Presenter {
         '700 14px ui-monospace, monospace',
         e.win === 0 ? '#7a8595' : (won ? '#5ce08a' : '#e0925c'), 'right');
     }
+  }
+
+  /* Раунд розігрується на полі. Ті самі стани, за якими GameClient
+     ховає нижню панель кнопок (див. PLAYING_STATES там і
+     .controls.playing у globals.css). */
+  private get playing(): boolean {
+    return this.state === 'SPIN' || this.state === 'RISE'
+      || this.state === 'RUNNING' || this.state === 'DROPDONE';
   }
 
   /* Наскільки вниз посунути верхній HUD (сумарний виграш, вікно
@@ -1086,7 +1129,11 @@ export class Presenter {
     const n = this.toasts.length;
     if (!n) return;
     const rowH = 24;
-    const baseY = this.h - 86;   // трохи вище нижньої панелі кнопок
+    /* Поки триває розіграш, нижня панель кнопок з'їжджає вниз (клас
+       .controls.playing у globals.css) — заради цього логу її й ховають,
+       тож використовуємо звільнене місце й опускаємось ближче до краю.
+       Поза розіграшем панель на місці, і лог тримається вище за неї. */
+    const baseY = this.h - (this.playing ? 44 : 86);
 
     for (let i = 0; i < n; i++) {
       const t = this.toasts[i];
