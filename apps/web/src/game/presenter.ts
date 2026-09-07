@@ -16,7 +16,8 @@
    ============================================================ */
 
 import {
-  BLOCKS, CONFIG, Mine, MULT_WINDOW_SEC, Run, SIM_DT, TIER_BY_ID, buildSetup, createRun, streamRoot,
+  BLOCKS, CONFIG, Mine, MULT_WINDOW_SEC, PRUNE_MARGIN, Run, SIM_DT, TIER_BY_ID,
+  buildSetup, createRun, streamRoot,
   type RoundResult, type RoundSetup, type Tier,
 } from '@minedrop/engine';
 import { Api, ApiError, type PlayerState } from '../lib/api';
@@ -114,7 +115,11 @@ const ZOOM_MAX = 2.4;
    лишатись тими самими п'ятьма секундами. */
 const PAN_HOLD = 2.5;     // секунд спокою до повернення фокуса на кірку
 const PAN_MIN_PX = 6;     // менший рух — це тап, а не гортання
-const PAN_LIMIT = 50;     // на скільки рядів можна відійти від кірки
+/* На скільки рядів можна відвести кадр угору від кірки. Число НЕ
+   довільне: вище межі прунингу рушій ряди вже викинув, і Mine.peek()
+   перерахує їх цілими — розбиті блоки на екрані «заростуть». Тому
+   ліміт береться від PRUNE_MARGIN із запасом, а не вгадується. */
+const PAN_LIMIT = PRUNE_MARGIN - 20;
 
 /* ---- плашки великого виграшу ----
    Пороги в іксах від ставки. Прив'язані до реального розподілу виплат
@@ -1049,6 +1054,21 @@ export class Presenter {
       this.camX += (tx - this.camX) * k;
       this.camY += (ty - this.camY) * k;
       if (!this.run && this.camY < this.camMin) this.camY = this.camMin;
+    }
+
+    /* Останній рубіж: кадр не має підійматись вище за межу прунингу,
+       хоч би звідки прийшов рух — гортання, зум чи лерп камери. Вище
+       неї рушій ряди вже викинув, і намальовані там блоки будуть
+       свіжозгенерованими, тобто цілими. Гортання й так обмежене
+       PAN_LIMIT, але сильне віддалення піднімає верх кадру саме по
+       собі, без жодного жесту. */
+    if (this.run) {
+      let top = Infinity;
+      for (const p of this.run.picks) if (p.y < top) top = p.y;
+      if (Number.isFinite(top)) {
+        const limit = top - (PRUNE_MARGIN - 8);
+        if (this.camY < limit) this.camY = limit;
+      }
     }
 
     for (let i = this.particles.length - 1; i >= 0; i--) {
