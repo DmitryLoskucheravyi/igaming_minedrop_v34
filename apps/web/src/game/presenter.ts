@@ -112,7 +112,7 @@ const ZOOM_MAX = 2.4;
    камера сама повертається до кірки — PAN_HOLD секунд «не чіпай».
    Час рахується РЕАЛЬНИЙ, а не прискорений: на швидкості ×4 пауза має
    лишатись тими самими п'ятьма секундами. */
-const PAN_HOLD = 5;       // секунд спокою до повернення фокуса на кірку
+const PAN_HOLD = 2.5;     // секунд спокою до повернення фокуса на кірку
 const PAN_MIN_PX = 6;     // менший рух — це тап, а не гортання
 const PAN_LIMIT = 50;     // на скільки рядів можна відійти від кірки
 
@@ -338,8 +338,18 @@ export class Presenter {
   setZoom(z: number): void {
     const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
     if (Math.abs(next - this.zoom) < 0.002) return;
+
+    /* Масштабуємо ВІД ЦЕНТРУ ЕКРАНА. camX/camY — це лівий верхній кут
+       кадру (sx = (x - camX) * cell), тому сама лише зміна cell тягне
+       світ від краю екрана, і при віддаленні поле повзе вбік. Тому
+       запам'ятовуємо світову точку, що зараз у центрі, і після зміни
+       масштабу повертаємо її рівно туди ж. */
+    const cx = this.camX + this.w / this.cell / 2;
+    const cy = this.camY + this.h / this.cell / 2;
     this.zoom = next;
     this.geometry();
+    this.camX = cx - this.w / this.cell / 2;
+    this.camY = cy - this.h / this.cell / 2;
   }
 
   constructor(canvas: HTMLCanvasElement, onHud: (h: HudState) => void) {
@@ -1019,13 +1029,19 @@ export class Presenter {
     if (this.panT > 0) {
       this.panT = Math.max(0, this.panT - dtReal);
     } else {
+      const view = this.w / this.cell;          // скільки колонок у кадрі
       let tx = this.camXIdle;
       let ty = this.camMin;
       if (this.run) {
         const alive = this.run.alive;
         const p = alive.length ? alive[0] : this.run.picks[0];
         if (p) {
-          tx = p.x - this.w / this.cell / 2;
+          /* Поле влазить у кадр цілком (гравець відвів камеру далеко) —
+             тримаємо по центру САМЕ ПОЛЕ. Інакше камера й далі центрувала б
+             кірку, і шахта з'їжджала б ліворуч або праворуч залежно від
+             того, де кірка зараз. Поки поле ширше за кадр, центруємо
+             кірку, як і було. */
+          tx = view >= CONFIG.cols ? (CONFIG.cols - view) / 2 : p.x - view / 2;
           ty = p.y - (this.h * CONFIG.camLead) / this.cell;
         }
       }
