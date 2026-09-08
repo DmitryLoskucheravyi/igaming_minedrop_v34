@@ -190,25 +190,8 @@ html, body {
 .statusline .verified { color: #5ce08a; }
 .statusline .mismatch { color: #ff6a5c; }
 
-/* ---- pity: прогрес до гарантированной кирки (плаваюча пігулка) ---- */
-.pity {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 5px 14px;
-  border-radius: 999px;
-  background: rgba(4,6,9,.62);
-  font: 700 10px ui-monospace, monospace;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: #b9c2ce;
-}
-.pity-pips { color: #ffd34d; letter-spacing: .22em; font-size: 12px; }
-.pity.ready {
-  color: #08210f;
-  background: #4ec86a;
-}
+/* Пігулка pity прибрана: прогрес до гарантованої кірки тепер горить
+   рубінами на самій рамці слота (game/reel.ts, drawGems). */
 
 /* Керування — плаваючий блок по центру знизу, БЕЗ панелі: прозорий фон,
    поле гри видно наскрізь. Зверху вниз: смужка pity, поточна ставка,

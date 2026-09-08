@@ -156,6 +156,11 @@ const WIN_TIERS: readonly { at: number; text: string; color: string }[] = [
    (ретригер трапляється). */
 const BONUS_INTRO_SEC = 1.9;
 
+/* Наскільки зменшено рамку рулетки проти розміру, який дає доступний
+   простір. Символ усередині масштабується разом із нею — він похідна
+   від розмірів рамки, а не самостійна величина. */
+const FRAME_SCALE = 0.8;
+
 function winTier(x: number): { text: string; color: string } | null {
   let hit: { text: string; color: string } | null = null;
   for (const t of WIN_TIERS) if (x >= t.at) hit = t;
@@ -244,6 +249,16 @@ export class Presenter {
   /* геометрія */
   private w = 0; private h = 0; private cell = 0;
   private itemW = 0; private itemH = 0;
+  /* Годинник для анімацій, що живуть незалежно від раунду (пульс
+     каменів на вінку). Реальний час, без множення на speed: підсвітка
+     прогресу не має розганятись разом із фізикою. */
+  private clock = 0;
+  /* Камінь, що загорівся щойно: індекс і скільки ще триває спалах.
+     Без цього новий стан просто з'являвся б — видно було б результат,
+     але не подію. */
+  private gemLit = -1;
+  private gemLitT = 0;
+  private prevStreak = -1;
   private frameW = 0; private frameH = 0;
 
   private onHud: (h: HudState) => void;
@@ -626,6 +641,19 @@ export class Presenter {
     this.emit();
   }
 
+  /* Ставка, за якою СЕРВЕР порахував цей раунд.
+
+     Не this.bet: у виграної бонуски ставка своя — та, на якій зібрано
+     скаттери, — і вона може не збігатися з обраною в HUD. Через це всі
+     суми на екрані (попапи, лог, сумарний виграш) рахувались би з
+     чужого номіналу, а панель у кінці показувала б серверне число:
+     одна сума падає, інша показується, третя лягає на баланс.
+
+     Поки раунду немає — обрана ставка, її й показує HUD. */
+  private get runBet(): number {
+    return this.round?.bet ?? this.bet;
+  }
+
   /** Ціна бонуски для кірки за поточної ставки, у рублях. */
   buyPrice(tier: TierId): number {
     const k = this.player?.config?.buyPrices?.[tier] ?? CONFIG.buy.price[tier] ?? 0;
@@ -931,7 +959,7 @@ export class Presenter {
         this.burst(e.c + 0.5, e.r + 0.5, BLOCKS[e.id].color, 12);
         // живий попап показує РЕАЛЬНУ суму (після ставки й payoutK), дробову
         // за потреби — щоб цифри на екрані не брехали і не тонули в нулі
-        const cash = e.got * this.bet / CONFIG.payoutK;
+        const cash = e.got * this.runBet / CONFIG.payoutK;
         if (cash > 0) {
           this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.0,
             text: '', color: BLOCKS[e.id].color, size: 0.2, money: cash });
@@ -961,7 +989,7 @@ export class Presenter {
         // e.got — реальна сума (вже з урахуванням зачарування), не
         // перераховуємо з e.hit клієнтом, бо множник зачарування —
         // рантайм-стан кірки, його нема в статичній таблиці BLOCKS
-        const cash = e.got * this.bet / CONFIG.payoutK;
+        const cash = e.got * this.runBet / CONFIG.payoutK;
         this.shake = Math.min(34, 22 + e.chain * 3);
         this.flash = 0.35; this.flashColor = '#ff7a2b';
         const boom = e.chain > 1 ? 'БУМ X' + e.chain : 'БУМ!';
@@ -1001,7 +1029,7 @@ export class Presenter {
         // бонус за довгий ланцюг детонацій — на весь виграш вибуху
         this.shake = 24;
         this.flash = 0.5; this.flashColor = '#ff9a3c';
-        const cash = e.extra * this.bet / CONFIG.payoutK;
+        const cash = e.extra * this.runBet / CONFIG.payoutK;
         this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.8,
           text: 'TNT CHAIN X' + e.chain, color: '#ffb15a', size: 0.3,
           money: cash > 0 ? cash : undefined,
@@ -1108,6 +1136,21 @@ export class Presenter {
     /* Фізика йде ФІКСОВАНИМ кроком. Кадри бувають різні, крок — ні:
        інакше траєкторія залежала б від фреймрейту й розійшлася з
        серверною. Накопичуємо реальний час і витрачаємо його порціями. */
+    /* dtReal, а не dt: пульс каменів не має прискорюватись кнопкою x2. */
+    this.clock += dtReal;
+    if (this.gemLitT > 0) this.gemLitT = Math.max(0, this.gemLitT - dtReal);
+
+    /* Серія росте тільки між раундами, тож ловимо зміну тут, а не в
+       обробці подій забігу. */
+    const streakNow = this.player?.dryStreaks?.[this.bet] ?? 0;
+    if (streakNow !== this.prevStreak) {
+      if (this.prevStreak >= 0 && streakNow > this.prevStreak) {
+        this.gemLit = streakNow - 1;
+        this.gemLitT = 0.45;
+      }
+      this.prevStreak = streakNow;
+    }
+
     if (this.bonusIntro > 0) this.bonusIntro = Math.max(0, this.bonusIntro - dt);
 
     if (this.state === 'RUNNING' && this.run) {
@@ -1237,6 +1280,11 @@ export class Presenter {
     let frameW = frameH * FRAME_ASPECT;
     const maxFrameW = this.w - 16;
     if (frameW > maxFrameW) { frameW = maxFrameW; frameH = frameW / FRAME_ASPECT; }
+    /* Множник застосовуємо ПІСЛЯ всіх обмежень, а не до них: інакше на
+       вузькому екрані рамку спершу підрізав би maxFrameW, і зменшення
+       вийшло б меншим за обіцяні 20%. */
+    frameW *= FRAME_SCALE;
+    frameH *= FRAME_SCALE;
     this.frameW = frameW;
     this.frameH = frameH;
     this.itemW = frameW * (FRAME_INNER_RIGHT - FRAME_INNER_LEFT);
@@ -1281,10 +1329,42 @@ export class Presenter {
        краю прямо на поле. */
     const a = 1 - this.stage;
     if (a > 0.01) {
-      ctx.fillStyle = 'rgba(4,6,9,' + (0.62 * a).toFixed(3) + ')';
-      ctx.fillRect(0, 0, this.w, this.h);
+      /* Фон екрана рулетки — картинка на весь кадр, РОЗТЯГНУТА, а не
+         замощена: так її задумано (квадратна текстура під будь-яке
+         співвідношення екрана).
+
+         Малюємо непрозоро (з поправкою на перехід a), а не напівпрозорим
+         затемненням, як раніше: це саме фон, а не серпанок поверх шахти.
+         Картинки ще немає — лишається колишня заливка, щоб екран не
+         виявився порожнім. */
+      const bg = Assets.get('slotBg');
+      ctx.save();
+      ctx.globalAlpha = a;
+      if (bg) {
+        ctx.drawImage(bg, 0, 0, this.w, this.h);
+      } else {
+        ctx.fillStyle = 'rgba(4,6,9,.62)';
+        ctx.fillRect(0, 0, this.w, this.h);
+      }
+      ctx.restore();
       const cy = this.h * 0.42 + this.stage * this.itemH * 0.9;
-      this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, Math.min(1, a * 1.7));
+      const fa = Math.min(1, a * 1.7);
+      this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, fa);
+
+      /* Прогрес до гарантованої кірки — на самій рамці. Малюється ПІСЛЯ
+         неї: вінок непрозорий, і під ним світіння не було б видно.
+         Гасне разом із рамкою (fa), щоб не висіти в повітрі під час
+         переходу до поля. */
+      ctx.save();
+      ctx.globalAlpha = fa;
+      this.reel.drawGems(
+        ctx, this.w / 2, cy, this.frameW, this.frameH,
+        this.player?.dryStreaks?.[this.bet] ?? 0,
+        this.player?.pityAt ?? CONFIG.pity,
+        this.clock,
+        this.gemLitT > 0 ? this.gemLit : -1,
+      );
+      ctx.restore();
     }
 
     this.drawHistory(ctx);
@@ -1528,7 +1608,7 @@ export class Presenter {
      центру, просто текстом (без фону). Живе, доки триває копання. */
   private drawRunningTotal(ctx: CanvasRenderingContext2D): void {
     if (!this.run || this.state !== 'RUNNING') return;
-    const cash = this.run.collected * this.bet / CONFIG.payoutK;
+    const cash = this.run.collected * this.runBet / CONFIG.payoutK;
     if (cash <= 0) return;   // "+0" на весь екран нічого не каже — просто мовчимо, доки нема чого показати
     this.drawMoney(ctx, cash, this.w / 2, 46 + this.topInset,
       '800 20px ui-monospace, monospace', '#ffd34d');

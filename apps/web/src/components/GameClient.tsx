@@ -243,20 +243,10 @@ export function GameClient() {
             </div>
           )}
 
-          {!bonusNext && hud.dryStreak > 0 && (
-            <div className={'pity' + (hud.dryStreak >= hud.pityAt ? ' ready' : '')}>
-              {hud.dryStreak >= hud.pityAt ? (
-                <span>СЛЕДУЮЩАЯ — КИРКА</span>
-              ) : (
-                <>
-                  <span className="pity-pips" aria-hidden="true">
-                    {'●'.repeat(hud.dryStreak) + '○'.repeat(Math.max(0, hud.pityAt - hud.dryStreak))}
-                  </span>
-                  <span>{hud.dryStreak}/{hud.pityAt} до гарантии</span>
-                </>
-              )}
-            </div>
-          )}
+          {/* Прогрес до гарантованої кірки більше не пігулка з текстом:
+              його показують рубіни на самій рамці слота — загораються
+              червоним по одному, останнім великий, і тоді всі зеленіють.
+              Два індикатори одного й того самого сперечалися б за увагу. */}
 
           {/* Бонус бай доступний і з поля, не тільки з меню: це платна
               дія, за якою тягнуться, не відкриваючи бургер. На час

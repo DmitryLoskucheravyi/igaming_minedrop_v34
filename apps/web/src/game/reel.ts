@@ -17,18 +17,77 @@ import { CONFIG, reelTable } from '@minedrop/engine';
 import { Assets } from './assets';
 import { Render, type ReelItem } from './render';
 
-/* Геометрія рамки (public/рамка.png, 941x1672 — вужча версія) —
-   заміряно з самого файлу (аналіз альфа-каналу): прозорий центр НЕ
-   рівно по центру зображення, тому координати внутрішнього вікна
-   беремо як частку від повних розмірів рамки, а не як фіксований
-   відступ у пікселях (щоб масштабування на будь-який розмір екрана
-   лишалось коректним). */
-const FRAME_W = 941, FRAME_H = 1672;
+/* Геометрія рамки (public/рамка2.png, 1024x1024) — заміряно з самого
+   файлу по альфа-каналу, а не на око: вінок несиметричний, листя
+   стирчить усередину, і виріз у ньому не рівне коло й не по центру
+   зображення. Координати вікна — частка від повних розмірів рамки, щоб
+   масштабування на будь-який екран лишалось коректним.
+
+   Числа нижче — найбільший КВАДРАТ, що влазить у виріз: 446 px при
+   1024 px рамки, центр 512,526. Квадрат, а не смуга 1:3, бо у вікні
+   тепер один символ (див. CONFIG.reel.visible).
+
+   По горизонталі центр ПРИМУСОВО 512, тобто рівно посередині. Вільний
+   пошук ставив квадрат на 25 px лівіше, і це навіть не давало виграшу
+   в розмірі (445 проти 446 px) — зате символ стояв би не по центру
+   симетричного вінка, що видно одразу. По вертикалі центр нижчий за
+   середину картинки: згори всередину звисає корона великого каменя. */
+const FRAME_W = 1024, FRAME_H = 1024;
 export const FRAME_ASPECT = FRAME_W / FRAME_H;
-export const FRAME_INNER_LEFT = 0.133;
-export const FRAME_INNER_RIGHT = 0.869;
-export const FRAME_INNER_TOP = 0.068;
-export const FRAME_INNER_BOTTOM = 0.910;
+export const FRAME_INNER_LEFT = 0.2822;
+export const FRAME_INNER_RIGHT = 0.7178;
+export const FRAME_INNER_TOP = 0.2959;
+export const FRAME_INNER_BOTTOM = 0.7314;
+
+/* ============================================================
+   КАМЕНІ НА ВІНКУ — прогрес до гарантованої кірки.
+
+   Раніше це була текстова пігулка «3/7 до гарантии» під полем. Тепер
+   те саме показує сама рамка: за кожну пусту ставку загорається
+   черговий рубін, останнім — великий зверху, і разом з ним усі
+   стають зеленими: наступний прокрут гарантовано дає кірку.
+
+   Позиції заміряно з файлу пошуком червоних плям (частки від ширини
+   рамки), а не виставлено вручну. Малих каменів рівно 6, великий 1 —
+   разом 7, і це не збіг: CONFIG.pity теж 7. Якщо pity колись стане
+   іншим, малюємо min(pity, 6) малих — див. gemsFor().
+   ============================================================ */
+type Ctx = CanvasRenderingContext2D;
+
+interface Gem { x: number; y: number; r: number }
+
+/* Порядок — за годинниковою стрілкою від великого каменя, щоб вінок
+   заповнювався до корони, а не стрибав із боку в бік. */
+const GEMS_SMALL: readonly Gem[] = [
+  { x: 0.7737, y: 0.2415, r: 0.0322 },   // праворуч угорі
+  { x: 0.9127, y: 0.5097, r: 0.0312 },   // праворуч
+  { x: 0.7732, y: 0.7857, r: 0.0312 },   // праворуч унизу
+  { x: 0.2275, y: 0.7861, r: 0.0312 },   // ліворуч унизу
+  { x: 0.0882, y: 0.5099, r: 0.0312 },   // ліворуч
+  { x: 0.2276, y: 0.2415, r: 0.0322 },   // ліворуч угорі
+];
+const GEM_BIG: Gem = { x: 0.5001, y: 0.1294, r: 0.0498 };
+
+/* Середній колір фонової текстури (заміряно з самого файлу:
+   #1f1f23, розкид 25..42). Саме в нього згасають краї стрічки — тепер,
+   коли підкладки під символом немає, згасання мусить читатись як
+   «символ розчиняється у фоні», а не як темна смуга поверх нього. */
+const BG_RGB = '31,31,35';
+
+const RED = { core: '#ff5a4a', glow: '255,70,55' };
+const GREEN = { core: '#7dff9a', glow: '90,255,120' };
+
+/* Скільки місця в картинці зеленого рубіна займає сам камінь: заміряно
+   з файлу — 0.752 полотна, решта прозора. Щоб камінь накрив червоний
+   радіуса r, картинку треба малювати ширшою: 2r / 0.752, плюс запас
+   на бортик гнізда. */
+const GEM_ART_FILL = 0.752;
+/* Запас підібрано перебором по самій картинці, а не на око: при 1.12 з-під
+   зеленого лишалось 14 червоних пікселів по краю гнізда, при 1.18 — жодного.
+   Беремо 1.22, щоб дрібне згладжування на масштабуванні теж нічого не
+   лишило. */
+const GEM_ART_MARGIN = 1.22;
+const GEM_ART_K = (2 / GEM_ART_FILL) * GEM_ART_MARGIN;
 
 export class Reel {
   items: ReelItem[] = [];
@@ -100,6 +159,121 @@ export class Reel {
     }
   }
 
+  /* Скільки малих каменів під цей поріг pity. Великий завжди останній,
+     тож малих — на один менше. Більше шести на вінку немає. */
+  private gemsFor(need: number): readonly Gem[] {
+    return GEMS_SMALL.slice(0, Math.max(0, Math.min(GEMS_SMALL.length, need - 1)));
+  }
+
+  /* КАМЕНІ ПРОГРЕСУ. Малюються ПОВЕРХ рамки, тому окремим методом:
+     всередині draw() вони лягли б під саме зображення вінка.
+
+     got — пустих ставок поспіль, need — поріг гарантії (CONFIG.pity).
+     t — час у секундах, від нього живе пульс.
+     justLit — індекс каменя, що загорівся щойно (-1, якщо ні): він
+     спалахує яскравіше, щоб подію було видно, а не лише новий стан.
+
+     Камені вже намальовані червоними на самій картинці, тому:
+       - згаслі приглушуємо темним кружком, інакше «горить» і «не
+         горить» не відрізнити;
+       - зелений стан ЗАКРИВАЄ рубін непрозорим кружком, а не тонує
+         поверх: додавання зеленого до червоного дає брудно-жовтий. */
+  drawGems(
+    ctx: Ctx, cx: number, cy: number, frameW: number, frameH: number,
+    got: number, need: number, t: number, justLit = -1,
+  ): void {
+    const small = this.gemsFor(need);
+    const all: Gem[] = [...small, GEM_BIG];
+    const done = got >= need;
+    const lit = done ? all.length : Math.min(got, small.length);
+    const paint = done ? GREEN : RED;
+
+    const x0 = cx - frameW / 2;
+    const y0 = cy - frameH / 2;
+
+    for (let i = 0; i < all.length; i++) {
+      const g = all[i];
+      const gx = x0 + frameW * g.x;
+      const gy = y0 + frameH * g.y;
+      const gr = frameW * g.r;
+      const isBig = i === all.length - 1;
+      const on = i < lit;
+
+      if (!on) {
+        // приглушуємо ще не зароблений камінь
+        ctx.save();
+        ctx.globalAlpha = 0.62;
+        ctx.fillStyle = '#0a0d12';
+        ctx.beginPath();
+        ctx.arc(gx, gy, gr * 0.92, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        continue;
+      }
+
+      /* Пульс. Великий камінь дихає повільніше — він тут головний, і
+         спільний ритм зі шістьма малими читався б як миготіння. */
+      const speed = isBig ? 2.2 : 3.1;
+      const phase = isBig ? 0 : i * 0.7;   // мала розсинхронізація по колу
+      let pulse = 0.72 + 0.28 * Math.sin(t * speed + phase);
+      if (done) pulse = 0.82 + 0.18 * Math.sin(t * 3.4 + i * 0.5);
+      if (i === justLit) pulse = 1;
+
+      ctx.save();
+
+      /* ЗЕЛЕНИЙ СТАН: червоний рубін треба саме ПЕРЕКРИТИ, а не
+         підфарбувати — додавання зеленого до червоного дало б брудно-
+         жовтий. Кладемо картинку зеленого каменя непрозоро.
+
+         Непрозорість тут не косметика, а умова: миготіння робимо
+         СВІТІННЯМ поверх, а не прозорістю самого каменя. Якби пульс
+         гнав альфу картинки, у кожній «темній» фазі з-під неї
+         проступав би червоний. */
+      if (done) {
+        const art = Assets.get('gemGreen');
+        if (art) {
+          const size = gr * GEM_ART_K;
+          ctx.drawImage(art, gx - size / 2, gy - size / 2, size, size);
+        } else {
+          // картинки немає — лишається намальований кружок, теж непрозорий
+          ctx.fillStyle = '#1d7a3a';
+          ctx.beginPath();
+          ctx.arc(gx, gy, gr * 1.02, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = paint.core;
+          ctx.globalAlpha = 0.85;
+          ctx.beginPath();
+          ctx.arc(gx, gy, gr * 0.55, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      // саме світіння — додаванням, щоб камінь горів, а не був залитий
+      ctx.globalCompositeOperation = 'lighter';
+      const R = gr * (done ? 3.1 : 2.4) * (0.85 + 0.15 * pulse);
+      const grd = ctx.createRadialGradient(gx, gy, gr * 0.15, gx, gy, R);
+      grd.addColorStop(0, `rgba(${paint.glow},${(0.85 * pulse).toFixed(3)})`);
+      grd.addColorStop(0.35, `rgba(${paint.glow},${(0.34 * pulse).toFixed(3)})`);
+      grd.addColorStop(1, `rgba(${paint.glow},0)`);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(gx, gy, R, 0, Math.PI * 2);
+      ctx.fill();
+
+      /* Ядро — щоб камінь читався як джерело, а не як пляма навколо.
+         У зеленому стані б'ємо по самому каменю: це і є миготіння, і
+         воно накладається ПОВЕРХ непрозорої картинки. */
+      ctx.fillStyle = paint.core;
+      ctx.globalAlpha = (done ? 0.42 : 0.5) * pulse;
+      ctx.beginPath();
+      ctx.arc(gx, gy, gr * (done ? 0.82 : 0.5), 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+  }
+
   /* cx, cy — центр усієї рамки. frameW/frameH — розмір самого зображення
      рамки (фіксоване співвідношення сторін). itemW/itemH — розмір ОДНІЄЇ
      комірки стрічки всередині прозорого вікна рамки (їх рахує presenter
@@ -116,8 +290,14 @@ export class Reel {
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    // темний фон під стрічку — видно крізь прозорий центр рамки
-    Render.inset(ctx, x - 4, y - 4, itemW + 8, winH + 8, '#12151b', 4);
+    /* Підкладки під стрічку немає навмисно.
+
+       Раніше тут була Render.inset() — темний квадрат із фаскою, а
+       нижче золоті кутики лінії виплати. Під прямокутною рамкою вони
+       читались як частина автомата, але всередині круглого вінка
+       квадрат сидить чужорідною плямою: рамка вже й є вікном, а другу
+       рамку в неї вписувати нема за чим. Символ лягає просто на фон
+       екрана. */
 
     // сама стрічка, обрізана прозорим вікном рамки
     ctx.save();
@@ -134,17 +314,24 @@ export class Reel {
       Render.reelItem(ctx, x + 5, iy + 4, itemW - 10, itemH - 8, this.items[i], hot);
     }
 
+    /* Затемнення країв вікна. Висота градієнта — ЧАСТКА вікна, а не
+       ціла комірка: при одному видимому символі комірка дорівнює всьому
+       вікну, і старий градієнт на itemH затемнив би сам символ від краю
+       до краю. Тепер це вузька смужка згори й знизу — рівно щоб стрічка
+       не обривалась різко. */
+    const fade = Math.min(itemH, winH) * 0.22;
+
     // затемнення зверху/знизу
-    const gt = ctx.createLinearGradient(0, y, 0, y + itemH);
-    gt.addColorStop(0, 'rgba(10,12,16,.96)');
-    gt.addColorStop(1, 'rgba(10,12,16,0)');
+    const gt = ctx.createLinearGradient(0, y, 0, y + fade);
+    gt.addColorStop(0, `rgba(${BG_RGB},1)`);
+    gt.addColorStop(1, `rgba(${BG_RGB},0)`);
     ctx.fillStyle = gt;
-    ctx.fillRect(x, y, itemW, itemH);
-    const gb = ctx.createLinearGradient(0, y + winH, 0, y + winH - itemH);
-    gb.addColorStop(0, 'rgba(10,12,16,.96)');
-    gb.addColorStop(1, 'rgba(10,12,16,0)');
+    ctx.fillRect(x, y, itemW, fade);
+    const gb = ctx.createLinearGradient(0, y + winH, 0, y + winH - fade);
+    gb.addColorStop(0, `rgba(${BG_RGB},1)`);
+    gb.addColorStop(1, `rgba(${BG_RGB},0)`);
     ctx.fillStyle = gb;
-    ctx.fillRect(x, y + winH - itemH, itemW, itemH);
+    ctx.fillRect(x, y + winH - fade, itemW, fade);
     ctx.restore();
 
     // сама рамка — ПОВЕРХ стрічки, прозорий центр показує її знизу.
@@ -153,18 +340,9 @@ export class Reel {
     if (img) ctx.drawImage(img, frameX, frameY, frameW, frameH);
     else Render.wood(ctx, x - 18, y - 18, itemW + 36, winH + 36);
 
-    // золоті куточки на виграшній комірці (лінія виплати — середня)
-    const sy = cyWin - itemH / 2;
-    const L = Math.min(26, itemH * 0.36);
-    const th = 5;
-    ctx.fillStyle = '#ffd34d';
-    const corners: [number, number, number, number][] = [
-      [x, sy, L, th], [x, sy, th, L],
-      [x + itemW - L, sy, L, th], [x + itemW - th, sy, th, L],
-      [x, sy + itemH - th, L, th], [x, sy + itemH - L, th, L],
-      [x + itemW - L, sy + itemH - th, L, th], [x + itemW - th, sy + itemH - L, th, L],
-    ];
-    for (const r of corners) ctx.fillRect(r[0], r[1], r[2], r[3]);
+    /* Золотих кутиків лінії виплати теж немає: у вікні тепер один
+       символ, тобто лінія виплати — саме воно. Позначати рамкою те, що
+       й так єдине видиме, нема сенсу. */
 
     ctx.restore();
   }
