@@ -1,7 +1,7 @@
 'use client';
 
 /* ============================================================
-   ЗАЯВКИ — дві підвкладки: депозити і виводи.
+   ЗАЯВКИ — три підвкладки: депозити, виводи й непізнані перекази.
 
    Вони поруч, бо це один робочий процес («що чекає на мене»), але
    таблиці різні: у депозиті адреса НАША (куди гравець переказує), у
@@ -11,6 +11,10 @@
    Головна різниця в грошах: депозит зараховує баланс при погодженні,
    а вивід уже списав його при створенні заявки. Тому відхилення
    виводу ПОВЕРТАЄ гроші, а відхилення депозиту нічого не рухає.
+
+   Третя підвкладка — перекази, що прийшли, але не сіли на жодну заявку.
+   Вони теж чекають рішення людини, тому стоять поруч, а не окремою
+   вкладкою десь збоку.
    ============================================================ */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -20,6 +24,7 @@ import {
   type AdminPayment, type AdminWithdraw,
 } from './lib';
 import { EMPTY_FILTER, Filters, passes, type ReqFilter } from './Filters';
+import { UnmatchedTab } from './UnmatchedTab';
 import { useAsk } from './Ask';
 
 function mmss(ms: number): string {
@@ -27,7 +32,7 @@ function mmss(ms: number): string {
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 }
 
-type Kind = 'deposit' | 'withdraw';
+type Kind = 'deposit' | 'withdraw' | 'unmatched';
 
 export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) {
   const [kind, setKind] = useState<Kind>('deposit');
@@ -36,6 +41,7 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
   const [err, setErr] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
+  const [fresh, setFresh] = useState(0);
   const ask = useAsk();
 
   /* Фільтри свої на кожну підвкладку: пошук по нашій адресі й по адресі
@@ -99,16 +105,19 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
 
       <div className={s.subTabs}>
         <button type="button" className={sub('deposit')} onClick={() => setKind('deposit')}>
-          Депозиты{depPending > 0 && <span className={s.dot}>{depPending}</span>}
+          Пополнения{depPending > 0 && <span className={s.dot}>{depPending}</span>}
         </button>
         <button type="button" className={sub('withdraw')} onClick={() => setKind('withdraw')}>
           Выводы{wdPending > 0 && <span className={s.dot}>{wdPending}</span>}
+        </button>
+        <button type="button" className={sub('unmatched')} onClick={() => setKind('unmatched')}>
+          Непознанные{fresh > 0 && <span className={s.dot}>{fresh}</span>}
         </button>
       </div>
 
       {err && <div className={s.err}>{err}</div>}
 
-      {kind === 'deposit' ? (
+      {kind === 'unmatched' ? <UnmatchedTab onFresh={setFresh} /> : kind === 'deposit' ? (
         <>
           <Filters
             value={depFilter}
@@ -123,7 +132,8 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                 <tr>
                   <th>Игрок</th>
                   <th className={s.num}>₽</th>
-                  <th className={s.num}>USDT</th>
+                  <th className={s.num}>Монета</th>
+                  <th>Сеть</th>
                   <th>Кошелёк приёма</th>
                   <th>Статус</th>
                   <th>Создана</th>
@@ -140,11 +150,15 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                       </div>
                     </td>
                     <td className={s.num} data-label="₽">{rub(p.amount)}</td>
-                    <td className={s.num} data-label="USDT">
-                      {p.usdtAmount}
+                    <td className={s.num} data-label="Монета">
+                      {p.usdtAmount} <span className={s.dim}>{(p.token ?? 'usdt').toUpperCase()}</span>
                       {p.rateApprox && (
                         <span className={s.approx} title={`Курс приблизный: ${rub(p.rate)} ₽ за USDT. Сверь сумму.`}>≈</span>
                       )}
+                    </td>
+                    <td data-label="Сеть">
+                      {p.network ?? '—'}
+                      {p.memo && <div className={s.dim}>memo: {p.memo}</div>}
                     </td>
                     <td data-label="Кошелёк приёма">
                       <div className={`${s.mono} ${s.wrapAny}`} style={{ maxWidth: 220 }}>{p.address}</div>
@@ -155,6 +169,11 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                       {p.status === 'pending' && (
                         <div className={`${s.timer} ${p.expiresAt - now < 5 * 60000 ? s.urgent : ''}`}>
                           {mmss(p.expiresAt - now)}
+                        </div>
+                      )}
+                      {p.txid && (
+                        <div className={s.paid} title={p.txid}>
+                          перевод найден{p.paidAmount ? `: ${p.paidAmount}` : ''}
                         </div>
                       )}
                       {p.adminNote && <div className={s.dim}>{p.adminNote}</div>}
@@ -175,12 +194,12 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                   </tr>
                 ))}
                 {deps && shownDeps.length === 0 && (
-                  <tr><td colSpan={7}><div className={s.empty}>
+                  <tr><td colSpan={8}><div className={s.empty}>
                     {deps.length ? 'Под фильтр ничего не подходит' : 'Заявок ещё не было'}
                   </div></td></tr>
                 )}
                 {!deps && !err && (
-                  <tr><td colSpan={7}><div className={s.empty}>Загрузка…</div></td></tr>
+                  <tr><td colSpan={8}><div className={s.empty}>Загрузка…</div></td></tr>
                 )}
               </tbody>
             </table>

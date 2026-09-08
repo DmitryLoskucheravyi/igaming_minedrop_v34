@@ -3,10 +3,17 @@ import {
   NotFoundException, Param, Post, Req, UseGuards,
 } from '@nestjs/common';
 import {
-  IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength,
+  ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString,
+  Max, MaxLength, Min, MinLength,
 } from 'class-validator';
 import { PlayersService } from '../players/players.service';
 import { PaymentsService } from '../payments/payments.service';
+import {
+  FAMILY_HINT, NETWORKS, TOKENS, networkList,
+  type Family, type NetworkId, type TokenId,
+} from '../payments/networks';
+import { SettingsService } from '../settings/settings.service';
+import type { DepositMode } from '../settings/settings.types';
 import { WithdrawService } from '../withdrawals/withdraw.service';
 import { RateLimiter, clientKey } from '../common/rate-limit';
 
@@ -53,11 +60,37 @@ class RejectDto {
 }
 
 class AddAddressDto {
-  @IsString() @MaxLength(64)
+  /* Родина, а не мережа: 0x-адреса обслуговує всі EVM-мережі одразу,
+     тож заводити її шість разів було б безглуздо. */
+  @IsIn(['evm', 'tron', 'ton', 'solana'])
+  family!: Family;
+
+  @IsString() @MaxLength(80)
   address!: string;
 
   @IsOptional() @IsString() @MaxLength(60)
   label?: string;
+}
+
+class CreditUnmatchedDto {
+  @IsInt()
+  telegramId!: number;
+
+  /* Не задали — порахуємо за поточним курсом. Задали — віримо адміну:
+     курсу на момент того переказу ми не знаємо. */
+  @IsOptional() @IsInt() @Min(1) @Max(100_000_000)
+  rub?: number;
+}
+
+class DepositSettingsDto {
+  @IsOptional() @IsIn(['off', 'watch', 'semi', 'auto'])
+  mode?: DepositMode;
+
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(Object.keys(NETWORKS), { each: true })
+  networks?: NetworkId[];
+
+  @IsOptional() @IsArray() @ArrayUnique() @IsIn(Object.keys(TOKENS), { each: true })
+  tokens?: TokenId[];
 }
 
 class PatchAddressDto {
@@ -75,6 +108,7 @@ export class AdminController {
     private readonly payments: PaymentsService,
     private readonly withdraw: WithdrawService,
     private readonly admins: AdminsService,
+    private readonly settings: SettingsService,
   ) {}
 
   /* ---- вхід ---- */
@@ -236,7 +270,7 @@ export class AdminController {
   @Post('addresses')
   @UseGuards(AdminAuthGuard)
   addrAdd(@Body() dto: AddAddressDto) {
-    return this.payments.addAddress(dto.address, dto.label);
+    return this.payments.addAddress(dto.family, dto.address, dto.label);
   }
 
   @Post('addresses/:id')
@@ -250,5 +284,76 @@ export class AdminController {
   addrDelete(@Param('id') id: string) {
     this.payments.removeAddress(id);
     return { ok: true };
+  }
+
+  /* ---- налаштування прийому ----
+
+     Каталог мереж віддаємо разом із налаштуваннями: CRM малює
+     перемикачі за ним і не тримає власної копії списку, яка б розійшлася
+     з сервером при додаванні мережі. */
+
+  /* Одним запитом усе, з чого складається вкладка «Депозиты → Крипто»:
+     режим, каталог мереж, монети, адреси й те, що бот слухає прямо
+     зараз. Разом, бо порізно вони безглузді: увімкнена мережа без
+     адреси своєї родини — це помилка в момент переказу гравця, і
+     побачити її треба тут, а не з його скарги.
+
+     watching рахує ТОЙ САМИЙ метод, який читатиме спостерігач, тому в
+     CRM видно не переказ наміру, а буквально його робочий список. */
+  @Get('deposit-settings')
+  @UseGuards(AdminAuthGuard)
+  depSettings() {
+    const busy = new Map<string, number>();
+    for (const p of this.payments.listAll()) {
+      if (p.status === 'pending' && p.addressId) busy.set(p.addressId, (busy.get(p.addressId) ?? 0) + 1);
+    }
+    return {
+      settings: this.settings.getDeposits(),
+      addresses: this.payments.addrList().map((a) => ({ ...a, pending: busy.get(a.id) ?? 0 })),
+      watching: this.payments.watchTargets(),
+      catalogue: {
+        networks: networkList().map((n) => ({
+          id: n.id, name: n.name, family: n.family, feeUsd: n.feeUsd,
+          memo: !!n.memo, tokens: Object.keys(n.tokens) as TokenId[],
+        })),
+        tokens: Object.entries(TOKENS).map(([id, t]) => ({ id: id as TokenId, name: t.name })),
+        familyHints: FAMILY_HINT,
+      },
+    };
+  }
+
+  @Post('deposit-settings')
+  @UseGuards(AdminAuthGuard)
+  async depSettingsSave(@Body() dto: DepositSettingsDto) {
+    return { settings: await this.settings.setDeposits(dto) };
+  }
+
+  /* ---- неопізнані платежі ----
+
+     Переказ прийшов, але не зіставився з заявкою. Гроші вже в нас, тож
+     рядок не зникає, доки адмін не вирішить, що з ним робити. */
+
+  @Get('unmatched')
+  @UseGuards(AdminAuthGuard)
+  unmatchedList() {
+    const rows = this.payments.unmatchedList().map((u) => ({
+      ...u,
+      networkName: NETWORKS[u.network]?.name ?? u.network,
+      player: u.creditedTo ? this.players.byId(u.creditedTo)?.firstName ?? null : null,
+    }));
+    return { unmatched: rows, count: rows.length,
+             fresh: rows.filter((u) => u.status === 'new').length };
+  }
+
+  @Post('unmatched/:id/credit')
+  @UseGuards(AdminAuthGuard)
+  unmatchedCredit(@Param('id') id: string, @Body() dto: CreditUnmatchedDto) {
+    return this.payments.creditUnmatched(id, dto.telegramId, dto.rub);
+  }
+
+  @Post('unmatched/:id/ignore')
+  @UseGuards(AdminAuthGuard)
+  unmatchedIgnore(@Param('id') id: string, @Body() dto: RejectDto) {
+    return this.payments.ignoreUnmatched(id, dto.note);
   }
 }

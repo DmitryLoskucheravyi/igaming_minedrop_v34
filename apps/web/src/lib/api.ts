@@ -52,12 +52,34 @@ export interface RevealedSeries {
 
 export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'expired';
 
+/* Мережі й токени описані на сервері (payments/networks.ts). Клієнт їх
+   не перелічує: список увімкнених міняється в CRM на ходу й приходить
+   у PaymentsInfo. Тут лишаються тільки рядкові типи. */
+export type NetworkId = string;
+export type TokenId = 'usdt' | 'usdc';
+
+/** Мережа, доступна для поповнення просто зараз. */
+export interface DepositNetwork {
+  id: NetworkId;
+  name: string;
+  /** приблизна комісія відправника, $ — головний аргумент вибору */
+  feeUsd: number;
+  /** переказ ідентифікується коментарем, а не сумою */
+  memo: boolean;
+  tokens: TokenId[];
+}
+
 export interface Payment {
   id: string;
   telegramId: number;
-  method: 'usdt_trc20';
+  method: string;
+  /** у якій мережі й яким токеном платить гравець */
+  network: NetworkId;
+  token: TokenId;
   amount: number;        // ₽ на баланс
   usdtAmount: number;    // скільки переказати
+  /** код у коментар переказу — тільки в мережах, які їх підтримують */
+  memo?: string;
   rate: number;
   /** курс на момент створення був приблизний (біржа не відповідала) —
       сума USDT може не збігатися з ринковою, це треба показати */
@@ -75,6 +97,8 @@ export interface PaymentsInfo {
   history: Payment[];
   minRub: number;
   maxRub: number;
+  /** що зараз увімкнено адміном — саме це показуємо у виборі */
+  networks: DepositNetwork[];
 }
 
 /* ---- виведення коштів ----
@@ -200,10 +224,10 @@ export const Api = {
   },
 
   /** Створити заявку на депозит (₽). Повертає заявку з адресою й таймером. */
-  createPayment(amount: number) {
+  createPayment(amount: number, network: NetworkId, token: TokenId) {
     return call<Payment>('/payments', {
       method: 'POST',
-      body: JSON.stringify({ amount, method: 'usdt_trc20' }),
+      body: JSON.stringify({ amount, network, token }),
     });
   },
 

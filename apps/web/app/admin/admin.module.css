@@ -727,3 +727,198 @@
   --overlay: rgba(20, 28, 36, .42);
   --shadow: rgba(20, 30, 40, .18);
 }
+
+
+/* ============================================================
+   ПРИЁМ — режим бота, монеты, сети.
+
+   Всё на токенах темы: светлая подхватывает их сама.
+   ============================================================ */
+
+.sect {
+  margin: 26px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sect:first-of-type { margin-top: 8px; }
+
+/* Режимы — карточками, а не выпадашкой: разница между ними в том,
+   кто платит деньги, и её надо прочитать, а не угадать по названию. */
+.modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.mode {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+  padding: 12px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.mode:hover { background: var(--surface3); }
+.mode:disabled { opacity: .55; cursor: default; }
+.mode.on {
+  border-color: var(--okBorder);
+  background: var(--okBg);
+}
+.modeName { font-size: 13px; font-weight: 700; color: var(--text); }
+.mode.on .modeName { color: var(--okText); }
+.modeNote { font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+
+.warn {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--gold);
+  background: var(--warnBg);
+  color: var(--warnText);
+  font-size: 12px;
+  line-height: 1.6;
+  border-radius: 0 8px 8px 0;
+}
+
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill {
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.pill:hover { background: var(--surface3); }
+.pill:disabled { opacity: .55; cursor: default; }
+.pill.on {
+  color: var(--okText);
+  background: var(--okBg);
+  border-color: var(--okBorder);
+}
+
+.netGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+.netCard {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+  padding: 11px 13px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.netCard:hover { background: var(--surface3); }
+.netCard:disabled { opacity: .55; cursor: default; }
+.netCard.on { border-color: var(--okBorder); background: var(--okBg); }
+/* Сеть включена, но принять по ней нечем — важнее, чем «включена». */
+.netCard.bad { border-color: var(--noBorder); background: var(--noBg); }
+.netTop { display: flex; align-items: baseline; gap: 8px; }
+.netName { flex: 1; font-size: 13px; font-weight: 700; color: var(--text); }
+.netFee { font-size: 11px; color: var(--muted); }
+.netSub { font-size: 11px; color: var(--muted); }
+.netBad { font-size: 11px; font-weight: 600; color: var(--dangerText); }
+
+/* Наблюдатель нашёл перевод — это главное, что админ должен увидеть
+   в строке заявки, поэтому строка своя, а не в примечании. */
+.paid {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--okText);
+}
+
+
+/* ============================================================
+   ДЕПОЗИТЫ → КРИПТО: строка наблюдения и адреса по семействам.
+   ============================================================ */
+
+/* Что бот слушает прямо сейчас — первое, что видно на вкладке:
+   всё остальное на ней только меняет эту строку. */
+.watchBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  margin-bottom: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 12px;
+}
+.watchBar .dim { font-size: 12px; }
+.watchBar b { color: var(--text); }
+.watchBar button { margin-left: auto; }
+
+.netOk { font-size: 11px; font-weight: 600; color: var(--okText); }
+
+/* Адреса сгруппированы по семейству, потому что заводятся именно на
+   него: заголовок блока сразу говорит, какие сети он обслуживает. */
+.famBlock {
+  margin-bottom: 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.famHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  background: var(--surface3);
+  border-bottom: 1px solid var(--border);
+}
+.famName { font-size: 13px; font-weight: 700; color: var(--text); }
+.famNets { flex: 1; min-width: 120px; font-size: 11.5px; color: var(--muted); }
+.famEmpty { padding: 14px; font-size: 12px; color: var(--muted); }
+
+.famBlock .addrForm { padding: 12px 14px; margin: 0; border-bottom: 1px solid var(--line); }
+
+.addrList { display: flex; flex-direction: column; }
+.addrRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.addrRow:last-child { border-bottom: none; }
+/* Выключенный адрес приглушён, но читаем: на нём могут висеть заявки. */
+.addrRow.off { opacity: .55; }
+.addrMain { flex: 1; min-width: 200px; }
+.addrMeta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.addrSide {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .addrRow { align-items: flex-start; }
+  .addrSide { width: 100%; justify-content: space-between; }
+  .watchBar button { margin-left: 0; }
+}

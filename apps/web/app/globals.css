@@ -309,6 +309,19 @@ html, body {
    попри opacity 0. */
 .controls.playing .control-core button { pointer-events: none; }
 
+/* ВИНЯТОК: увімкнена автогра.
+
+   Автогра запускає раунди підряд, і панель з'їжджає на кожному —
+   разом із кнопкою, якою автогру й вимикають. Пауза між раундами
+   коротша за анімацію виїзду, тож зупинити її ставало фізично ніде:
+   кнопка або їде вниз, або вже їде назад. Тому поки автогра ввімкнена,
+   її кнопка лишається на місці — як і кнопка швидкості поруч. */
+.controls.playing.auto .autobtn {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* Хто просив менше руху — тому просто згасання, без їзди. */
 @media (prefers-reduced-motion: reduce) {
   .pity, .buybtn, .bet-readout, .control-core, .autobtn { transition: opacity .2s ease; }
@@ -778,6 +791,81 @@ canvas {
 }
 .dep-chip:hover { background: #64707f; }
 .dep-est { font-size: 11px; color: #8b95a3; margin: 10px 0; }
+
+/* ---- вибір монети й мережі ----
+
+   Мережі стоять сіткою з комісією на кожній: це єдине, чим вони
+   відрізняються для гравця, і саме через неї він і вибирає. Іконку
+   малюємо, якщо файл є; немає — лишається назва, і нічого не ламається. */
+.dep-ico {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  image-rendering: auto;
+  flex: none;
+}
+.dep-tokens { display: flex; gap: 8px; }
+.dep-token {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font: 700 12px ui-monospace, monospace;
+  letter-spacing: .04em;
+  color: #b9c2ce;
+  background: #2b323c;
+  border: 2px solid #3d4652;
+  outline: 1px solid #0d0f13;
+  padding: 9px 0;
+  cursor: pointer;
+}
+.dep-token:hover { background: #333b47; }
+.dep-token.on {
+  color: #0d0f13;
+  background: #57eede;
+  border-color: #8ff5ea;
+}
+
+.dep-nets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+}
+.dep-net {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  font: 600 11.5px ui-monospace, monospace;
+  color: #dfe4ea;
+  background: #2b323c;
+  border: 2px solid #3d4652;
+  outline: 1px solid #0d0f13;
+  padding: 9px 10px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.dep-net:hover { background: #333b47; }
+.dep-net.on {
+  border-color: #57eede;
+  background: #16302c;
+}
+.dep-net-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dep-net-fee {
+  flex: none;
+  font-size: 10px;
+  color: #8b95a3;
+}
+.dep-net.on .dep-net-fee { color: #57eede; }
+
+.dep-method-badge { display: inline-flex; align-items: center; gap: 6px; }
 
 /* Курс не приїхав з біржі — сума в заявці приблизна. Помітно, але не
    червоною помилкою: заявка робоча, просто цифру варто уточнити. */

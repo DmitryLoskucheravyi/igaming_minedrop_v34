@@ -128,11 +128,88 @@ export interface AdminMe {
 
 export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'expired';
 
+/* Мережі описані на сервері (payments/networks.ts) і приходять
+   каталогом. CRM їх не перелічує: додану мережу видно тут одразу,
+   без правок фронта. */
+export type Family = 'evm' | 'tron' | 'ton' | 'solana';
+export type TokenId = 'usdt' | 'usdc';
+
+export interface CatalogueNetwork {
+  id: string;
+  name: string;
+  family: Family;
+  feeUsd: number;
+  memo: boolean;
+  tokens: TokenId[];
+}
+
+/* Режим прийому. Довіряти боту нарахування одразу — погана ідея, тому
+   станів чотири, а не «увімк/вимк»: спершу дивишся, що він БУВ БИ
+   зробив, потім даєш йому позначати, і лише потім — платити. */
+export type DepositMode = 'off' | 'watch' | 'semi' | 'auto';
+
+export interface DepositSettings {
+  mode: DepositMode;
+  networks: string[];
+  tokens: TokenId[];
+}
+
+export interface DepositCatalogue {
+  networks: CatalogueNetwork[];
+  tokens: { id: TokenId; name: string }[];
+  familyHints: Record<Family, string>;
+}
+
+/* Что наблюдатель слушает прямо сейчас. Считается на сервере из
+   текущих адресов и текущих настроек, поэтому в CRM видно не пересказ
+   намерения, а буквально его рабочий список. */
+export interface WatchTarget {
+  addressId: string;
+  address: string;
+  family: Family;
+  label?: string;
+  watchFrom: number;
+  cursor?: string;
+  scannedAt?: number;
+  networks: string[];
+  tokens: TokenId[];
+}
+
+export type UnmatchedStatus = 'new' | 'credited' | 'ignored';
+
+/** Переказ прийшов, але не зіставився з жодною заявкою. */
+export interface AdminUnmatched {
+  id: string;
+  network: string;
+  networkName: string;
+  token: TokenId;
+  address: string;
+  from: string;
+  amount: number;
+  txid: string;
+  at: number;
+  memo?: string;
+  status: UnmatchedStatus;
+  seenAt: number;
+  resolvedAt?: number;
+  creditedTo?: number;
+  creditedRub?: number;
+  adminNote?: string;
+  player: string | null;
+}
+
 export interface AdminPayment {
   id: string;
   telegramId: number;
+  network: string;
+  token: TokenId;
   amount: number;
   usdtAmount: number;
+  memo?: string;
+  /** проставляє спостерігач, коли знаходить переказ у мережі */
+  txid?: string;
+  paidAmount?: number;
+  matchedAt?: number;
   rate: number;
   /** курс на момент створення був приблизний — сума USDT може не
       збігатися з ринковою, перед підтвердженням варто звірити */
@@ -174,11 +251,38 @@ export const WITHDRAW_STATUS_RU: Record<WithdrawStatus, string> = {
 export interface AdminAddress {
   id: string;
   address: string;
+  /** с какого момента наблюдатель смотрит эту адресу */
+  watchFrom?: number;
+  /** когда её в последний раз просматривали */
+  scannedAt?: number;
+  /* Родина, а не мережа: одна 0x-адреса приймає в усіх EVM-мережах
+     одразу, тож заводити її шість разів безглуздо. */
+  family: Family;
   label?: string;
   active: boolean;
   createdAt: number;
   pending: number;
 }
+
+export const FAMILY_RU: Record<Family, string> = {
+  evm: 'EVM (0x…)',
+  tron: 'TRON',
+  ton: 'TON',
+  solana: 'Solana',
+};
+
+export const MODE_RU: Record<DepositMode, { name: string; note: string }> = {
+  off: { name: 'Выключен', note: 'бот не слушает сеть вообще' },
+  watch: { name: 'Наблюдение', note: 'видит переводы и пишет в лог, но ничего не трогает' },
+  semi: { name: 'Полуавтомат', note: 'сам находит перевод и помечает заявку оплаченной, зачисляешь ты' },
+  auto: { name: 'Автомат', note: 'зачисляет сам, без твоего участия' },
+};
+
+export const UNMATCHED_RU: Record<UnmatchedStatus, string> = {
+  new: 'разобрать',
+  credited: 'зачислено',
+  ignored: 'оставлено',
+};
 
 export const STATUS_RU: Record<PaymentStatus, string> = {
   pending: 'ожидает',

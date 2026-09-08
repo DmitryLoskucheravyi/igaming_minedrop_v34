@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from './config/config.module';
 import { DbModule } from './db/db.module';
+import { SettingsModule } from './settings/settings.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { PlayersModule } from './players/players.module';
 import { FairnessModule } from './fairness/fairness.module';
@@ -12,7 +13,7 @@ import { WithdrawModule } from './withdrawals/withdraw.module';
 
 @Module({
   imports: [
-    ConfigModule, DbModule, RatesModule, TelegramModule, PlayersModule,
+    ConfigModule, DbModule, SettingsModule, RatesModule, TelegramModule, PlayersModule,
     FairnessModule, RoundsModule, PaymentsModule, WithdrawModule, AdminModule,
   ],
 })

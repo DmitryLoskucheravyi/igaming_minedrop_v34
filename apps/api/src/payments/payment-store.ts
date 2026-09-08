@@ -1,5 +1,6 @@
 import { type Collection, type Db } from 'mongodb';
 import type { DepositAddress, PaymentRecord } from './payment.types';
+import type { UnmatchedPayment } from './unmatched.types';
 
 /* Довговічне сховище заявок і адрес. Той самий підхід, що й у
    PlayerStore: у процесі — Map (PaymentsService), у Mongo — копія,
@@ -11,10 +12,12 @@ type Stored<T> = T & { _id: string };
 export class PaymentStore {
   private readonly payCol: Collection<Stored<PaymentRecord>>;
   private readonly addrCol: Collection<Stored<DepositAddress>>;
+  private readonly unCol: Collection<Stored<UnmatchedPayment>>;
 
   constructor(db: Db) {
     this.payCol = db.collection<Stored<PaymentRecord>>('payments');
     this.addrCol = db.collection<Stored<DepositAddress>>('deposit_addresses');
+    this.unCol = db.collection<Stored<UnmatchedPayment>>('unmatched_payments');
   }
 
   private strip<T>(d: Record<string, unknown>): T {
@@ -38,5 +41,12 @@ export class PaymentStore {
   }
   async deleteAddress(id: string): Promise<void> {
     await this.addrCol.deleteOne({ _id: id });
+  }
+
+  async loadUnmatched(): Promise<UnmatchedPayment[]> {
+    return (await this.unCol.find().toArray()).map((d) => this.strip<UnmatchedPayment>(d));
+  }
+  async saveUnmatched(u: UnmatchedPayment): Promise<void> {
+    await this.unCol.replaceOne({ _id: u.id }, { ...u }, { upsert: true });
   }
 }

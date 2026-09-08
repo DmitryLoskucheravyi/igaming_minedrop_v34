@@ -15,6 +15,10 @@ import { ENV, type Env } from '../config/env';
    бо в dev мініапс відкривається і зі звичайного браузера.
    ============================================================ */
 
+/* Мітка цього запуску сервера — нею в деві розрізняються адреси
+   мініапса, щоб телеграм не показував закешовану стару сторінку. */
+const BOOT_ID = Date.now().toString(36);
+
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(BotService.name);
@@ -41,6 +45,24 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /* Адреса мініапса для кнопок.
+
+     У ДЕВІ до неї дописується мітка старту сервера. Телеграм кешує
+     мініапс за URL і тримає його намертво: якщо вебв'ю один раз
+     завантажило зламану сторінку (не піднявся фронт, порізало чанки,
+     впав тунель), далі воно показує ту саму порожню заглушку й по
+     сторінку більше не йде — у логах сервера при цьому НУЛЬ запитів,
+     ніби телефон і не пробував. Вигнати цей кеш із самого телефона
+     важко, а нова адреса змушує телеграм завантажити все заново.
+
+     У проді мітки немає: там адреса має бути сталою, а свіжість
+     дає збірка. */
+  private buttonUrl(webAppUrl: string): string {
+    if (this.env.isProd) return webAppUrl;
+    const sep = webAppUrl.includes('?') ? '&' : '?';
+    return `${webAppUrl}${sep}v=${BOOT_ID}`;
+  }
+
   private async start(): Promise<void> {
     const { botToken, webAppUrl } = this.env;
 
@@ -64,7 +86,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
       await ctx.reply('Кирка ждёт. Жми — и в шахту.', {
         reply_markup: {
-          inline_keyboard: [[{ text: '⛏ ИГРАТЬ', web_app: { url: webAppUrl } }]],
+          inline_keyboard: [[{ text: '⛏ ИГРАТЬ', web_app: { url: this.buttonUrl(webAppUrl) } }]],
         },
       });
     });
@@ -75,7 +97,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     if (webAppUrl) {
       try {
         await bot.api.setChatMenuButton({
-          menu_button: { type: 'web_app', text: 'Играть', web_app: { url: webAppUrl } },
+          menu_button: {
+            type: 'web_app', text: 'Играть',
+            web_app: { url: this.buttonUrl(webAppUrl) },
+          },
         });
       } catch (e) {
         this.log.warn(`Не вдалось поставити menu button: ${(e as Error).message}`);

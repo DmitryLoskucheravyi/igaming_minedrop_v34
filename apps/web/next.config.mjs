@@ -19,6 +19,18 @@ try {
    NEXT_PUBLIC_API_URL можна задати явно, якщо API стоїть окремо. */
 const apiOrigin = process.env.API_ORIGIN ?? 'http://localhost:4000';
 
+/* Хост поточного тунелю — беремо з тієї самої адреси, яку бачить бот.
+   Порожньо, якщо тунелю немає (звичайний localhost-дев). */
+const tunnelHost = (() => {
+  const url = process.env.WEBAPP_URL?.trim();
+  if (!url) return [];
+  try {
+    return [new URL(url).hostname];
+  } catch {
+    return [];      // у .env лишився сміттєвий рядок — не валимо конфіг
+  }
+})();
+
 const nextConfig = {
   reactStrictMode: true,
   // рушій лежить у монорепо як окремий пакет
@@ -26,8 +38,21 @@ const nextConfig = {
 
   /* У dev Next блокує запити ассетів із чужого хоста. Через тунель
      хост саме чужий (не localhost), тому мініапс у телеграмі не
-     завантажився б. На прод-збірку це не впливає. */
-  allowedDevOrigins: ['*.trycloudflare.com', '*.ts.net', '*.ngrok-free.app', '*.loca.lt'],
+     завантажився б. На прод-збірку це не впливає.
+
+     Головний запис — РІВНО той хост, який зараз у WEBAPP_URL: його
+     туди кладе scripts/tg-dev.mjs перед стартом, тож він завжди
+     актуальний, хоч у тунелю адреса стала, хоч випадкова.
+
+     Шаблони нижче лишаються запасним варіантом, але покладатись на них
+     не можна: зірочка покриває ОДИН рівень, тому '*.ts.net' підходить
+     до 'foo.ts.net' і не підходить до 'kucher-laptop.tailb58329.ts.net'
+     — рівно на цьому мініапс і ліг після переїзду на Tailscale. */
+  allowedDevOrigins: [
+    ...tunnelHost,
+    '*.trycloudflare.com', '*.ts.net', '*.*.ts.net',
+    '*.ngrok-free.app', '*.loca.lt',
+  ],
 
   async rewrites() {
     return [{ source: '/api/:path*', destination: `${apiOrigin}/api/:path*` }];

@@ -1,7 +1,12 @@
 'use client';
 
 /* ============================================================
-   CRM /admin — вкладки: Игроки, Заявки (депозиты), Адреса.
+   CRM /admin — вкладки: Игроки, Заявки, Депозиты.
+
+   Разделены по вопросу, на который отвечают: «кто играет», «что ждёт
+   моего решения», «как мы вообще принимаем деньги». Адреса и режим
+   наблюдателя живут в последней: порознь они бессмысленны — сеть без
+   адреса не работает, адрес без сети не слушается.
 
    Доступ під адмін-логіном (колекція `admins` на сервері). Токен
    сесії лежить у localStorage, кожен запит іде з ним; 401 звідусіль
@@ -18,9 +23,9 @@ import { api, getRefresh, getToken, setTokens, UNAUTHORIZED_EVENT, type AdminMe 
 import { LoginForm } from './LoginForm';
 import { PlayersTab } from './PlayersTab';
 import { RequestsTab } from './RequestsTab';
-import { AddressesTab } from './AddressesTab';
+import { DepositsTab } from './DepositsTab';
 
-type Tab = 'players' | 'requests' | 'addresses';
+type Tab = 'players' | 'requests' | 'deposits';
 type Auth = 'checking' | 'in' | 'out';
 type Theme = 'dark' | 'light';
 
@@ -119,8 +124,8 @@ export default function AdminPage() {
         <button type="button" className={btn('requests')} onClick={() => setTab('requests')}>
           Заявки{pending > 0 && <span className={s.dot}>{pending}</span>}
         </button>
-        <button type="button" className={btn('addresses')} onClick={() => setTab('addresses')}>
-          Адреса
+        <button type="button" className={btn('deposits')} onClick={() => setTab('deposits')}>
+          Депозиты
         </button>
 
         <div className={s.who}>
@@ -140,7 +145,7 @@ export default function AdminPage() {
 
       {tab === 'players' && <PlayersTab />}
       {tab === 'requests' && <RequestsTab onPending={setPending} />}
-      {tab === 'addresses' && <AddressesTab />}
+      {tab === 'deposits' && <DepositsTab />}
     </div>
   );
 }
