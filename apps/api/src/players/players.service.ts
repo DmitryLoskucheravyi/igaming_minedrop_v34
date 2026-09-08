@@ -50,6 +50,17 @@ export interface PlayerRecord {
      перемкнути гарантовану кірку на дорожчу ставку неможливо. */
   dryStreaks: Record<number, number>;
 
+  /* Виграна скаттерами, ще не зіграна бонуска.
+
+     Ставка зберігається РАЗОМ із нею і не підлягає зміні. Інакше
+     з'являється проста схема: набити скаттери на ставці 10, а
+     безкоштовну бонуску зіграти на 5000 — виплата ж рахується від
+     ставки поточного раунду. Тому бонуска належить тій ставці, на якій
+     її виграли.
+
+     null — виграної бонуски немає. */
+  pendingBonus: { bet: number } | null;
+
   clientSeed: string;
   serverSeed: string;        // СЕКРЕТ. Ніколи не віддається до розкриття
   serverSeedHash: string;
@@ -109,6 +120,7 @@ export class PlayersService implements OnModuleInit {
       firstName: user.firstName,
       balance: CONFIG.startBalance,
       dryStreaks: {},
+      pendingBonus: null,
       clientSeed: randomBytes(8).toString('hex'),
       serverSeed,
       serverSeedHash: serverSeedHash(serverSeed),
@@ -131,6 +143,9 @@ export class PlayersService implements OnModuleInit {
       username: rec.username ?? null,
       balance: rec.balance,
       dryStreaks: rec.dryStreaks,
+      /* Клієнт малює по цьому плашку «БОНУС ГЕЙМ» і блокує зміну
+         ставки: наступний раунд усе одно піде на збереженій. */
+      pendingBonus: rec.pendingBonus ?? null,
       pityAt: CONFIG.pity,
       clientSeed: rec.clientSeed,
       serverSeedHash: rec.serverSeedHash,

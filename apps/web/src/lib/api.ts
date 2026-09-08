@@ -36,6 +36,10 @@ export interface PlayerState {
       коли лічильник ставки досягає pityAt, наступний прокрут на НІЙ
       гарантовано дає кірку */
   dryStreaks: Record<number, number>;
+  /* Виграна скаттерами, ще не зіграна бонуска — разом зі ставкою, на
+     якій її виграли. Наступний звичайний прокрут піде саме нею і саме
+     на цій ставці. null — немає. */
+  pendingBonus: { bet: number } | null;
   pityAt: number;
   clientSeed: string;
   serverSeedHash: string;

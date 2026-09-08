@@ -60,6 +60,19 @@ export class RoundsService {
       throw new BadRequestException(`Ставка должна быть одной из: ${CONFIG.bets.join(', ')}`);
     }
 
+    /* ВИГРАНА БОНУСКА.
+
+       Якщо гравець зібрав скаттери минулого раунду, наступна звичайна
+       ставка перетворюється на безкоштовну бонуску. Ставку беремо
+       СЕРВЕРНУ, збережену разом із виграшем, а не ту, що надіслав
+       клієнт: виплата рахується від ставки раунду, тож інакше скаттери
+       на 10 монетах перетворювались би на бонуску за 5000.
+
+       Явна купівля бонуски виграну не витрачає — гравець заплатив за
+       іншу річ, а ця дочекається наступної звичайної ставки. */
+    const free = !buy && !!rec.pendingBonus;
+    if (free) bet = rec.pendingBonus!.bet;
+
     /* БОНУС БАЙ. Кірку називає клієнт, тому перевіряємо тут: неіснуючий
        тір або тір без ціни — відмова. Ціну бере рушій із CONFIG.buy,
        клієнт її лише показує і на неї не впливає. */
@@ -73,7 +86,7 @@ export class RoundsService {
       throw new BadRequestException('Не выбрана кирка для бонус бая');
     }
 
-    const cost = roundCost(mode, bet, buy);
+    const cost = roundCost(mode, bet, buy, free);
     if (rec.balance < cost) throw new BadRequestException('Недостаточно монет');
 
     const balanceBefore = rec.balance;
@@ -86,17 +99,32 @@ export class RoundsService {
     /* Куплена кірка гарантована сама по собі, тож серію промахів вона
        не витрачає: pity лишається на місці й спрацює на звичайній
        ставці, як і мав. */
+    /* Безкоштовна бонуска, як і куплена, кірку має гарантовано — тож
+       серію промахів вона не витрачає. */
     const streak = rec.dryStreaks[bet] ?? 0;
-    const pity = !buy && streak >= CONFIG.pity;
+    const pity = !buy && !free && streak >= CONFIG.pity;
 
     const { seed, nonce } = this.fairness.nextSeed(rec);
-    const resolved = resolveRound(seed, mode, bet, pity, buy);
+    const resolved = resolveRound(seed, mode, bet, pity, buy, free);
 
     rec.balance += resolved.payout;
 
+    /* Виграну бонуску списуємо ПІСЛЯ прогону — до цього моменту раунд
+       ще міг не відбутись через кинуту помилку, і тоді вона мала б
+       лишитись гравцю.
+
+       Порядок «спершу списали стару, потім записали нову» принциповий:
+       скаттери працюють і всередині бонуски, тож ретригер має видати
+       наступну, а не бути стертим списанням цієї. */
+    if (free) rec.pendingBonus = null;
+    if (resolved.bonusWon) rec.pendingBonus = { bet };
+
     /* Лічильник пустих прокрутів цієї ставки: кірка (у т.ч. форсована)
-       -> 0, промах -> +1. Інші ставки не чіпаємо. */
-    const nextStreak = buy ? streak : (resolved.setup.tiers.length ? 0 : streak + 1);
+       -> 0, промах -> +1. Інші ставки не чіпаємо. Подаровані раунди
+       (куплені й виграні) серію не рухають узагалі. */
+    const nextStreak = (buy || free)
+      ? streak
+      : (resolved.setup.tiers.length ? 0 : streak + 1);
     rec.dryStreaks[bet] = nextStreak;
 
     const result: RoundResult = {
@@ -105,6 +133,8 @@ export class RoundsService {
       bet,
       cost,
       buy,
+      free: resolved.setup.free,
+      bonusWon: resolved.bonusWon,
       seed,
       spins: resolved.setup.spins,
       tiers: resolved.setup.tiers,

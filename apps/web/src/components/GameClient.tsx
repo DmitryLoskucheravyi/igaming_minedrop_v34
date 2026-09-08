@@ -45,6 +45,9 @@ const EMPTY: HudState = {
   canSpin: false,
   dryStreak: 0,
   pityAt: 7,
+  scatters: 0,
+  scatterNeed: 3,
+  pendingBonus: null,
   rates: FALLBACK_RATES,
   buyPrices: {},
   busy: false,
@@ -149,8 +152,13 @@ export function GameClient() {
   // просто шукаємо найближче більше/менше число, без прив'язки до
   // точного індексу.
   const bets = hud.bets;
-  const canBetDown = !roundInFlight && bets.some((b) => b < hud.bet);
-  const canBetUp = !roundInFlight && bets.some((b) => b > hud.bet);
+  /* Виграна бонуска прив'язана до ставки, на якій її виграли, і піде
+     наступним прокрутом саме на ній. Тому міняти ставку зараз просто
+     ні на що не впливає — і кнопки замкнені, щоб гравець не думав, що
+     обирає розмір безкоштовного раунду. */
+  const bonusNext = !!hud.pendingBonus;
+  const canBetDown = !roundInFlight && !bonusNext && bets.some((b) => b < hud.bet);
+  const canBetUp = !roundInFlight && !bonusNext && bets.some((b) => b > hud.bet);
 
   // Ставку можна міняти будь-коли: серія до гарантії «прив'язана» до
   // ставки, на якій набивається (у кожної ставки — своя). Перемкнувся
@@ -227,8 +235,15 @@ export function GameClient() {
 
         {/* Плаваюче керування: прозорий фон, по центру знизу. Ставка над
             круглою кнопкою «крутити», по боках — «−» / «+». */}
-        <div className={'controls' + (playing ? ' playing' : '')}>
-          {hud.dryStreak > 0 && (
+        <div className={'controls' + (playing ? ' playing' : '') + (hud.autoplay ? ' auto' : '')}>
+          {bonusNext && (
+            <div className="bonusnext">
+              <span className="bonusnext-stars">★ ★ ★</span>
+              <span>СЛЕДУЮЩИЙ РАУНД — БОНУСКА, БЕСПЛАТНО</span>
+            </div>
+          )}
+
+          {!bonusNext && hud.dryStreak > 0 && (
             <div className={'pity' + (hud.dryStreak >= hud.pityAt ? ' ready' : '')}>
               {hud.dryStreak >= hud.pityAt ? (
                 <span>СЛЕДУЮЩАЯ — КИРКА</span>

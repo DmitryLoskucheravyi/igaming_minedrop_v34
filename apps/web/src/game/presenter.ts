@@ -46,6 +46,14 @@ export interface HudState {
   /** pity: пустих ставок поспіль і поріг, на якому кірка гарантована */
   dryStreak: number;
   pityAt: number;
+  /* Скаттери, зібрані в ЦЬОМУ забігу, і скільки їх треба. Показувати
+     обов'язково: без лічильника три однакові блоки читаються як звичайна
+     руда, і бонуска прилітає нізвідки. */
+  scatters: number;
+  scatterNeed: number;
+  /* Невитрачена бонуска: наступний прокрут буде нею, безкоштовно і на
+     збереженій ставці. null — немає. */
+  pendingBonus: { bet: number } | null;
   /** курс валют із серверного config (для DOM-форматування) */
   rates: Rates;
   busy: boolean;
@@ -143,6 +151,11 @@ const WIN_TIERS: readonly { at: number; text: string; color: string }[] = [
   { at: 100, text: 'JACKPOT', color: '#ff6ad5' },
 ];
 
+/* Скільки тримати заставку «БОНУС ГЕЙМ» перед безкоштовним раундом.
+   Достатньо, щоб прочитати, і мало, щоб не заважати другому підряд
+   (ретригер трапляється). */
+const BONUS_INTRO_SEC = 1.9;
+
 function winTier(x: number): { text: string; color: string } | null {
   let hit: { text: string; color: string } | null = null;
   for (const t of WIN_TIERS) if (x >= t.at) hit = t;
@@ -168,6 +181,11 @@ export class Presenter {
   private player: PlayerState | null = null;
   private balance = 0;
   private bet = 50;
+  /** скаттерів зібрано в поточному раунді */
+  private scatters = 0;
+  /* Заставка «БОНУС ГЕЙМ» перед безкоштовним раундом. Тримається
+     стільки секунд; поки йде — рулетка не крутиться. */
+  private bonusIntro = 0;
 
   /* валюта відображення (косметика): база — рублі, гравець може
      перемкнути на USDT/зірки. Курс приходить у config.rates. */
@@ -672,13 +690,14 @@ export class Presenter {
 
     /* Розбираємо сид САМІ. Якщо сервер прислав спини, яких із цього
        сида не виходить, — це не наша гра, і про це треба сказати вголос. */
-    this.setup = buildSetup(round.seed, round.pity, round.buy);
+    this.setup = buildSetup(round.seed, round.pity, round.buy, !!round.free);
     if (this.setup.spins.join() !== round.spins.join()
       || this.setup.tiers.join() !== round.tiers.join()
       || this.setup.startCols.join() !== round.startCols.join()) {
       this.verified = false;
       this.setup = { mode: round.mode, spins: round.spins, tiers: round.tiers,
-                     startCols: round.startCols, pity: round.pity, bonus: !!round.buy };
+                     startCols: round.startCols, pity: round.pity,
+                     bonus: !!round.buy || !!round.free, free: !!round.free };
     }
 
     this.spinIndex = 0;
@@ -686,7 +705,24 @@ export class Presenter {
     this.stageTarget = 0;
     this.resultT = 0;
     this.acc = 0;
-    this.newMine(round.seed, !!round.buy);
+    this.scatters = 0;
+    /* Шахта береться з setup.bonus, а не з наявності round.buy: виграна
+       бонуска теж бонусна, але нічого не куплено. Помилка тут була б
+       тихою — клієнт згенерував би звичайну шахту й розійшовся з
+       сервером на першому ж блоці. */
+    this.newMine(round.seed, this.setup.bonus);
+
+    /* Безкоштовна бонуска починається з плашки. Вона не косметична:
+       раунд списав нуль і кірка взялася нізвідки — без заставки це
+       виглядає як збій, а не як виграш. */
+    if (round.free) {
+      this.bonusIntro = BONUS_INTRO_SEC;
+      this.message = 'БОНУС ГЕЙМ';
+      this.emit();
+      this.wait(BONUS_INTRO_SEC, () => { this.bonusIntro = 0; this.nextSpin(); });
+      return;
+    }
+
     this.nextSpin();
     this.emit();
   }
@@ -856,6 +892,9 @@ export class Presenter {
       // що набита саме на поточній вибраній ставці
       dryStreak: p?.dryStreaks?.[this.bet] ?? 0,
       pityAt: p?.pityAt ?? CONFIG.pity,
+      scatters: this.scatters,
+      scatterNeed: CONFIG.scatter.need,
+      pendingBonus: p?.pendingBonus ?? null,
       rates: this.rates,
       busy: this.busy,
       resultEmpty: this.resultEmpty,
@@ -930,6 +969,23 @@ export class Presenter {
           text: boom, color: '#ff8a2b', size: 0.26,
           money: cash > 0 ? cash : undefined, prefix: boom + ' +' });
         if (cash > 0) this.pushLog(boom, '#ff8a2b', cash);
+      } else if (e.t === 'scatter') {
+        /* Останній скаттер — це вже подія рівня великого виграшу, тому
+           й реакція інша: не той самий попап, що на перших двох. */
+        const done = e.n >= e.need;
+        this.scatters = e.n;
+        this.burst(e.c + 0.5, e.r + 0.5, '#ff9a3c', done ? 48 : 24, done ? 2.6 : 1.4);
+        this.shake = done ? 26 : 12;
+        if (done) { this.flash = 0.5; this.flashColor = '#ff9a3c'; }
+        this.popups.push({
+          x: e.c + 0.5, y: e.r + 0.5, life: done ? 2 : 1.3,
+          text: done ? 'БОНУС ГЕЙМ!' : `СКАТТЕР ${e.n}/${e.need}`,
+          color: '#ffc27a', size: done ? 0.3 : 0.22,
+        });
+        this.pushLog(
+          done ? 'ТРИ СКАТТЕРА — БОНУСКА!' : `Скаттер ${e.n}/${e.need}`,
+          '#ffc27a');
+        haptic(done ? 'win' : 'hit');
       } else if (e.t === 'magic') {
         // СТІЛ ЗАЧАРУВАННЯ: 3 фіксовані рівні множника кірки (не підвищує тір)
         this.burst(e.c + 0.5, e.r + 0.5, '#c46bff', 40, 2.2);
@@ -1052,6 +1108,8 @@ export class Presenter {
     /* Фізика йде ФІКСОВАНИМ кроком. Кадри бувають різні, крок — ні:
        інакше траєкторія залежала б від фреймрейту й розійшлася з
        серверною. Накопичуємо реальний час і витрачаємо його порціями. */
+    if (this.bonusIntro > 0) this.bonusIntro = Math.max(0, this.bonusIntro - dt);
+
     if (this.state === 'RUNNING' && this.run) {
       this.acc += dt;
       let n = 0;
@@ -1234,7 +1292,11 @@ export class Presenter {
     this.drawRunningTotal(ctx);
     this.drawMultWindow(ctx);
     this.drawEnchantMult(ctx);
+    this.drawScatters(ctx);
     if (this.state === 'RESULT' && !this.resultEmpty) this.drawResult(ctx);
+    /* Заставка малюється ОСТАННЬОЮ і поверх усього: вона й має
+       перекрити поле, поки бонуска ще не почалась. */
+    if (this.bonusIntro > 0) this.drawBonusIntro(ctx);
   }
 
   private drawSky(ctx: CanvasRenderingContext2D): void {
@@ -1472,6 +1534,47 @@ export class Presenter {
       '800 20px ui-monospace, monospace', '#ffd34d');
   }
 
+  /* Скаттери поточного забігу — три зірки в ряд під сумою.
+
+     Порожні кружки показуємо з ПЕРШОГО ж зібраного, а не завжди: доки
+     жодного немає, рядок був би постійним шумом на екрані. А от щойно
+     один упав — гравцю треба бачити, скільки лишилось. */
+  private drawScatters(ctx: CanvasRenderingContext2D): void {
+    if (this.state !== 'RUNNING' || this.scatters <= 0) return;
+    const need = CONFIG.scatter.need;
+    const got = Math.min(this.scatters, need);
+    const y = 106 + this.topInset;
+    const star = '★'.repeat(got) + '☆'.repeat(Math.max(0, need - got));
+    Render.text(ctx, star + '  ' + got + '/' + need, this.w / 2, y,
+      '800 16px ui-monospace, monospace', got >= need ? '#ff9a3c' : '#ffc27a');
+  }
+
+  /* Заставка перед безкоштовною бонускою.
+
+     Не косметика: раунд списав нуль, кірка взялась нізвідки й шахта
+     інша — без пояснення це читається як збій. Тому вона й затемнює
+     поле, а не висить збоку. */
+  private drawBonusIntro(ctx: CanvasRenderingContext2D): void {
+    const t = this.bonusIntro;
+    // згасання на останній третині секунди — щоб перехід не був різкий
+    const a = Math.min(1, t * 3);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(4,6,9,.78)';
+    ctx.fillRect(0, 0, this.w, this.h);
+
+    const cy = this.h / 2;
+    const pop = Math.max(1, 1.5 - (BONUS_INTRO_SEC - t) * 3);
+    const size = Math.round(Math.min(this.w * 0.13, 52) * pop);
+    Render.text(ctx, 'БОНУС ГЕЙМ', this.w / 2, cy - 6,
+      '900 ' + size + 'px ui-monospace, monospace', '#ff9a3c');
+    Render.text(ctx, '★ ★ ★', this.w / 2, cy - 58,
+      '800 22px ui-monospace, monospace', '#ffc27a');
+    Render.text(ctx, 'три скаттера — раунд за счёт заведения',
+      this.w / 2, cy + 34, '700 13px ui-monospace, monospace', '#c8d0da');
+    ctx.restore();
+  }
+
   /* Вікно множника: поки воно активне (run.multWindowT > 0), усе зібране
      множиться на run.multActive. Показуємо великий "X{n}" і смужку часу,
      що спадає, — під сумарним виграшем. Пульсує, коли лишається < 4с. */
@@ -1566,8 +1669,16 @@ export class Presenter {
         mid, by + 116, '700 13px ui-monospace, monospace', '#9aa4b2');
     }
 
-    Render.text(ctx, 'клик или пробел — далее',
-      mid, by + 152, '700 12px ui-monospace, monospace', '#7a8595');
+    /* Виграна бонуска важливіша за підказку «клик — далее»: це головне,
+       що сталося в раунді, і сказати про це треба в самій панелі, а не
+       лише плашкою, яку легко проґавити. */
+    if (round.bonusWon) {
+      Render.text(ctx, '★ ★ ★  СЛЕДУЮЩИЙ РАУНД — БЕСПЛАТНАЯ БОНУСКА',
+        mid, by + 152, '800 12px ui-monospace, monospace', '#ff9a3c');
+    } else {
+      Render.text(ctx, 'клик или пробел — далее',
+        mid, by + 152, '700 12px ui-monospace, monospace', '#7a8595');
+    }
     ctx.globalAlpha = 1;
   }
 }

@@ -24,6 +24,8 @@ export interface RoundSetup {
   pity: boolean;          // цей прокрут форсований (гарантована кірка після серії пустих)
   /** шахта з підвищеним спавном множників і зачарувань (режим 'buy') */
   bonus: boolean;
+  /** бонуска, виграна скаттерами: та сама шахта, але кірка випадкова */
+  free: boolean;
 }
 
 /* ---------------- рулетка ---------------- */
@@ -52,7 +54,9 @@ function spinBet(rnd: Rng, pity: boolean): { spins: SpinResult[]; tiers: TierId[
 /** Що випало в раунді. Без фізики — клієнт кличе це, щоб крутити рулетку.
     pity — сервер вирішує його зі свого лічильника пустих ставок і кладе
     в RoundResult; клієнт передає сюди те саме значення. */
-export function buildSetup(seed: string, pity = false, buy?: TierId): RoundSetup {
+export function buildSetup(
+  seed: string, pity = false, buy?: TierId, free = false,
+): RoundSetup {
   /* БОНУС БАЙ: рулетка не крутиться взагалі — гравець уже заплатив за
      конкретну кірку. Стартова колонка береться з того самого потоку
      'cols', тому решта раунду відтворюється як звичайно. */
@@ -65,15 +69,39 @@ export function buildSetup(seed: string, pity = false, buy?: TierId): RoundSetup
       startCols: [Math.floor(colRnd() * CONFIG.cols)],
       pity: false,
       bonus: true,
+      free: false,
     };
   }
 
   const reelRnd = stream(seed, 'reel');
+
+  /* БОНУСКА ЗА СКАТТЕРИ: шахта така сама, як у купленої, але кірку
+     ніхто не обирав — її тягне рулетка з таблиці БЕЗ «пусто»
+     (tierOnlyTable), тобто кірка гарантована, а який саме тір — справа
+     сида. Рулетка при цьому справді крутиться й показує результат:
+     гравець бачить, що йому випало, а не отримує кірку з нізвідки.
+
+     Потік той самий 'reel', що й у звичайної ставки, тому раунд
+     відтворюється з сида один в один. */
+  if (free) {
+    const slot = pickWeighted(tierOnlyTable(), reelRnd);
+    const id = slot.tier!.id as TierId;
+    return {
+      mode: 'buy',
+      spins: [id],
+      tiers: [id],
+      startCols: [Math.floor(colRnd() * CONFIG.cols)],
+      pity: false,
+      bonus: true,
+      free: true,
+    };
+  }
+
   const { spins, tiers } = spinBet(reelRnd, pity);
 
   const startCols = tiers.length ? [Math.floor(colRnd() * CONFIG.cols)] : [];
 
-  return { mode: 'bet', spins, tiers, startCols, pity, bonus: false };
+  return { mode: 'bet', spins, tiers, startCols, pity, bonus: false, free: false };
 }
 
 /** Шахта + забіг, готові крокувати. Клієнт тикає їх сам, у ритмі кадрів. */
@@ -91,7 +119,7 @@ export function createRun(seed: string, setup: RoundSetup): { mine: Mine; run: R
 export function summarize(run: Run | null): RunSummary {
   if (!run) {
     return { collected: 0, multChain: 1, blocks: 0, hits: 0, depth: 0, mults: 0,
-             tnts: 0, upgrades: 0, timeSec: 0, steps: 0, reason: 'broken' };
+             tnts: 0, upgrades: 0, scatters: 0, timeSec: 0, steps: 0, reason: 'broken' };
   }
   return {
     collected: run.collected,
@@ -102,6 +130,7 @@ export function summarize(run: Run | null): RunSummary {
     mults: run.mults,
     tnts: run.tnts,
     upgrades: run.upgrades,
+    scatters: run.scatters,
     timeSec: run.time,
     steps: run.steps,
     reason: run.reason ?? 'broken',
@@ -114,14 +143,16 @@ export interface Resolved {
   rawPayout: number;
   payout: number;
   capped: boolean;
+  /** зібрано скаттерів досить — наступний раунд буде безкоштовною бонускою */
+  bonusWon: boolean;
 }
 
 /** Повний прогін раунду до кінця. Це і є «серверна правда».
     mode лишається в сигнатурі для сумісності (завжди 'bet'). */
 export function resolveRound(
-  seed: string, _mode: RoundMode, bet: number, pity = false, buy?: TierId,
+  seed: string, _mode: RoundMode, bet: number, pity = false, buy?: TierId, free = false,
 ): Resolved {
-  const setup = buildSetup(seed, pity, buy);
+  const setup = buildSetup(seed, pity, buy, free);
   const made = createRun(seed, setup);
   const run = made ? made.run.runToEnd() : null;
   const sim = summarize(run);
@@ -134,12 +165,18 @@ export function resolveRound(
     rawPayout,
     payout: Math.min(rawPayout, cap),
     capped: rawPayout > cap,
+    /* Скаттери працюють і в самій бонусці — ретригер. Ваги в бонусній
+       шахті ті самі, тож ланцюг збігається геометрично, а не тягнеться
+       нескінченно. */
+    bonusWon: sim.scatters >= CONFIG.scatter.need,
   };
 }
 
 /** Ціна входу. Звичайна ставка — сама ставка; бонус бай — ставка,
-    помножена на ціну обраної кірки (CONFIG.buy.price). */
-export function roundCost(_mode: RoundMode, bet: number, buy?: TierId): number {
+    помножена на ціну обраної кірки (CONFIG.buy.price); виграна
+    скаттерами бонуска — безкоштовна. */
+export function roundCost(_mode: RoundMode, bet: number, buy?: TierId, free = false): number {
+  if (free) return 0;
   if (!buy) return bet;
   const k = CONFIG.buy.price[buy];
   if (!k) throw new Error(`немає ціни для кірки ${buy}`);

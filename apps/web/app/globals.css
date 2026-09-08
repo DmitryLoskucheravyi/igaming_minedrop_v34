@@ -1090,3 +1090,31 @@ canvas {
 }
 .wd-cancel:hover:not(:disabled) { background: #7d4444; }
 .dep-chip:disabled { opacity: .4; cursor: default; }
+
+
+/* Виграна скаттерами бонуска чекає на наступний прокрут. Стоїть на
+   місці pity-індикатора — це теж «що буде далі», і два таких написи
+   поруч сперечалися б за увагу. */
+.bonusnext {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 2px solid #ff9a3c;
+  background: #3a2210;
+  color: #ffc27a;
+  font: 800 10px ui-monospace, monospace;
+  letter-spacing: .08em;
+  text-align: center;
+  animation: bonusnext-pulse 1.6s ease-in-out infinite;
+}
+.bonusnext-stars { color: #ff9a3c; letter-spacing: .12em; }
+
+@keyframes bonusnext-pulse {
+  0%, 100% { border-color: #ff9a3c; }
+  50%      { border-color: #ffd9a8; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bonusnext { animation: none; }
+}

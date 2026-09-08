@@ -6,8 +6,9 @@
 export type TierId = 'lvl2' | 'lvl3' | 'lvl4' | 'gold' | 'diamond';
 export type BlockId =
   | 'grass' | 'dirt' | 'stone' | 'coal' | 'redstone' | 'iron' | 'lapis' | 'gold' | 'diamond' | 'emerald'
-  | 'tnt' | 'magic' | 'enchant' | 'mult' | 'grow' | 'rubber';
-export type BlockKind = 'solid' | 'tnt' | 'magic' | 'mult' | 'upgrade' | 'grow' | 'rubber';
+  | 'tnt' | 'magic' | 'enchant' | 'mult' | 'grow' | 'rubber' | 'scatter';
+export type BlockKind =
+  | 'solid' | 'tnt' | 'magic' | 'mult' | 'upgrade' | 'grow' | 'rubber' | 'scatter';
 
 export interface Tier {
   id: TierId;
@@ -54,6 +55,9 @@ export type RunEvent =
   | { t: 'grow'; r: number; c: number; scale: number; stacks: number; secs: number; pick: number }
   /* гумовий блок: посилений відскок + прискорене падіння на secs секунд */
   | { t: 'rubber'; r: number; c: number; secs: number; pick: number }
+  /* скаттер: n — скільки зібрано разом із цим, need — скільки треба на
+     бонуску. n === need — саме цей блок її і відкрив */
+  | { t: 'scatter'; r: number; c: number; n: number; need: number; pick: number }
   | { t: 'pickdead'; x: number; y: number; tier: TierId; pick: number }
   | { t: 'end'; reason: RunEndReason };
 
@@ -77,6 +81,10 @@ export interface RunSummary {
   mults: number;
   tnts: number;
   upgrades: number;
+  /* Скільки скаттерів зібрано за забіг. Частина підсумку, а не окреме
+     поле збоку: клієнт мусить відтворити це число з того самого сида,
+     інакше він показав би бонуску там, де сервер її не дав. */
+  scatters: number;
   timeSec: number;
   steps: number;
   reason: RunEndReason;
@@ -89,6 +97,12 @@ export interface RoundResult {
   cost: number;              // скільки списано (ставка або ціна бонуски)
   /** яку кірку куплено (тільки для mode 'buy') */
   buy?: TierId;
+  /* Бонуска, виграна скаттерами, а не куплена: cost 0, кірка випадкова.
+     Шахта та сама, що в купленої (bonus: true). */
+  free?: boolean;
+  /* У ЦЬОМУ раунді зібрано скаттери — наступний буде безкоштовною
+     бонускою. Клієнт малює по цьому плашку. */
+  bonusWon?: boolean;
 
   seed: string;              // сид раунду — з нього клієнт переграє все
   spins: SpinResult[];       // що випало на кожному прокруті
@@ -117,6 +131,11 @@ export interface RoundResult {
 export interface PlayerState {
   playerId: string;
   balance: number;
+  /* Невитрачена бонуска, виграна скаттерами: наступна ставка буде нею,
+     безкоштовно і на ЦІЙ ставці (гравець не може перенести її на дорожчу
+     — інакше скаттери на 10 монетах перетворювались би на бонуску за
+     5000). null — виграної бонуски немає. */
+  pendingBonus: { bet: number } | null;
   dryStreak: number;         // пустих ставок поспіль (для показу pity-прогресу)
   nonce: number;
   clientSeed: string;

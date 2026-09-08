@@ -21,7 +21,9 @@
     "sim:fair": "tsx sim/fairness.ts",
     "sim:e2e": "tsx sim/e2e.ts",
     "make:initdata": "tsx sim/make-initdata.ts",
-    "sim:buy": "tsx sim/buy.ts"
+    "sim:buy": "tsx sim/buy.ts",
+    "sim:scatter": "tsx sim/scatter.ts",
+    "sim:scatter:sweep": "tsx sim/scatter-sweep.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

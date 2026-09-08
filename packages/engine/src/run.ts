@@ -201,6 +201,9 @@ export class Run {
   upgrades = 0;
   tnts = 0;
   mults = 0;
+  /* Скаттери за весь забіг — спільні на всі кірки, а не на кожну свої:
+     нагорода одна на раунд. */
+  scatters = 0;
   time = 0;
   steps = 0;
   over = false;
@@ -509,6 +512,25 @@ export class Run {
       this.events.push({ t: 'grow', r, c, scale: p.scale,
                          stacks: p.growT.length, secs: CONFIG.grow.sec, pick: idx });
       this.bounce(p, dx, sideways, 0.7 * this.hitBounce(p, dx, dy));
+      this.checkDead(p, idx);
+      return;
+    }
+
+    /* СКАТТЕР: грошей не дає, але три за забіг відкривають безкоштовну
+       бонуску (CONFIG.scatter.need). Ламається як звичайний блок і так
+       само коштує HP — просто замість очок додає одиницю до лічильника.
+
+       Лічильник навмисно не зупиняється на need: зайві скаттери нічого
+       не додають, але й обривати підрахунок посеред забігу нема сенсу —
+       підсумок має чесно казати, скільки їх було. */
+    if (def.kind === 'scatter') {
+      this.mine.clear(r, c);
+      p.hp -= def.cost;
+      p.hits++; this.hits++;
+      this.scatters++;
+      this.events.push({ t: 'scatter', r, c, n: this.scatters,
+                         need: CONFIG.scatter.need, pick: idx });
+      this.bounce(p, dx, sideways, this.hitBounce(p, dx, dy));
       this.checkDead(p, idx);
       return;
     }

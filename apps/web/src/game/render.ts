@@ -168,6 +168,30 @@ export const Render = {
     }
   },
 
+  /* Скаттер: три за забіг -> безкоштовна бонуска. Малюється кодом, доки
+     немає картинки (з'явиться — досить прописати skin у BLOCKS).
+
+     Зірка, і навмисно не схожа на решту блоків: гравець мусить упізнати
+     її з першого погляду серед руди, бо саме за нею й полює. */
+  scatterBlock(ctx: Ctx, x: number, y: number, s: number) {
+    const img = Assets.get('block.scatter');
+    if (img) { ctx.drawImage(img, x, y, s + 1, s + 1); return; }
+    this.panel(ctx, x + 2, y + 2, s - 3, s - 3, '#c2560c', 4);
+    const cx = x + s / 2, cy = y + s / 2;
+    const R = s * 0.34, r = R * 0.44;
+    ctx.fillStyle = '#ffd98a';
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rad = i % 2 === 0 ? R : r;
+      const px = cx + Math.cos(a) * rad;
+      const py = cy + Math.sin(a) * rad;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  },
+
   /* Блок. cell = { id, dmg, seed, m }, row — номер ряду (для скінів,
      що залежать від глибини) */
   block(ctx: Ctx, x: number, y: number, s: number, cell: Cell, row = 0) {
@@ -175,6 +199,7 @@ export const Render = {
     if (def.kind === 'mult') { this.multBlock(ctx, x, y, s, cell.m || 2); return; }
     if (def.kind === 'grow') { this.growBlock(ctx, x, y, s); return; }
     if (def.kind === 'rubber') { this.rubberBlock(ctx, x, y, s); return; }
+    if (def.kind === 'scatter') { this.scatterBlock(ctx, x, y, s); return; }
     const key = cell.id === 'stone' ? this.stoneSkin(row, cell.seed) : 'block.' + cell.id;
     const img = Assets.get(key);
     if (img) {

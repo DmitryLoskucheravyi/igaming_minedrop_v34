@@ -38,6 +38,7 @@ export class PlayerStore {
       void _id; void dryStreak;
       return {
         dryStreaks: {},
+        pendingBonus: null,
         revealed: [],
         history: [],
         ...rest,
