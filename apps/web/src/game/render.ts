@@ -322,7 +322,9 @@ export const Render = {
      прямокутника — інакше квадрат повернувся б у момент зупинки. */
   reelItem(ctx: Ctx, x: number, y: number, w: number, h: number, item: ReelItem, hot: boolean) {
     if (hot) {
-      const cx0 = x + w / 2, cy0 = y + h / 2, r = Math.min(w, h) * 0.52;
+      // радіус від безпечного квадрата, а не від усієї комірки: інакше
+      // підсвітка залила б увесь круглий виріз
+      const cx0 = x + w / 2, cy0 = y + h / 2, r = Math.min(w, h) * 0.7 * 0.58;
       const g = ctx.createRadialGradient(cx0, cy0, r * 0.2, cx0, cy0, r);
       g.addColorStop(0, 'rgba(255,211,77,.22)');
       g.addColorStop(1, 'rgba(255,211,77,0)');
@@ -332,17 +334,23 @@ export const Render = {
       ctx.fill();
     }
 
+    /* Верстка йде не по всій комірці, а по ВПИСАНОМУ в неї квадрату
+       (0.7 — сторона квадрата у колі того ж діаметра). Комірка тепер
+       завбільшки з круглий виріз рамки, тож підпис, поставлений за
+       нижнім краєм комірки, поїхав би під вінок. */
     const cx = x + w / 2;
-    const label = !!item && h > w * 0.6;   // на дуже вузькій комірці підпис не влізе
-    const iconCy = label ? y + h * 0.42 : y + h / 2;
-    const s = Math.min(w, h) * (label ? 0.62 : 0.74);
+    const cy = y + h / 2;
+    const box = Math.min(w, h) * 0.7;
+    const label = !!item;
+    const iconCy = label ? cy - box * 0.08 : cy;
+    const s = box * (label ? 0.62 : 0.74);
 
     if (!item) this.cross(ctx, cx, iconCy, s * 0.58, 0.95);
     else this.pickaxe(ctx, cx, iconCy, s, item, -0.5, false);
 
     if (label) {
-      const small = Math.round(Math.min(w, h) * 0.15);
-      this.text(ctx, item!.name.toUpperCase(), cx, y + h * 0.86,
+      const small = Math.round(box * 0.15);
+      this.text(ctx, item!.name.toUpperCase(), cx, cy + box * 0.36,
         '700 ' + small + 'px ui-monospace, monospace', '#fff');
     }
   },

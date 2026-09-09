@@ -27,6 +27,7 @@ import {
 } from '../lib/currency';
 import { haptic, setupMiniApp } from '../lib/telegram';
 import { Assets } from './assets';
+import { drawBackdrop } from './backdrop';
 import { FRAME_ASPECT, FRAME_INNER_BOTTOM, FRAME_INNER_LEFT, FRAME_INNER_RIGHT, FRAME_INNER_TOP, Reel } from './reel';
 import { Render, type ReelItem } from './render';
 
@@ -103,8 +104,9 @@ const AUTOPLAY_HOLD = 0.9;       // скільки показувати резу
 const TOAST_LIFE = 1.6;          // скільки секунд живе один push-тост живого логу
 const TOAST_MAX = 3;             // скільки тостів одночасно на екрані (старіші зникають)
 /* Огорожа — рівно ОДИН шар блоків за кожним краєм поля. Далі нічого:
-   чорний фон, який уже залив drawSky(). Огорожа суто декоративна —
-   у фізиці межа шахти є завжди, незалежно від того, що намальовано. */
+   фон углиб, який уже намалював drawSky() (backdrop.ts). Огорожа суто
+   декоративна — у фізиці межа шахти є завжди, незалежно від того, що
+   намальовано. */
 const FENCE_COLS = 1;
 
 /* ---- освітлення навколо кірки ----
@@ -130,8 +132,8 @@ const ZOOM_MAX = 2.4;
    роздивитись шахту, поки кірка працює. Щойно він припиняє гортати,
    камера сама повертається до кірки — PAN_HOLD секунд «не чіпай».
    Час рахується РЕАЛЬНИЙ, а не прискорений: на швидкості ×4 пауза має
-   лишатись тими самими п'ятьма секундами. */
-const PAN_HOLD = 2.5;     // секунд спокою до повернення фокуса на кірку
+   лишатись тією самою секундою. */
+const PAN_HOLD = 1;       // секунда спокою до повернення фокуса на кірку
 const PAN_MIN_PX = 6;     // менший рух — це тап, а не гортання
 /* На скільки рядів можна відвести кадр угору від кірки. Число НЕ
    довільне: вище межі прунингу рушій ряди вже викинув, і Mine.peek()
@@ -224,9 +226,15 @@ export class Presenter {
   /* Масштаб від жесту двома пальцями. 1 — як у конфізі (viewCols),
      більше — ближче, менше — далі. */
   private zoom = 1;
-  /* Скільки ще секунд камера НЕ тягнеться за кіркою: гравець гортає
-     поле сам. Тікає реальним часом (див. PAN_HOLD). */
+  /* Скільки ще секунд камера НЕ тягнеться за кіркою: гравець щойно
+     гортав поле сам. Тікає реальним часом (див. PAN_HOLD) і ЛИШЕ після
+     того, як усі пальці відпущено (панель нижче, panning). */
   private panT = 0;
+  /** палець(і) досі на екрані й активно гортають поле — доки так,
+      лічильник panT не йде взагалі, інакше пауза застигання пальця
+      посеред гортання (без відриву від екрана) сама запускала б
+      відлік, і камера почала б їхати назад РАНІШЕ, ніж палець зникне. */
+  private panning = false;
   private camY = 0;
   private camMin = 0;
   private shake = 0;
@@ -247,7 +255,7 @@ export class Presenter {
   private enchantMult = 1;
 
   /* геометрія */
-  private w = 0; private h = 0; private cell = 0;
+  private w = 0; private h = 0; private cell = 0; private dpr = 1;
   private itemW = 0; private itemH = 0;
   /* Годинник для анімацій, що живуть незалежно від раунду (пульс
      каменів на вінку). Реальний час, без множення на speed: підсвітка
@@ -337,6 +345,12 @@ export class Presenter {
     if (this.pointers.size === 2) {
       this.pinchDist = this.pointerSpread();
       this.pinched = true;
+      /* Другий палець доклали БЕЗ відриву першого від гортання —
+         panning лишився true від одно-пальцевої фази, і поки триває
+         сам щипок, камера не повернулась би до кірки взагалі, хоча
+         zoom сам собою на це не мав впливати (див. коментар нижче біля
+         setZoom). Явно віддаємо контроль назад стеженню. */
+      this.panning = false;
     }
   };
 
@@ -365,7 +379,7 @@ export class Presenter {
     if (this.dragged < PAN_MIN_PX) return;   // це ще тап, а не жест
 
     this.pinched = true;                     // клік після гортання не рахуємо
-    this.panT = PAN_HOLD;
+    this.panning = true;                     // камера чекає, доки палець не зникне з екрана
     this.camY -= dy / this.cell;
 
     /* Не даємо загубитись: далі PAN_LIMIT рядів від кірки відходити
@@ -383,11 +397,17 @@ export class Presenter {
   private onPointerUp = (e: PointerEvent) => {
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinchDist = 0;
-    /* Прапорець тримаємо до повного відпускання: браузер шле click уже
-       після того, як пальці зникли, і без цього щипок чи гортання
-       гасили б екран результату. */
-    if (this.pointers.size === 0 && this.pinched) {
-      setTimeout(() => { this.pinched = false; }, 120);
+    if (this.pointers.size === 0) {
+      /* Останній палець зник з екрана — САМЕ ТУТ, а не в onPointerMove,
+         запускаємо відлік паузи. Раніше PAN_HOLD виставлявся при
+         кожному русі, тож завмер пальця без відриву від екрана вже
+         запускав відлік — камера могла почати їхати назад до кірки,
+         поки гравець ще притискає поле. */
+      if (this.panning) { this.panning = false; this.panT = PAN_HOLD; }
+      /* Прапорець тримаємо до повного відпускання: браузер шле click уже
+         після того, як пальці зникли, і без цього щипок чи гортання
+         гасили б екран результату. */
+      if (this.pinched) setTimeout(() => { this.pinched = false; }, 120);
     }
   };
 
@@ -860,6 +880,7 @@ export class Presenter {
     // ручне гортання належало тому забігу — на головному екрані камера
     // має стояти там, де стоїть, без залишкової паузи
     this.panT = 0;
+    this.panning = false;
     this.round = null;
     this.setup = null;
     this.run = null;
@@ -1174,12 +1195,15 @@ export class Presenter {
        має за нею встигати в будь-який бік. Обмеження знизу (camMin)
        лишається лише для стану БЕЗ забігу — щоб під рулеткою поверхня
        стояла там само, де й стояла. */
-    /* Гравець щойно гортав поле сам — камера не забирає в нього
-       керування, доки не мине PAN_HOLD. Час тут РЕАЛЬНИЙ (dtReal), а не
-       прискорений: на швидкості ×4 пауза інакше стискалась би до
-       секунди з чвертю. Коли час вийшов, звичайний лерп нижче сам
-       плавно приведе кадр назад до кірки — окремої анімації не треба. */
-    if (this.panT > 0) {
+    /* Гравець гортає поле сам — камера не забирає в нього керування,
+       доки палець на екрані (panning), і ще PAN_HOLD секунд після
+       того, як він зник. Час тут РЕАЛЬНИЙ (dtReal), а не прискорений:
+       на швидкості ×4 пауза інакше стискалась би до чвертки секунди.
+       Коли час вийшов, звичайний лерп нижче сам плавно приведе кадр
+       назад до кірки — окремої анімації не треба. */
+    if (this.panning) {
+      // палець ще на екрані — відлік навіть не починається
+    } else if (this.panT > 0) {
       this.panT = Math.max(0, this.panT - dtReal);
     } else {
       const view = this.w / this.cell;          // скільки колонок у кадрі
@@ -1243,6 +1267,7 @@ export class Presenter {
 
   private layout(): void {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.dpr = dpr;
     const rect = this.canvas.getBoundingClientRect();
     this.w = Math.max(1, Math.round(rect.width));
     this.h = Math.max(1, Math.round(rect.height));
@@ -1329,24 +1354,11 @@ export class Presenter {
        краю прямо на поле. */
     const a = 1 - this.stage;
     if (a > 0.01) {
-      /* Фон екрана рулетки — картинка на весь кадр, РОЗТЯГНУТА, а не
-         замощена: так її задумано (квадратна текстура під будь-яке
-         співвідношення екрана).
-
-         Малюємо непрозоро (з поправкою на перехід a), а не напівпрозорим
-         затемненням, як раніше: це саме фон, а не серпанок поверх шахти.
-         Картинки ще немає — лишається колишня заливка, щоб екран не
-         виявився порожнім. */
-      const bg = Assets.get('slotBg');
-      ctx.save();
-      ctx.globalAlpha = a;
-      if (bg) {
-        ctx.drawImage(bg, 0, 0, this.w, this.h);
-      } else {
-        ctx.fillStyle = 'rgba(4,6,9,.62)';
-        ctx.fillRect(0, 0, this.w, this.h);
-      }
-      ctx.restore();
+      /* Затемнення шахти на час рулетки. Текстура сюди НЕ йде: фон
+         належить самому слоту й малюється всередині вікна рамки
+         (reel.draw), а не на весь кадр. */
+      ctx.fillStyle = 'rgba(4,6,9,' + (0.62 * a).toFixed(3) + ')';
+      ctx.fillRect(0, 0, this.w, this.h);
       const cy = this.h * 0.42 + this.stage * this.itemH * 0.9;
       const fa = Math.min(1, a * 1.7);
       this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, fa);
@@ -1379,15 +1391,11 @@ export class Presenter {
     if (this.bonusIntro > 0) this.drawBonusIntro(ctx);
   }
 
+  /* Небо й хмари — усе в backdrop.ts. Екранний шар: не залежить від
+     камери чи глибини забігу, тож і сюди передаємо лише розмір
+     екрана, час і dpr (для розміру розмиття — див. backdrop.ts). */
   private drawSky(ctx: CanvasRenderingContext2D): void {
-    const horizon = this.sy(0);
-    const g = ctx.createLinearGradient(0, 0, 0, Math.max(1, horizon));
-    g.addColorStop(0, '#4aa8f0');
-    g.addColorStop(1, '#9fd6ff');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, this.w, Math.max(0, horizon));
-    ctx.fillStyle = '#0a0c10';
-    ctx.fillRect(0, Math.max(0, horizon), this.w, this.h - Math.max(0, horizon));
+    drawBackdrop(ctx, this.w, this.h, this.clock, this.dpr);
   }
 
   private drawMine(ctx: CanvasRenderingContext2D): void {
@@ -1410,7 +1418,7 @@ export class Presenter {
         const dark = this.dimAt(lights, r, c);
 
         /* За краєм поля — огорожа завширшки FENCE_COLS, далі нічого:
-           там лишається чорний фон, який уже залив drawSky(). Огорожа
+           там лишається фон углиб, який уже намалював drawSky(). Огорожа
            не існує в сітці й ні на що не впливає: межа шахти й так є у
            фізиці (Mine.get за краєм повертає WALL), просто досі її не
            було видно — при фіксованій камері край поля збігався з краєм

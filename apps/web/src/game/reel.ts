@@ -23,21 +23,37 @@ import { Render, type ReelItem } from './render';
    зображення. Координати вікна — частка від повних розмірів рамки, щоб
    масштабування на будь-який екран лишалось коректним.
 
-   Числа нижче — найбільший КВАДРАТ, що влазить у виріз: 446 px при
-   1024 px рамки, центр 512,526. Квадрат, а не смуга 1:3, бо у вікні
-   тепер один символ (див. CONFIG.reel.visible).
+   ВІКНО — КОЛО, А НЕ ВПИСАНИЙ КВАДРАТ.
 
-   По горизонталі центр ПРИМУСОВО 512, тобто рівно посередині. Вільний
-   пошук ставив квадрат на 25 px лівіше, і це навіть не давало виграшу
-   в розмірі (445 проти 446 px) — зате символ стояв би не по центру
-   симетричного вінка, що видно одразу. По вертикалі центр нижчий за
-   середину картинки: згори всередину звисає корона великого каменя. */
+   Спершу тут стояв найбільший квадрат, що влазить у виріз (446 px), і
+   між ним та вінком лишалось кільце порожнечі — фон слота обривався,
+   не доходячи до рамки. Тепер стрічка малюється диском по самому
+   вирізу й обрізається по ньому: фон іде впритул до вінка, а зайве
+   ховає сама рамка, бо вона малюється ПОВЕРХ стрічки.
+
+   Центр і радіус заміряно з файлу (центроїд вирізу й найдальший його
+   піксель): 512.1, 537.0 і 435 px при 1024 px рамки. Центр нижчий за
+   середину картинки — згори всередину звисає корона великого каменя.
+
+   Ідеального «нічого не витікає» тут не буває: у вінку є щілини між
+   листям, і крізь них видно те, що позаду. Але текстура фону темна
+   (#1f1f23) і майже збігається з тлом за рамкою, тож на око щілини
+   лишаються щілинами. */
 const FRAME_W = 1024, FRAME_H = 1024;
 export const FRAME_ASPECT = FRAME_W / FRAME_H;
-export const FRAME_INNER_LEFT = 0.2822;
-export const FRAME_INNER_RIGHT = 0.7178;
-export const FRAME_INNER_TOP = 0.2959;
-export const FRAME_INNER_BOTTOM = 0.7314;
+
+/** центр вирізу — частка від розмірів рамки */
+export const FRAME_WIN_CX = 0.5001;
+export const FRAME_WIN_CY = 0.5244;
+/** радіус вирізу — частка ШИРИНИ рамки, з невеликим запасом */
+export const FRAME_WIN_R = 0.4297;
+
+/* Габарити вікна для presenter: він рахує розмір комірки як різницю
+   цих часток, тому тут просто описовий прямокутник кола. */
+export const FRAME_INNER_LEFT = FRAME_WIN_CX - FRAME_WIN_R;
+export const FRAME_INNER_RIGHT = FRAME_WIN_CX + FRAME_WIN_R;
+export const FRAME_INNER_TOP = FRAME_WIN_CY - FRAME_WIN_R;
+export const FRAME_INNER_BOTTOM = FRAME_WIN_CY + FRAME_WIN_R;
 
 /* ============================================================
    КАМЕНІ НА ВІНКУ — прогрес до гарантованої кірки.
@@ -67,12 +83,6 @@ const GEMS_SMALL: readonly Gem[] = [
   { x: 0.2276, y: 0.2415, r: 0.0322 },   // ліворуч угорі
 ];
 const GEM_BIG: Gem = { x: 0.5001, y: 0.1294, r: 0.0498 };
-
-/* Середній колір фонової текстури (заміряно з самого файлу:
-   #1f1f23, розкид 25..42). Саме в нього згасають краї стрічки — тепер,
-   коли підкладки під символом немає, згасання мусить читатись як
-   «символ розчиняється у фоні», а не як темна смуга поверх нього. */
-const BG_RGB = '31,31,35';
 
 const RED = { core: '#ff5a4a', glow: '255,70,55' };
 const GREEN = { core: '#7dff9a', glow: '90,255,120' };
@@ -286,6 +296,10 @@ export class Reel {
     const frameY = cy - frameH / 2;
     const x = frameX + frameW * FRAME_INNER_LEFT;
     const y = frameY + frameH * FRAME_INNER_TOP;
+    // центр і радіус вирізу в екранних пікселях
+    const winCx = frameX + frameW * FRAME_WIN_CX;
+    const winCy = frameY + frameH * FRAME_WIN_CY;
+    const winR = frameW * FRAME_WIN_R;
 
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -299,11 +313,24 @@ export class Reel {
        рамку в неї вписувати нема за чим. Символ лягає просто на фон
        екрана. */
 
-    // сама стрічка, обрізана прозорим вікном рамки
+    /* Стрічка обрізається КОЛОМ вирізу, а не прямокутником: інакше
+       кути прямокутника вилізли б за вінок, а його боки не дістали б
+       до нього — те саме кільце порожнечі, від якого й тікаємо. */
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x, y, itemW, winH);
+    ctx.arc(winCx, winCy, winR, 0, Math.PI * 2);
     ctx.clip();
+
+    /* ФОН СЛОТА — тільки тут, усередині вікна, і розтягнутий на всю
+       його площу. Раніше та сама текстура заливала весь екран; фон
+       належить слоту, а не кадру. */
+    const bg = Assets.get('slotBg');
+    if (bg) {
+      ctx.drawImage(bg, winCx - winR, winCy - winR, winR * 2, winR * 2);
+    } else {
+      ctx.fillStyle = '#1f1f23';
+      ctx.fillRect(winCx - winR, winCy - winR, winR * 2, winR * 2);
+    }
 
     const cyWin = y + winH / 2;
     const first = Math.max(0, Math.floor(this.offset) - Math.ceil(R.visible / 2) - 1);
@@ -311,27 +338,15 @@ export class Reel {
     for (let i = first; i <= last; i++) {
       const iy = cyWin - itemH / 2 + (i - this.offset) * itemH;
       const hot = !this.spinning && Math.abs(i - this.offset) < 0.5;
-      Render.reelItem(ctx, x + 5, iy + 4, itemW - 10, itemH - 8, this.items[i], hot);
+      /* Комірка = точні габарити вікна. Колишні відступи +5/+4 були
+         полями старої підкладки; без неї вони лише зсували символ. */
+      Render.reelItem(ctx, x, iy, itemW, itemH, this.items[i], hot);
     }
 
-    /* Затемнення країв вікна. Висота градієнта — ЧАСТКА вікна, а не
-       ціла комірка: при одному видимому символі комірка дорівнює всьому
-       вікну, і старий градієнт на itemH затемнив би сам символ від краю
-       до краю. Тепер це вузька смужка згори й знизу — рівно щоб стрічка
-       не обривалась різко. */
-    const fade = Math.min(itemH, winH) * 0.22;
+    /* Згасання країв прибрано: стрічку тепер обрізає коло вирізу, і рівно
+       по цьому колу починається вінок. Обрив ховає сама рамка, тож
+       затемнювати край — значить темнити символ без причини. */
 
-    // затемнення зверху/знизу
-    const gt = ctx.createLinearGradient(0, y, 0, y + fade);
-    gt.addColorStop(0, `rgba(${BG_RGB},1)`);
-    gt.addColorStop(1, `rgba(${BG_RGB},0)`);
-    ctx.fillStyle = gt;
-    ctx.fillRect(x, y, itemW, fade);
-    const gb = ctx.createLinearGradient(0, y + winH, 0, y + winH - fade);
-    gb.addColorStop(0, `rgba(${BG_RGB},1)`);
-    gb.addColorStop(1, `rgba(${BG_RGB},0)`);
-    ctx.fillStyle = gb;
-    ctx.fillRect(x, y + winH - fade, itemW, fade);
     ctx.restore();
 
     // сама рамка — ПОВЕРХ стрічки, прозорий центр показує її знизу.
