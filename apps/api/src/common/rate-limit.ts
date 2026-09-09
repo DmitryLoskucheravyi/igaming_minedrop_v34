@@ -55,10 +55,33 @@ export class RateLimiter {
   }
 }
 
-/** Ключ клієнта: справжня адреса з-за проксі, інакше сокет. */
+/* Loopback-адреси: саме звідси приходить сокет, коли запит форвардить
+   наш ЖЕ локальний проксі (Next rewrite -> API, а зовні все це вже
+   пройшло крізь Tailscale Funnel на той самий хост). IPv4-in-IPv6
+   форма (::ffff:127.0.0.1) — те, як Node інколи показує локальний
+   IPv4-сокет під IPv6-стеком. */
+const LOOPBACK = /^(127\.|::1$|::ffff:127\.)/;
+
+/** Ключ клієнта: справжня адреса з-за проксі, інакше сокет.
+
+    X-Forwarded-For — заголовок, який ставить сам КЛІЄНТ; проксі лише
+    ДОПИСУЄ до нього своє. Довіряти першому значенню можна, тільки
+    коли ми напевно знаємо, що запит фізично прийшов через НАШ
+    локальний проксі, а не напряму — інакше зловмисник просто підставляє
+    новий X-Forwarded-For на кожен запит і лічильник спроб (LOGIN_ATTEMPTS
+    тощо) бачить щоразу «нового» клієнта, тобто не обмежує нічого.
+
+    Тому заголовок береться до уваги ЛИШЕ якщо сам сокет підключився
+    з loopback (саме так приходить трафік через Next rewrite). Пряме
+    з'єднання — випадок, якого штатно не буває і яким скористався б
+    зловмисник, — використовує РЕАЛЬНУ адресу сокета, яку заголовком
+    підмінити не можна. */
 export function clientKey(headers: Record<string, string | string[] | undefined>, ip?: string): string {
-  const raw = headers['x-forwarded-for'];
-  const fwd = Array.isArray(raw) ? raw[0] : raw;
-  const first = fwd?.split(',')[0]?.trim();
-  return first || ip || 'unknown';
+  if (ip && LOOPBACK.test(ip)) {
+    const raw = headers['x-forwarded-for'];
+    const fwd = Array.isArray(raw) ? raw[0] : raw;
+    const first = fwd?.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  return ip || 'unknown';
 }

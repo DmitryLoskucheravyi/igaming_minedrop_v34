@@ -26,19 +26,32 @@ interface AskState {
 
 export function useAsk() {
   const [state, setState] = useState<AskState | null>(null);
+  /* Резолвер ще не відповіданого запиту. Без нього другий виклик
+     confirm()/prompt() до відповіді на перший просто замінював би
+     state — і Promise першого виклику ніколи не резолвився б: await
+     ask.confirm(...) там повис би назавжди. */
+  const pending = useRef<AskState['resolve'] | null>(null);
+
+  const open = useCallback((next: AskState) => {
+    // старий запит ще без відповіді — рахуємо його скасованим і
+    // резолвимо, перш ніж показати новий
+    pending.current?.(null);
+    pending.current = next.resolve;
+    setState(next);
+  }, []);
 
   const confirm = useCallback(
     (text: string, danger = false) => new Promise<boolean>((resolve) => {
-      setState({ text, danger, resolve: (v) => resolve(v === true) });
-    }), []);
+      open({ text, danger, resolve: (v) => resolve(v === true) });
+    }), [open]);
 
   const prompt = useCallback(
     (text: string, label: string, value = '') => new Promise<string | null>((resolve) => {
-      setState({ text, danger: false, input: { label, value },
-                 resolve: (v) => resolve(typeof v === 'string' ? v : null) });
-    }), []);
+      open({ text, danger: false, input: { label, value },
+             resolve: (v) => resolve(typeof v === 'string' ? v : null) });
+    }), [open]);
 
-  const dialog = <AskDialog state={state} onDone={() => setState(null)} />;
+  const dialog = <AskDialog state={state} onDone={() => { pending.current = null; setState(null); }} />;
   return { confirm, prompt, dialog };
 }
 

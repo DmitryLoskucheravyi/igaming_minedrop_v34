@@ -9,7 +9,8 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:auth": "tsx test/init-data.test.ts",
-    "test:deposits": "tsx test/deposits.test.ts"
+    "test:deposits": "tsx test/deposits.test.ts",
+    "test:admin-tokens": "tsx test/admin-tokens.test.ts"
   },
   "dependencies": {
     "@minedrop/engine": "1.0.0",

@@ -20,21 +20,48 @@ export const EMPTY_FILTER: ReqFilter = { min: '', max: '', from: '', to: '', add
 export const hasFilter = (f: ReqFilter) =>
   !!(f.min || f.max || f.from || f.to || f.address.trim());
 
+/* YYYY-MM-DD -> опівніч ЦЬОГО календарного дня в локальному часі.
+   Саме через конструктор (рік, місяць, день), а не через рядок:
+   New Date('YYYY-MM-DD') парситься як UTC-опівніч і в не-UTC поясі
+   могла б показати вчорашній/завтрашній день. */
+const parseLocalDay = (v: string): Date | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+};
+
 /** Чи проходить заявка крізь фільтр. Порожнє поле нічого не обмежує. */
 export function passes(f: ReqFilter, amount: number, createdAt: number, address: string): boolean {
   const min = parseFloat(f.min), max = parseFloat(f.max);
   if (Number.isFinite(min) && amount < min) return false;
   if (Number.isFinite(max) && amount > max) return false;
 
-  /* Дата з <input type="date"> приходить як YYYY-MM-DD у локальному
-     часі. «До» включає весь день, тому додаємо добу. */
-  if (f.from && createdAt < new Date(f.from + 'T00:00:00').getTime()) return false;
-  if (f.to && createdAt >= new Date(f.to + 'T00:00:00').getTime() + 86400000) return false;
+  /* «До» включає весь день, тому межа — опівніч НАСТУПНОГО дня.
+     Рахуємо його через конструктор Date, а не додаванням 86400000 мс:
+     доба не завжди рівно 24 години (перехід на літній/зимовий час),
+     і фіксований мілісекундний зсув у ці два дні на рік з'їжджав би
+     межу на годину. new Date(y, m, day+1) сам нормалізує календарну
+     дату — так само, як DateField.shift() гортає місяці. */
+  if (f.from) {
+    const d = parseLocalDay(f.from);
+    if (d && createdAt < d.getTime()) return false;
+  }
+  if (f.to) {
+    const d = parseLocalDay(f.to);
+    if (d) {
+      const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+      if (createdAt >= next.getTime()) return false;
+    }
+  }
 
   const q = f.address.trim().toLowerCase();
   if (q && !address.toLowerCase().includes(q)) return false;
   return true;
 }
+
+/** «От» пізніше за «до» — фільтр мовчки не пропустить нічого. Про це
+    варто сказати прямо, а не лишати адміна гадати, чому список порожній. */
+export const invertedRange = (f: ReqFilter): boolean =>
+  !!(f.from && f.to && f.from > f.to);
 
 interface Props {
   value: ReqFilter;
@@ -72,6 +99,10 @@ export function Filters({ value, onChange, shown, total, addressLabel }: Props) 
         <input className={s.input} placeholder="часть адреса"
           value={value.address} onChange={(e) => set({ address: e.target.value })} />
       </label>
+
+      {invertedRange(value) && (
+        <div className={s.filterWarn}>«От» позже «до» — список будет пустым. Поменяй даты местами.</div>
+      )}
 
       <div className={s.filterFoot}>
         <span className={s.dim}>показано {shown} из {total}</span>

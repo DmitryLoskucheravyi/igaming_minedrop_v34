@@ -19,8 +19,12 @@ import { RateLimiter, clientKey } from '../common/rate-limit';
 
 /* Обмін токенів відкритий назовні, тому має свій ліміт. 60 на хвилину —
    з великим запасом для живого клієнта (він міняє раз на 15 хвилин) і
-   мало для перебору. */
+   мало для перебору. REFRESH_GLOBAL — той самий спільний рубіж, що й
+   LOGIN_GLOBAL/VERIFY_GLOBAL: per-ключовий лічильник довіряє clientKey,
+   а це останній рівень страховки на випадок, якщо довіра до проксі
+   колись стане іншою. */
 const REFRESH_LIMIT = new RateLimiter(60, 60_000);
+const REFRESH_GLOBAL = new RateLimiter(300, 60_000);
 import { AdminsService } from './admins.service';
 import { AdminAuthGuard, CurrentAdmin, bearerFrom, type AdminRequest } from './admin-auth.guard';
 import type { AdminSession } from './admin.types';
@@ -127,7 +131,7 @@ export class AdminController {
   @HttpCode(200)
   refresh(@Body() dto: RefreshDto, @Req() req: AdminRequest) {
     const key = clientKey(req.headers, req.ip);
-    if (!REFRESH_LIMIT.take(key)) {
+    if (!REFRESH_LIMIT.take(key) || !REFRESH_GLOBAL.take('all')) {
       throw new HttpException(
         `Слишком часто. Попробуй через ${REFRESH_LIMIT.retryAfterSec(key)} с`,
         HttpStatus.TOO_MANY_REQUESTS,

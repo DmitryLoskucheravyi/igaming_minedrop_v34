@@ -60,6 +60,11 @@ export function CryptoIntake() {
   const [adding, setAdding] = useState<Family | null>(null);
   const [address, setAddress] = useState('');
   const [label, setLabel] = useState('');
+  /* Окремо від busy: той стосується форми зверху (режим/монети/мережі).
+     Тут — множина ID адрес, чий Вкл/Викл зараз у польоті: швидкий
+     подвійний клік по ОДНІЙ і тій самій адресі не відправить два PATCH
+     одночасно, а перемикання ІНШИХ адрес тим часом не блокується. */
+  const [addrBusy, setAddrBusy] = useState<ReadonlySet<string>>(() => new Set());
   const ask = useAsk();
 
   const load = useCallback(async () => {
@@ -125,6 +130,8 @@ export function CryptoIntake() {
   };
 
   const toggleAddr = async (a: AdminAddress) => {
+    if (addrBusy.has(a.id)) return;   // попередній перемикач цієї ж адреси ще в польоті
+    setAddrBusy((prev) => new Set(prev).add(a.id));
     setErr(null);
     try {
       await api(`/addresses/${a.id}`, {
@@ -134,6 +141,7 @@ export function CryptoIntake() {
       setErr(e instanceof Error ? e.message : String(e));
     }
     await load();
+    setAddrBusy((prev) => { const next = new Set(prev); next.delete(a.id); return next; });
   };
 
   const renameAddr = async (a: AdminAddress) => {
@@ -359,7 +367,8 @@ export function CryptoIntake() {
                           {w ? `слушается · ${w.networks.length} сет.` : a.active ? 'не слушается' : 'выключен'}
                         </span>
                         <div className={s.rowActions}>
-                          <button type="button" className={s.btnSm} onClick={() => void toggleAddr(a)}>
+                          <button type="button" className={s.btnSm} disabled={addrBusy.has(a.id)}
+                            onClick={() => void toggleAddr(a)}>
                             {a.active ? 'Выкл' : 'Вкл'}
                           </button>
                           <button type="button" className={s.btnSm} onClick={() => void renameAddr(a)}>

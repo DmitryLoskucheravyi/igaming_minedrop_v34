@@ -48,12 +48,26 @@ const SCRYPT_KEYLEN = 64;
 
 /* 8 спроб на 15 хвилин: людині, яка забула пароль, вистачає,
    перебору — ні. Ключ — логін + адреса, щоб один клієнт не міг
-   заблокувати чужий акаунт, просто довбаючи його логін. */
+   заблокувати чужий акаунт, просто довбаючи його логін.
+
+   LOGIN_GLOBAL — та сама страховка, що й VERIFY_GLOBAL у fairness:
+   per-ключовий лічильник рахує на довірену адресу клієнта (див.
+   clientKey), і якщо колись довіру до проксі налаштують інакше або
+   з'явиться другий шлях у API — один спільний лічильник на всіх
+   лишається останнім рубежем. */
 const LOGIN_ATTEMPTS = new RateLimiter(8, 15 * 60_000);
+const LOGIN_GLOBAL = new RateLimiter(60, 60_000);
 
 /* Час життя access-токена. Коротко настільки, щоб вкрадений швидко
    протух, і достатньо, щоб не смикати обмін на кожній дії. */
 const ACCESS_TTL_MS = 15 * 60_000;
+
+/* Вікно, у якому повтор ВЖЕ витраченого refresh вважається загубленою
+   відповіддю мережі, а не крадіжкою (див. коментар у refresh()).
+   10 с — з запасом на повільний мобільний реконект, і нікчемно мало
+   для атаки: токен усе одно живе годинами, тож ці 10 с нічого
+   зловмиснику не додають. */
+const REUSE_GRACE_MS = 10_000;
 
 function hashPassword(password: string, salt: string): Buffer {
   return scryptSync(password, salt, SCRYPT_KEYLEN);
@@ -160,7 +174,7 @@ export class AdminsService implements OnModuleInit {
     const login = loginRaw.trim().toLowerCase();
     const key = `${login}|${from}`;
 
-    if (!LOGIN_ATTEMPTS.take(key)) {
+    if (!LOGIN_ATTEMPTS.take(key) || !LOGIN_GLOBAL.take('all')) {
       throw new HttpException(
         `Слишком много попыток. Повтори через ${LOGIN_ATTEMPTS.retryAfterSec(key)} с`,
         HttpStatus.TOO_MANY_REQUESTS,
@@ -189,10 +203,20 @@ export class AdminsService implements OnModuleInit {
     const rec = this.refreshes.get(token);
     if (!rec) throw new UnauthorizedException('Сессия истекла — войди заново');
 
-    /* Токен уже витрачали. Легальний клієнт так не робить: він щоразу
-       зберігає новий. Отже копія в чужих руках — гасимо всю родину,
-       щоб і зловмисник, і справжній власник пішли логінитись наново. */
+    /* Токен уже витрачали. Найчастіша причина — не крадіжка, а
+       загублена ВІДПОВІДЬ: мережа у вебв'ю телеграма рветься регулярно,
+       і клієнт, не отримавши відповіді на перший обмін (хоча сервер
+       його вже виконав), повторює запит тим самим — єдиним, що в
+       нього є — refresh. Той самий клас нестабільності, від якого
+       ставки в грі захищені ключем ідемпотентності; тут його не було.
+
+       Тому повтор У КОРОТКЕ вікно після першого обміну повертає ТУ
+       САМУ пару, що видали тоді, а не карає сесію. Повтор ПІЗНІШЕ —
+       це вже справжня ознака того, що копія токена в чужих руках:
+       гасимо всю родину, щоб і зловмисник, і справжній власник пішли
+       логінитись наново. */
     if (rec.usedAt) {
+      if (rec.reissued && Date.now() - rec.usedAt < REUSE_GRACE_MS) return rec.reissued;
       this.dropFamily(rec.familyId);
       this.log.warn(`повторне використання refresh (${rec.login}) — сесію скинуто повністю`);
       throw new UnauthorizedException('Сессия сброшена из соображений безопасности');
@@ -213,7 +237,9 @@ export class AdminsService implements OnModuleInit {
     for (const [t, sess] of this.sessions) {
       if (sess.familyId === rec.familyId) this.sessions.delete(t);
     }
-    return this.issuePair(admin, rec.familyId);
+    const pair = this.issuePair(admin, rec.familyId);
+    rec.reissued = pair;   // повтор у вікні поблажки віддасть саме цю пару
+    return pair;
   }
 
   /** Вихід гасить сесію ЦІЛКОМ: і access, і всі refresh тієї ж родини.
