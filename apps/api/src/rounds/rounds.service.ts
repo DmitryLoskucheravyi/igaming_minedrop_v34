@@ -56,10 +56,6 @@ export class RoundsService {
   }
 
   private settle(rec: PlayerRecord, bet: number, mode: RoundMode, buy?: TierId): RoundResult {
-    if (!CONFIG.bets.includes(bet as never)) {
-      throw new BadRequestException(`Ставка должна быть одной из: ${CONFIG.bets.join(', ')}`);
-    }
-
     /* ВИГРАНА БОНУСКА.
 
        Якщо гравець зібрав скаттери минулого раунду, наступна звичайна
@@ -72,6 +68,16 @@ export class RoundsService {
        іншу річ, а ця дочекається наступної звичайної ставки. */
     const free = !buy && !!rec.pendingBonus;
     if (free) bet = rec.pendingBonus!.bet;
+
+    /* Ставку клієнта звіряємо зі списком дозволених ЛИШЕ коли вона й
+       справді йде в гру: у безкоштовній бонусці сервер однаково бере
+       своє збережене число (рядок вище), а надіслане клієнтом ігнорує
+       повністю. Перевірка ДО цього моменту відмовляла б у цілком
+       робочому безкоштовному раунді через довільне число в тілі
+       запиту, яке ні на що вже не впливає. */
+    if (!free && !CONFIG.bets.includes(bet as never)) {
+      throw new BadRequestException(`Ставка должна быть одной из: ${CONFIG.bets.join(', ')}`);
+    }
 
     /* БОНУС БАЙ. Кірку називає клієнт, тому перевіряємо тут: неіснуючий
        тір або тір без ціни — відмова. Ціну бере рушій із CONFIG.buy,
