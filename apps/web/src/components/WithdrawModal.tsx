@@ -13,12 +13,24 @@
 
    Строку давності немає: заявка чекає на людину. Поки вона в
    очікуванні, гравець може скасувати її сам і забрати гроші назад.
+
+   Скасування питає підтвердження — але СВОЇМ діалогом (src/ui/Ask),
+   не нативним confirm(): той малює браузер, і в частині вебв'ю його
+   можна вимкнути назавжди галочкою «більше не показувати». Тоді
+   заявка скасовувалась би з одного випадкового тапу.
    ============================================================ */
 
 import { useCallback, useEffect, useState } from 'react';
 import { Api, ApiError, type Withdraw, type WithdrawInfo } from '../lib/api';
 import { CURRENCY_META, fmtWhole, type CurrencyCode, type Rates } from '../lib/currency';
 import { Modal } from './Modal';
+import { NumField } from '../ui/NumField';
+import { useAsk } from '../ui/Ask';
+
+/* Той самий формат, що перевіряє сервер (withdraw.service): T + 33
+   символи base58. Раніше клієнт вимагав просто «довше за 30» — і
+   адреса на 31 символ давала активну кнопку та помилку з сервера. */
+const TRC20_RE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/;
 
 const STATUS_RU: Record<Withdraw['status'], string> = {
   pending: 'на рассмотрении',
@@ -46,6 +58,7 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
   const [address, setAddress] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const ask = useAsk();
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +71,9 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
   useEffect(() => { void load(); }, [load]);
 
   const min = info?.minRub ?? 500;
+  /* Стеля приходить із сервера й там же перевіряється: не спитати про
+     неї тут означало б дати натиснути й отримати 400. */
+  const max = info?.maxRub ?? Infinity;
   const active = info?.active ?? null;
   const meta = CURRENCY_META[currency];
 
@@ -86,6 +102,7 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
 
   const cancel = async () => {
     if (!active) return;
+    if (!await ask.confirm('Отменить заявку? Деньги вернутся на баланс.')) return;
     setBusy(true); setErr(null);
     try {
       await Api.cancelWithdraw(active.id);
@@ -100,9 +117,11 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
 
   const tooSmall = amount < min;
   const tooBig = amount > balance;
+  const overMax = amount > max;
+  const badAddress = !TRC20_RE.test(address.trim());
 
   return (
-    <Modal title="ВЫВОД СРЕДСТВ" onClose={onClose}>
+    <Modal title="Вывод средств" onClose={onClose}>
       {err && <p className="err">{err}</p>}
 
       {!active && (
@@ -112,22 +131,14 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
             <span className="dep-method-note">пока единственный способ</span>
           </div>
 
-          <p className="hint">
-            Средства списываются с баланса <b>сразу</b> при создании заявки.
-            Пока админ её не обработал, заявку можно отменить — деньги вернутся.
-          </p>
-
           <label className="dep-label" htmlFor="wd-amount">Сумма вывода, ₽</label>
-          <input
+          <NumField
             id="wd-amount"
-            className="input mono"
-            type="number"
-            inputMode="numeric"
-            min={min}
-            value={amount || ''}
-            onChange={(e) => setAmount(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+            value={amount}
+            onChange={setAmount}
             placeholder={`от ${min}`}
           />
+          <p className="dep-sub">Спишем с баланса сразу. Отменишь — вернём.</p>
           <div className="dep-chips">
             <button type="button" className="dep-chip" onClick={() => setAmount(min)}>
               минимум
@@ -153,8 +164,10 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
             autoComplete="off"
             spellCheck={false}
           />
-          <p className="dep-est">
-            Проверь адрес символ в символ: перевод в блокчейне отменить нельзя.
+          <p className="dep-sub">
+            {address.trim() && badAddress
+              ? 'Адрес TRC20 — это T и ещё 33 символа.'
+              : 'Сверь адрес: перевод в блокчейне не отменить.'}
           </p>
 
           <div className="wd-row">
@@ -165,23 +178,22 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
           <button
             type="button"
             className="btn wide"
-            disabled={busy || tooSmall || tooBig || address.trim().length < 30}
+            disabled={busy || tooSmall || tooBig || overMax || badAddress}
             onClick={() => void submit()}
           >
             {busy ? 'Создаю…'
-              : tooBig ? 'НА БАЛАНСЕ НЕДОСТАТОЧНО'
-              : 'СОЗДАТЬ ЗАЯВКУ'}
+              : tooBig ? 'На балансе недостаточно'
+              : overMax ? `Максимум ${max} ₽`
+              : 'Создать заявку'}
           </button>
         </section>
       )}
 
       {active && (
-        <section className="dep-active">
-          <p className="dep-hint">
-            Заявка создана, средства уже списаны с баланса. Админ проверит её
-            и отправит USDT на указанный адрес. Пока заявка в ожидании — её
-            можно отменить, деньги вернутся на баланс.
-          </p>
+        <section>
+          {/* Один рядок замість абзацу: гравцеві тут треба знати, що
+              заявка жива й на якій вона стадії, а не як її обробляють. */}
+          <p className="hint">Заявка на рассмотрении.</p>
 
           <div className="dep-row">
             <span className="dep-k">К выплате</span>
@@ -194,8 +206,7 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
 
           {active.rateApprox && (
             <p className="dep-warn">
-              ⚠ Курс не удалось обновить, сумма посчитана по запасному
-              ({Math.round(active.rate)} ₽ за USDT). Админ сверит её перед выплатой.
+              Курс запасной ({Math.round(active.rate)} ₽ за USDT) — админ сверит.
             </p>
           )}
 
@@ -204,8 +215,8 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
             <code>{active.address}</code>
           </div>
 
-          <button type="button" className="btn wide wd-cancel" disabled={busy} onClick={() => void cancel()}>
-            {busy ? '…' : 'ОТМЕНИТЬ ЗАЯВКУ'}
+          <button type="button" className="btn wide danger" disabled={busy} onClick={() => void cancel()}>
+            {busy ? '…' : 'Отменить заявку'}
           </button>
         </section>
       )}
@@ -230,6 +241,9 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
           </div>
         </section>
       )}
+
+      {/* власний confirm — рендериться поверх вікна */}
+      {ask.dialog}
     </Modal>
   );
 }

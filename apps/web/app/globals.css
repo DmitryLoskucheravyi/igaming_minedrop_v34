@@ -1,19 +1,26 @@
 /* ============================================================
-   2D піксель-стиль: Minecraft / Terraria.
-   Ніяких закруглень і градієнтних кнопок — тільки різкі
-   фаски: світло згори-зліва, тінь знизу-справа.
+   ІНТЕРФЕЙС ГРИ.
+
+   Усе, що поза канвасом, живе за тими самими правилами, що й CRM:
+   плоскі поверхні, рамка 1px, скруглення 8–12px, кольори — тільки
+   з app/tokens.css. Хардкоду тут немає навмисно: два інтерфейси
+   одного продукту не можуть розходитись у відтінках.
+
+   Канвас (шахта, блоки, кірка, рулетка) малює src/game/** і до цього
+   файлу відношення не має — тут лише HUD поверх нього.
    ============================================================ */
+
+@import './tokens.css';
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body {
   height: 100%;
   overflow: hidden;
-  background: #0a0c10;
-  color: #e6e9ee;
-  font-family: ui-monospace, "Lucida Console", "Courier New", monospace;
-  letter-spacing: .04em;
-  -webkit-font-smoothing: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 0;
 
   /* Мініапс: прибираємо все, що заважає грати пальцем */
   overscroll-behavior: none;          /* без pull-to-refresh поверх канваса */
@@ -23,7 +30,23 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Висота беремо в телеграма, а не з 100vh: шторку можна тягнути,
+/* Фокус з клавіатури має бути видно, але не системною рамкою, яка в
+   темній темі виглядає чужою. :focus-visible, а не :focus — інакше
+   обведення спалахує після кожного тапу пальцем. */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--ok);
+  outline-offset: 2px;
+}
+
+/* Скролбари у вікнах — свої: системні на десктопі світлі й широкі. */
+* { scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: var(--rPill); }
+::-webkit-scrollbar-thumb:hover { background: var(--border3); }
+
+/* Висоту беремо в телеграма, а не з 100vh: шторку можна тягнути,
    і при 100vh низ інтерфейсу лишається за межами екрана.
    Поза телеграмом змінної немає — падаємо на 100dvh, потім 100vh. */
 .shell {
@@ -48,46 +71,38 @@ html, body {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: #0a0c10;
+  background: var(--bg);
   text-align: center;
 }
-.tg-only-box { max-width: 320px; }
-.tg-only-mark { font-size: 44px; line-height: 1; margin-bottom: 14px; }
+.tg-only-box {
+  max-width: 320px;
+  padding: 26px 24px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+}
+.tg-only-mark { font-size: 40px; line-height: 1; margin-bottom: 12px; }
 .tg-only h1 {
-  font: 800 22px ui-monospace, monospace;
-  letter-spacing: .22em;
-  color: #ffd34d;
-  margin: 0 0 14px;
-  text-shadow: 2px 2px 0 rgba(0,0,0,.7);
+  font: 700 16px inherit;
+  letter-spacing: .12em;
+  color: var(--text);
+  margin: 0 0 12px;
 }
-.tg-only p { font: 600 14px ui-monospace, monospace; color: #cdd3da; margin: 6px 0; }
-.tg-only .tg-only-hint { color: #7c8590; margin-top: 12px; }
-
-/* Загальна фаска панелі */
-.panel {
-  background: #4a4a4a;
-  border-top: 4px solid #6f6f6f;
-  border-left: 4px solid #6f6f6f;
-  border-right: 4px solid #2b2b2b;
-  border-bottom: 4px solid #2b2b2b;
-  outline: 3px solid #0d0f13;
-  padding: 6px 12px;
-}
+.tg-only p { font-size: 14px; line-height: 1.5; color: var(--text2); margin: 6px 0; }
+.tg-only .tg-only-hint { font-size: 12px; color: var(--muted2); margin-top: 10px; }
 
 /* ============================================================
-   HUD — мобільний, дві тонкі панелі (топбар/бомбар) + висувне
-   меню-бургер + плавуча плашка статусу над полем. Усе другорядне
-   (стрік, деталі) — у меню, щоб жоден ряд не тіснив елементи один
-   в один, як було в старій версії на вузьких екранах.
+   HUD — тонкий топбар + висувне меню + плавуча плашка статусу.
+   Усе другорядне (профіль, валюта, історія) — у меню, щоб верхній
+   ряд не тіснив елементи один в один на вузькому екрані.
    ============================================================ */
 
 .label {
   display: block;
-  font-size: 9px;
-  letter-spacing: .18em;
-  color: #b9c2ce;
-  font-weight: 700;
-  text-shadow: 2px 2px 0 rgba(0,0,0,.6);
+  font: 600 10px ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted2);
 }
 
 /* ---- топбар: бургер + баланс ---- */
@@ -99,13 +114,10 @@ html, body {
   justify-content: space-between;
   gap: 10px;
   padding: 8px 12px;
-  height: 52px;
+  height: 54px;
   flex: 0 0 auto;
-  background: #2c323b;
-  background-image:
-    linear-gradient(0deg, rgba(0,0,0,.35) 0 4px, transparent 4px),
-    linear-gradient(180deg, rgba(255,255,255,.10) 0 4px, transparent 4px);
-  border-bottom: 4px solid #0d0f13;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
 .burger {
@@ -114,41 +126,39 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  width: 40px;
-  height: 40px;
-  background: #55606e;
-  border-top: 3px solid #77828f;
-  border-left: 3px solid #77828f;
-  border-right: 3px solid #333c47;
-  border-bottom: 3px solid #333c47;
-  outline: 2px solid #0d0f13;
-  cursor: pointer;
+  width: 44px;                       /* тач-ціль не менша за 44px */
+  height: 44px;
   flex: 0 0 auto;
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  cursor: pointer;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              transform var(--t-press) var(--ease);
 }
-.burger:hover { background: #64707f; }
+.burger:hover { border-color: var(--border2); }
+.burger:active { transform: scale(.94); background: var(--surface2); }
 .burger span {
   display: block;
-  width: 18px;
+  width: 16px;
   height: 2px;
-  background: #e6e9ee;
-  box-shadow: 1px 1px 0 rgba(0,0,0,.5);
+  border-radius: 2px;
+  background: var(--text2);
 }
 
 .balance-chip {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: #1b1f26;
-  border-top: 3px solid #0d0f13;
-  border-left: 3px solid #0d0f13;
-  border-right: 3px solid #3a424e;
-  border-bottom: 3px solid #3a424e;
+  gap: 10px;
+  padding: 5px 6px 5px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--rPill);
 }
 .balance-chip .value {
-  font: 700 19px ui-monospace, monospace;
-  color: #ffd34d;
-  text-shadow: 2px 2px 0 rgba(0,0,0,.7);
+  font: 700 17px ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
 }
 
 /* ---- сума + значок валюти ---- */
@@ -157,45 +167,109 @@ html, body {
   align-items: center;
   gap: 3px;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .cur-ico {
-  height: 1.35em;
+  height: 1.15em;
   width: auto;
   object-fit: contain;
   vertical-align: middle;
-  image-rendering: pixelated;
 }
 /* одноколірний значок (рубль) — тонуємо у білий, щоб читався на темному */
 .cur-ico.mono { filter: brightness(0) invert(1); }
+/* image-rendering: pixelated тут навмисно НЕМА, хоч гра й піксельна:
+   файли значків 560-600 px, а показуються 20-44 — при nearest-neighbour
+   з них викидається дев'ять пікселів із десяти, і значок розсипається.
+   Пікселізацію лишаємо тому, що її й малювали пікселями: канвасу та
+   картинці кірки в бонус-баї. */
+
+/* ---- кнопка «+» біля балансу ---- */
+.deposit-btn {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 19px inherit;
+  line-height: 1;
+  color: var(--onOk);
+  background: var(--ok);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  position: relative;
+  transition: background var(--t) var(--ease), transform var(--t-press) var(--ease);
+}
+/* Кружок лишається дрібним — він у вузькому чипі балансу, — а тапати
+   по ньому можна на всі 44px: невидима зона поверх сусіднього відступу. */
+.deposit-btn::after { content: ''; position: absolute; inset: -7px -7px -7px -2px; }
+/* Заявка на поповнення жива, а вікно закрите — інакше про 30-хвилинний
+   таймер ніде не дізнатись, доки сам не відкриєш поповнення. */
+.deposit-btn.pending::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--goldText);
+  box-shadow: 0 0 0 2px var(--surface2);
+}
+.deposit-btn:hover { background: var(--okHover); }
+.deposit-btn:active { transform: scale(.9); }
 
 /* ---- плавуча плашка статусу над полем ---- */
 .statusline {
   position: absolute;
   top: 10px;
   left: 50%;
-  transform: translateX(-50%);
   z-index: 3;
   max-width: calc(100% - 24px);
   padding: 7px 14px;
-  background: rgba(20,23,29,.88);
-  border: 2px solid #0d0f13;
-  font: 700 12px ui-monospace, monospace;
-  color: #dfe4ea;
+  /* Без blur навмисно: плашка нічого не показує крізь себе, а кожен
+     окремий шар backdrop-filter перераховується щокадру по канвасу,
+     який і так малює 60 кадрів. Непрозора підкладка тут дешевша. */
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--r3);
+  box-shadow: var(--floatShadow);
+  font: 600 12px ui-monospace, monospace;
+  color: var(--text);
   text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Помилку сервера треба ПРОЧИТАТИ. Раніше довгий текст обрізався
+     трьома крапками, і що саме зламалось — лишалось невідомим. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  /* Центрування трансформом, і воно ж — у ключових кадрах появи:
+     інакше до першого кадру анімації плашка стрибне вбік. */
+  transform: translateX(-50%);
+  animation: status-in var(--t-in) var(--ease);
 }
-.statusline.err { color: #ff8a7d; border-color: #6b2a24; }
-.statusline .verified { color: #5ce08a; }
-.statusline .mismatch { color: #ff6a5c; }
+.statusline.err { color: var(--dangerText); border-color: var(--noBorder); }
+.statusline .verified { color: var(--okText); }
+.statusline .mismatch { color: var(--danger); }
 
 /* Пігулка pity прибрана: прогрес до гарантованої кірки тепер горить
    рубінами на самій рамці слота (game/reel.ts, drawGems). */
 
-/* Керування — плаваючий блок по центру знизу, БЕЗ панелі: прозорий фон,
-   поле гри видно наскрізь. Зверху вниз: смужка pity, поточна ставка,
-   ряд [ »швидкість ] [−] [ ⟳ ] [+] [ ▶автоплей ]. */
+/* ============================================================
+   КЕРУВАННЯ НА ПОЛІ
+
+   Кнопки плавають над канвасом, а не сидять у панелі: шахта має
+   проглядатись під ними. Через це фон напівпрозорий + blur.
+
+   Читабельність тут — не питання смаку: під тим самим пікселем
+   буває і яскрава трава, і майже чорний камінь. Тому кожна кнопка
+   несе ДВА засоби контрасту одночасно — щільний темний скрим
+   (тримає світлий текст над травою) і світлу волосяну рамку з
+   тінню (окреслює кнопку над каменем). Одне без одного гине на
+   половині фонів.
+
+   blur рахує GPU по живому канвасу, тому радіус малий і площі
+   маленькі: FPS раунду важливіший за красу підкладки.
+   ============================================================ */
 .controls {
   position: absolute;
   left: 0;
@@ -205,7 +279,7 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   /* прозорі проміжки не перехоплюють тапи по полю */
   pointer-events: none;
 }
@@ -218,34 +292,33 @@ html, body {
      кнопці «грати», і платна дія не має з ними конкурувати за вісь. */
   align-self: flex-end;
   margin-right: 14px;
-  font: 800 11px ui-monospace, monospace;
-  letter-spacing: .16em;
-  color: #fff8dc;
-  background: #b8860b;
-  border-top: 3px solid #e0ab2c;
-  border-left: 3px solid #e0ab2c;
-  border-right: 3px solid #6d4f06;
-  border-bottom: 3px solid #6d4f06;
-  outline: 2px solid #0d0f13;
-  padding: 7px 16px;
+  min-height: 34px;
+  font: 700 12px inherit;
+  letter-spacing: .04em;
+  color: var(--onGold);
+  background: var(--goldFloat);
+  -webkit-backdrop-filter: var(--floatBlur);
+  backdrop-filter: var(--floatBlur);
+  border: 1px solid var(--floatBorder);
+  border-radius: var(--rPill);
+  box-shadow: var(--floatShadow);
+  padding: 8px 16px;
   cursor: pointer;
-  text-shadow: 1px 1px 0 rgba(0,0,0,.5);
 }
-.buybtn:hover:not(:disabled) { background: #c9951a; }
-.buybtn:active:not(:disabled) {
-  border-color: #6d4f06;
-  border-right-color: #e0ab2c;
-  border-bottom-color: #e0ab2c;
-}
+.buybtn:hover:not(:disabled) { background: var(--goldFloatUp); }
 .buybtn:disabled { opacity: .4; cursor: default; }
 
 .bet-readout {
   font: 700 15px ui-monospace, monospace;
-  color: #ffd34d;
-  text-shadow: 1px 1px 0 rgba(0,0,0,.7);
-  background: rgba(4,6,9,.5);
-  padding: 4px 14px;
-  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+  background: var(--floatBg);
+  -webkit-backdrop-filter: var(--floatBlur);
+  backdrop-filter: var(--floatBlur);
+  border: 1px solid var(--floatBorder);
+  box-shadow: var(--floatShadow);
+  padding: 5px 16px;
+  border-radius: var(--rPill);
 }
 
 .control-row {
@@ -271,14 +344,26 @@ html, body {
    Ховаємо трансформом, а не display:none, навмисно: елементи не
    зникають із потоку, рядок не перебудовується, і кнопка швидкості
    лишається рівно на своєму місці, замість того щоб стрибнути в центр. */
-.pity,
+/* УСІ переходи плаваючого керування — в одному місці й на РІЗНИХ
+   властивостях. Натискання не може їхати на transform: transform тут
+   уже зайнятий від'їздом панелі, і кнопка тиснулась би ті самі 300 мс
+   замість миттєвого відгуку. Тому press — це окрема властивість
+   `scale`, вона компонується з translateY і має власну тривалість. */
+.bonusnext,
 .buybtn,
 .bet-readout,
 .control-core,
-.autobtn {
-  transition: transform .3s cubic-bezier(.4, 0, .2, 1), opacity .2s ease;
+.stepbtn,
+.sidebtn,
+.playbtn {
+  transition: background var(--t) var(--ease),
+              border-color var(--t) var(--ease),
+              color var(--t) var(--ease),
+              scale var(--t-press) var(--ease),
+              transform .3s var(--ease),
+              opacity .2s ease;
 }
-.controls.playing .pity,
+.controls.playing .bonusnext,
 .controls.playing .buybtn,
 .controls.playing .bet-readout,
 .controls.playing .control-core,
@@ -305,37 +390,22 @@ html, body {
   pointer-events: auto;
 }
 
-/* Хто просив менше руху — тому просто згасання, без їзди. */
-@media (prefers-reduced-motion: reduce) {
-  .pity, .buybtn, .bet-readout, .control-core, .autobtn { transition: opacity .2s ease; }
-  .controls.playing .pity,
-  .controls.playing .buybtn,
-  .controls.playing .bet-readout,
-  .controls.playing .control-core,
-  .controls.playing .autobtn { transform: none; }
-}
-
 .stepbtn {
   width: 46px;
   height: 46px;
   flex: 0 0 auto;
   border-radius: 50%;
-  font: 700 22px inherit;
-  color: #dfe4ea;
-  background: #4a525d;
-  border: 3px solid #6b7480;
-  border-right-color: #333c47;
-  border-bottom-color: #333c47;
-  box-shadow: 0 0 0 3px #0d0f13, 0 3px 8px rgba(0,0,0,.45);
+  font: 600 22px inherit;
+  line-height: 1;
+  color: var(--text);
+  background: var(--floatBg);
+  -webkit-backdrop-filter: var(--floatBlur);
+  backdrop-filter: var(--floatBlur);
+  border: 1px solid var(--floatBorder);
+  box-shadow: var(--floatShadow);
   cursor: pointer;
-  text-shadow: 1px 1px 0 rgba(0,0,0,.6);
 }
-.stepbtn:hover:not(:disabled) { background: #58616e; }
-.stepbtn:active:not(:disabled) {
-  border-color: #333c47;
-  border-right-color: #6b7480;
-  border-bottom-color: #6b7480;
-}
+.stepbtn:hover:not(:disabled) { background: var(--floatBgUp); border-color: var(--floatBorderUp); }
 .stepbtn:disabled { opacity: .35; cursor: default; }
 
 /* Бічні круглі кнопки: швидкість (ліворуч) і автоплей (праворуч). */
@@ -348,43 +418,38 @@ html, body {
   flex: 0 0 auto;
   padding: 0;
   border-radius: 50%;
-  color: #cdd3da;
-  background: #3a414b;
-  border: 3px solid #565f6b;
-  border-right-color: #2a313a;
-  border-bottom-color: #2a313a;
-  box-shadow: 0 0 0 3px #0d0f13, 0 3px 8px rgba(0,0,0,.45);
+  color: var(--text2);
+  background: var(--floatBg);
+  -webkit-backdrop-filter: var(--floatBlur);
+  backdrop-filter: var(--floatBlur);
+  border: 1px solid var(--floatBorder);
+  box-shadow: var(--floatShadow);
   cursor: pointer;
   position: relative;
 }
+.sidebtn:hover { background: var(--floatBgUp); border-color: var(--floatBorderUp); }
 .sidebtn svg { width: 20px; height: 20px; }
 .sidebtn .ic-fill { fill: currentColor; }
 .sidebtn .ic-stroke { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.sidebtn:active { border-color: #2a313a; border-right-color: #565f6b; border-bottom-color: #565f6b; }
 
-/* Швидкість: x1 — приглушено, x2..x4 — бурштин + число */
-.speedbtn .speed-num { font: 800 15px ui-monospace, monospace; }
+/* Швидкість: x1 — приглушено, x2..x4 — золото + число */
+.speedbtn .speed-num {
+  font: 700 15px ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
 /* двоцифрові швидкості (тимчасові x10/x25) інакше не влазять у кружок */
 .speedbtn .speed-num.small { font-size: 11px; letter-spacing: -.04em; }
-.speedbtn.fast {
-  color: #08210f;
-  background: #ffd34d;
-  border-color: #ffe483;
-  border-right-color: #b8922a;
-  border-bottom-color: #b8922a;
-}
+.speedbtn.fast { color: var(--onGold); background: var(--goldFloat); }
+.speedbtn.fast:hover { background: var(--goldFloatUp); }
 
 /* Автоплей: увімкнений — зелений */
-.autobtn.on {
-  color: #08210f;
-  background: #4ec86a;
-  border-color: #86e79b;
-  border-right-color: #2a8544;
-  border-bottom-color: #2a8544;
-}
+.autobtn.on { color: var(--onOk); background: var(--okFloat); }
+.autobtn.on:hover { background: var(--okFloatUp); }
 
 /* Головна кнопка — кругла, зі значком обертання «крутити».
-   Вартість тут не показуємо: ставка стоїть окремим написом над кнопкою. */
+   Вартість тут не показуємо: ставка стоїть окремим написом над кнопкою.
+   Єдина щільна кнопка на полі: це кінцева дія екрана, і крізь неї нема
+   чого роздивлятись. */
 .playbtn {
   display: inline-flex;
   align-items: center;
@@ -393,191 +458,66 @@ html, body {
   height: 78px;
   padding: 0;
   border-radius: 50%;
-  background: #4ec86a;
-  border-top: 4px solid #86e79b;
-  border-left: 4px solid #86e79b;
-  border-right: 4px solid #2a8544;
-  border-bottom: 4px solid #2a8544;
-  box-shadow: 0 0 0 3px #0d0f13, 0 4px 12px rgba(0,0,0,.5);
+  background: var(--ok);
+  border: 1px solid var(--floatBorder);
+  box-shadow: var(--floatShadow);
   cursor: pointer;
 }
 .playbtn-spin {
   width: 30px;
   height: 30px;
-  stroke: #08210f;
+  stroke: var(--onOk);
   fill: none;
   stroke-width: 2.6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.playbtn-wait { font: 800 22px inherit; color: #08210f; }
-.playbtn:hover:not(:disabled) { background: #5cd97a; }
-.playbtn:active:not(:disabled) {
-  border-top-color: #2a8544;
-  border-left-color: #2a8544;
-  border-right-color: #86e79b;
-  border-bottom-color: #86e79b;
-}
+.playbtn-wait { font: 700 22px inherit; color: var(--onOk); }
+.playbtn:hover:not(:disabled) { background: var(--okHover); }
 .playbtn:disabled {
-  background: #5b6470;
-  border-top-color: #78828f;
-  border-left-color: #78828f;
-  border-right-color: #3a424e;
-  border-bottom-color: #3a424e;
+  background: var(--floatBg);
+  -webkit-backdrop-filter: var(--floatBlur);
+  backdrop-filter: var(--floatBlur);
   cursor: default;
 }
-.playbtn:disabled .playbtn-spin { stroke: #2a3038; }
-.playbtn:disabled .playbtn-wait { color: #2a3038; }
+.playbtn:disabled .playbtn-spin { stroke: var(--muted2); }
+.playbtn:disabled .playbtn-wait { color: var(--muted2); }
 
-/* ---- висувне меню-бургер ---- */
-.drawer-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  background: rgba(4,6,9,0);
-  pointer-events: none;
-  transition: background .22s ease;
-}
-.drawer-overlay.open {
-  background: rgba(4,6,9,.66);
-  pointer-events: auto;
-}
-.drawer {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 82%;
-  max-width: 300px;
-  overflow-y: auto;
-  background: #2c323b;
-  border-right: 4px solid #0d0f13;
-  padding: 16px;
-  transform: translateX(-100%);
-  transition: transform .22s ease;
-}
-.drawer.open { transform: translateX(0); }
-.drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.drawer-head h2 { font: 700 15px inherit; letter-spacing: .16em; color: #ffd34d; }
-.drawer-head .x {
-  background: none; border: 0; color: #b9c2ce; font: 700 18px inherit; cursor: pointer; padding: 4px 8px;
+/* Натискання — одним правилом на всі кнопки поля: на тачі ховера немає,
+   і без стану press кнопка взагалі не відповідає на дотик. */
+.playbtn:active:not(:disabled),
+.stepbtn:active:not(:disabled),
+.sidebtn:active:not(:disabled),
+.buybtn:active:not(:disabled) { scale: .92; }
+/* Вебв'ю без окремої властивості `scale` (до Chrome 104 / Safari 14.1)
+   інакше не показав би натискання взагалі. Тут transform вільний: ці
+   кнопки самі не їдуть — їх везе батьківський .control-core. */
+@supports not (scale: 1) {
+  .playbtn:active:not(:disabled),
+  .stepbtn:active:not(:disabled),
+  .speedbtn:active { transform: scale(.92); }
 }
 
-/* ---- профіль гравця у меню ---- */
-.drawer-profile {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 0 16px;
-  border-bottom: 2px solid #1b1f26;
-}
-.avatar {
-  width: 46px;
-  height: 46px;
-  flex: 0 0 auto;
-  background: #1b1f26;
-  border-top: 3px solid #77828f;
-  border-left: 3px solid #77828f;
-  border-right: 3px solid #333c47;
-  border-bottom: 3px solid #333c47;
-  outline: 2px solid #0d0f13;
-  image-rendering: pixelated;
-}
-/* Іконка профілю — чорний силует на прозорому: даємо світлу підкладку,
-   щоб читалась, і трохи повітря по краях. */
-.avatar-img {
-  object-fit: contain;
-  background: #c9d1da;
-  padding: 3px;
-}
-.avatar-fallback {
+/* Виграна скаттерами бонуска чекає на наступний прокрут. Стоїть на
+   місці pity-індикатора — це теж «що буде далі», і два таких написи
+   поруч сперечалися б за увагу. */
+.bonusnext {
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 800 20px ui-monospace, monospace;
-  color: #ffd34d;
-  text-shadow: 2px 2px 0 rgba(0,0,0,.7);
-}
-.drawer-profile-id {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-.pname {
-  font: 700 14px inherit;
-  color: #e6e9ee;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.phandle {
+  gap: 8px;
+  padding: 7px 14px;
+  background: var(--bonusBg);
+  border: 1px solid var(--bonus);
+  border-radius: var(--rPill);
+  box-shadow: var(--floatShadow);
+  color: var(--bonusText);
   font: 700 11px ui-monospace, monospace;
-  color: #b9c2ce;
+  letter-spacing: .04em;
+  text-align: center;
+  animation: bonusnext-pulse 1.6s ease-in-out infinite;
 }
-
-.drawer-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 0;
-  border-bottom: 2px solid #1b1f26;
-}
-.drawer-value { font: 700 17px ui-monospace, monospace; color: #ffd34d; }
-
-/* ---- перемикач валюти у меню ---- */
-.cur-switch {
-  display: flex;
-  gap: 6px;
-}
-.cur-opt {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 40px;
-  background: #1b1f26;
-  border-top: 3px solid #0d0f13;
-  border-left: 3px solid #0d0f13;
-  border-right: 3px solid #3a424e;
-  border-bottom: 3px solid #3a424e;
-  outline: 2px solid #0d0f13;
-  cursor: pointer;
-  opacity: .5;
-}
-.cur-opt.on {
-  background: #55606e;
-  border-top-color: #77828f;
-  border-left-color: #77828f;
-  border-right-color: #333c47;
-  border-bottom-color: #333c47;
-  opacity: 1;
-}
-.cur-opt .cur-ico { height: 26px; }
-.drawer-note {
-  margin-top: 10px;
-  padding: 8px 10px;
-  background: #3a2b52;
-  border-left: 3px solid #d9a3ff;
-  font: 700 12px inherit;
-  color: #d9a3ff;
-}
-.drawer-btn {
-  width: 100%;
-  margin-top: 16px;
-  font: 700 12px inherit;
-  letter-spacing: .08em;
-  color: #dfe4ea;
-  background: #55606e;
-  border-top: 3px solid #77828f;
-  border-left: 3px solid #77828f;
-  border-right: 3px solid #333c47;
-  border-bottom: 3px solid #333c47;
-  outline: 2px solid #0d0f13;
-  padding: 12px;
-  cursor: pointer;
-}
-.drawer-btn:hover { background: #64707f; }
+.bonusnext-stars { color: var(--bonus); letter-spacing: .12em; }
 
 /* ---------- CANVAS ---------- */
 canvas {
@@ -597,16 +537,193 @@ canvas {
   align-items: center;
   justify-content: center;
   text-align: center;
-  background: #0a0c10;
-  color: #b9c2ce;
-  font: 700 13px ui-monospace, monospace;
-  letter-spacing: .12em;
-  line-height: 1.9;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--muted);
+  font: 600 13px inherit;
+  line-height: 1.8;
   z-index: 10;
 }
-.loader code { color: #ffd34d; }
+.loader code { font-family: ui-monospace, monospace; color: var(--gold); }
 
-/* ---------- ПАНЕЛЬ ЧЕСНОСТІ ---------- */
+/* ============================================================
+   ВИСУВНЕ МЕНЮ
+   ============================================================ */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: transparent;
+  pointer-events: none;
+  transition: background var(--t-in) var(--ease);
+}
+.drawer-overlay.open {
+  background: var(--overlay);
+  pointer-events: auto;
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 82%;
+  max-width: 300px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  transform: translateX(-100%);
+  transition: transform var(--t-in) var(--ease);
+}
+.drawer.open { transform: translateX(0); }
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.drawer-head h2 {
+  font: 700 13px inherit;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Хрестик у меню й у вікнах — один і той самий. */
+.x {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--r1);
+  color: var(--muted);
+  font: 600 15px inherit;
+  cursor: pointer;
+  position: relative;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease),
+              transform var(--t-press) var(--ease);
+}
+.x::after { content: ''; position: absolute; inset: -7px; }
+.x:hover { background: var(--surface3); color: var(--text); }
+.x:active { transform: scale(.9); }
+
+/* ---- профіль гравця у меню ---- */
+.drawer-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.avatar {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+}
+/* Іконка профілю — чорний силует на прозорому: даємо світлу підкладку,
+   щоб читалась, і трохи повітря по краях. */
+.avatar-img {
+  object-fit: contain;
+  background: var(--text2);
+  padding: 3px;
+}
+.avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 18px inherit;
+  color: var(--gold);
+}
+.drawer-profile-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pname {
+  font: 600 14px inherit;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.phandle { font: 400 12px ui-monospace, monospace; color: var(--muted2); }
+
+.drawer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.drawer-value {
+  font: 700 16px ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+}
+
+/* ---- перемикач валюти у меню ---- */
+.cur-switch { display: flex; gap: 6px; }
+.cur-opt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 44px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  cursor: pointer;
+  opacity: .55;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              opacity var(--t) var(--ease), transform var(--t-press) var(--ease);
+}
+.cur-opt:hover { border-color: var(--border2); opacity: .8; }
+.cur-opt:active { transform: scale(.94); }
+.cur-opt.on {
+  background: var(--okBg);
+  border-color: var(--okBorder);
+  opacity: 1;
+}
+.cur-opt .cur-ico { height: 20px; }
+
+.drawer-btn {
+  width: 100%;
+  margin-top: 8px;
+  font: 600 13px inherit;
+  color: var(--text2);
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  padding: 12px;
+  cursor: pointer;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              color var(--t) var(--ease), transform var(--t-press) var(--ease);
+}
+.drawer-btn:hover { border-color: var(--border2); color: var(--text); }
+.drawer-btn:active { transform: scale(.98); }
+/* «Бонус бай» у меню — акцентна, це головна платна дія */
+.drawer-btn.accent {
+  color: var(--goldText);
+  background: var(--warnBg);
+  border-color: var(--warnBorder);
+}
+.drawer-btn.accent:hover { color: var(--gold); }
+
+/* ============================================================
+   ВІКНА
+
+   `.modal` — оболонка з затемненням, `.modalbox` — саме вікно.
+   Імена не міняти: presenter.ts дивиться на `.modal, .drawer-overlay.open`,
+   щоб зрозуміти, що поверх поля щось відкрито.
+   ============================================================ */
 .modal {
   position: fixed;
   inset: 0;
@@ -614,169 +731,286 @@ canvas {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  background: rgba(4,6,9,.78);
+  padding: 16px;
+  background: var(--overlay);
+  animation: overlay-in var(--t-in) var(--ease);
 }
 .modalbox {
-  width: min(680px, 100%);
-  max-height: 88vh;
+  width: min(560px, 100%);
+  /* Не 88vh: у телеграмі шторку тягають, і vh більший за видиму
+     частину — низ вікна (кнопка «Створити заявку») ішов під край. */
+  max-height: calc(var(--tg-viewport-stable-height, 100dvh) - 32px);
   overflow: auto;
-  background: #2c323b;
-  border-top: 4px solid #4d5764;
-  border-left: 4px solid #4d5764;
-  border-right: 4px solid #171b21;
-  border-bottom: 4px solid #171b21;
-  outline: 3px solid #0d0f13;
-  padding: 16px 18px 22px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  box-shadow: 0 16px 40px var(--shadow);
+  padding: 18px 20px 22px;
+  animation: modal-in var(--t-in) var(--ease);
 }
-.modalhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.modalbox h2 { font: 700 15px inherit; letter-spacing: .16em; color: #ffd34d; }
-.modalbox h3 { font: 700 12px inherit; letter-spacing: .16em; color: #b9c2ce; margin: 18px 0 8px; }
-.modalbox .x {
-  background: none; border: 0; color: #b9c2ce; font: 700 16px inherit; cursor: pointer; padding: 4px 8px;
-}
-.modalbox dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; align-items: baseline; }
-.modalbox dt { font: 700 10px inherit; letter-spacing: .1em; color: #8b95a3; }
-.modalbox dd { font-size: 11px; word-break: break-all; }
-.mono { font-family: ui-monospace, monospace; }
-.small { font-size: 10px; color: #9aa4b2; word-break: break-all; }
-.hint { font-size: 11px; line-height: 1.6; color: #8b95a3; margin: 10px 0; }
-.err { font-size: 11px; color: #ff6a5c; margin-bottom: 8px; }
+/* Закриття малюємо самі (Modal.tsx тримає вузол зайві ~180 мс):
+   інакше вікно зникає ривком, а шухляда поруч — плавно. */
+.modal.closing { animation: overlay-out var(--t) var(--ease) forwards; }
+.modal.closing .modalbox { animation: modal-out var(--t) var(--ease) forwards; }
 
-.row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+/* Діалог підтвердження (src/ui/Ask.tsx) — вужчий за звичайне вікно й
+   ЗАВЖДИ поверх нього: його викликають саме з відкритого вікна
+   («скасувати заявку?»), і опинитись під ним він не має права. */
+.modal.ask { z-index: 40; }
+.ask-box { width: min(380px, 100%); }
+.ask-box h2 { font: 700 16px inherit; line-height: 1.45; }
+.ask-actions { display: flex; gap: 10px; margin-top: 18px; }
+.ask-actions .btn.wide { flex: 1; margin-top: 0; }
+@media (max-width: 420px) {
+  /* на вузькому підтвердження стає нижнім, під великим пальцем */
+  .ask-actions { flex-direction: column-reverse; }
+  .ask-actions .btn { width: 100%; }
+}
+
+.modalhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.modalbox h2 { font: 700 17px inherit; color: var(--text); }
+.modalbox h3 {
+  font: 600 11px ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin: 20px 0 8px;
+}
+.modalbox section + section { margin-top: 4px; }
+
+.modalbox dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 12px;
+  align-items: baseline;
+}
+.modalbox dt {
+  font: 600 10px ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted2);
+}
+.modalbox dd { font-size: 12px; word-break: break-all; color: var(--text2); }
+
+.mono { font-family: ui-monospace, monospace; }
+.small { font-size: 11px; color: var(--muted2); word-break: break-all; }
+.hint { font-size: 12px; line-height: 1.6; color: var(--muted); margin: 8px 0; }
+.err {
+  font-size: 13px;
+  color: var(--dangerText);
+  background: var(--noBg);
+  border: 1px solid var(--noBorder);
+  border-radius: var(--r1);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+/* ---- поля вводу ---- */
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
 .input {
   flex: 1;
   min-width: 90px;
-  background: #1b1f26;
-  color: #e6e9ee;
-  font: 700 11px inherit;
-  border-top: 3px solid #0d0f13;
-  border-left: 3px solid #0d0f13;
-  border-right: 3px solid #3a424e;
-  border-bottom: 3px solid #3a424e;
-  padding: 8px 9px;
+  width: 100%;
+  font: 600 14px ui-monospace, monospace;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  padding: 10px 12px;
+  -webkit-user-select: text;
+  user-select: text;
+  transition: border-color var(--t) var(--ease);
 }
-.input.nn { flex: 0 0 84px; min-width: 0; }
+.input::placeholder { color: var(--muted2); }
+.input:hover { border-color: var(--border2); }
+.input:focus { outline: 2px solid var(--ok); outline-offset: -1px; }
+.input.nn { flex: 0 0 84px; min-width: 0; width: auto; }
+.input.big {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+/* Автозаповнення браузера перефарбовує поле у власний білий. Забиваємо
+   його тінню всередину: background-color для :-webkit-autofill не
+   застосовується взагалі, а inset-тінь — так. */
+.input:-webkit-autofill,
+.input:-webkit-autofill:hover,
+.input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg) inset;
+  caret-color: var(--text);
+}
+
+/* ---- кнопки у вікнах ---- */
 .btn {
-  font: 700 11px inherit;
-  letter-spacing: .08em;
-  color: #dfe4ea;
-  background: #6b6b6b;
-  border-top: 3px solid #8f8f8f;
-  border-left: 3px solid #8f8f8f;
-  border-right: 3px solid #3d3d3d;
-  border-bottom: 3px solid #3d3d3d;
-  outline-width: 2px;
-  padding: 8px 12px;
+  font: 600 13px inherit;
+  color: var(--text2);
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              color var(--t) var(--ease), transform var(--t-press) var(--ease);
 }
-.btn:hover:not(:disabled) { background: #7d7d7d; }
-.btn:disabled {
-  background: #5b6470;
-  color: #2a3038;
-  border-top-color: #78828f;
-  border-left-color: #78828f;
-  border-right-color: #3a424e;
-  border-bottom-color: #3a424e;
-  cursor: default;
+.btn:hover:not(:disabled) { border-color: var(--border2); color: var(--text); }
+.btn:active:not(:disabled) { transform: scale(.97); }
+.btn:disabled { opacity: .5; cursor: default; }
+/* Головна дія вікна — зелена й на всю ширину. */
+.btn.wide {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--onOk);
+  background: var(--ok);
+  border-color: transparent;
 }
-.btn.wide { width: 100%; margin-top: 6px; }
+.btn.wide:hover:not(:disabled) { background: var(--okHover); color: var(--onOk); }
+.btn.wide:disabled { background: var(--surface3); color: var(--muted2); border-color: var(--border); opacity: 1; }
 
-.series {
-  border-left: 3px solid #4d5764;
-  padding: 8px 0 8px 10px;
-  margin-bottom: 10px;
+/* Небезпечна дія (скасування заявки, відмова) — червона рамка, не
+   червона заливка: це все ще не головна дія вікна. */
+.btn.danger {
+  color: var(--dangerText);
+  background: var(--noBg);
+  border-color: var(--noBorder);
 }
-.check {
-  margin-top: 10px;
-  padding: 10px;
-  border-left: 4px solid #5ce08a;
-  background: #1b1f26;
-  font-size: 11px;
-  line-height: 1.7;
-}
-.check.bad { border-left-color: #ff6a5c; }
-.check .payout { margin-top: 6px; font: 700 15px inherit; color: #ffd34d; }
+.btn.danger:hover:not(:disabled) { background: var(--noBgHover); color: var(--dangerText); }
 
-/* Прапорець «гарантована кірка» у перевірці раунду: без нього кожен
-   восьмий раунд перераховується з іншою таблицею прокруту й не
-   сходиться, тому підпис навмисно довгий і пояснювальний. */
-.check-pity {
+/* ---- власний перемикач замість <input type="checkbox"> ----
+   Системний чекбокс малює браузер: у темній темі він світлий, у
+   кожному рушії свій і на тачі занадто дрібний. */
+.toggle {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  margin-top: 8px;
-  font-size: 10.5px;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  margin-top: 10px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: 400 11.5px inherit;
   line-height: 1.5;
-  color: #8b95a3;
   cursor: pointer;
 }
-.check-pity input { margin-top: 2px; flex: 0 0 auto; accent-color: #ffd34d; }
-
-/* ---- кнопка «+» біля балансу ---- */
-.deposit-btn {
-  width: 24px;
-  height: 24px;
+.toggle-track {
   flex: 0 0 auto;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin-top: 1px;
+  background: var(--surface3);
+  border: 1px solid var(--border2);
+  border-radius: var(--rPill);
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted2);
+  transition: transform var(--t) var(--ease), background var(--t) var(--ease);
+}
+.toggle[aria-checked='true'] { color: var(--text2); }
+.toggle[aria-checked='true'] .toggle-track { background: var(--okBg); border-color: var(--okBorder); }
+.toggle[aria-checked='true'] .toggle-track::after { transform: translateX(14px); background: var(--ok); }
+
+/* ============================================================
+   ПОПОВНЕННЯ Й ВИВЕДЕННЯ
+   ============================================================ */
+.dep-method {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 4px 0 16px;
+}
+.dep-method-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 11px ui-monospace, monospace;
+  color: var(--infoText);
+  border: 1px solid var(--infoBorder);
+  background: var(--infoBg);
+  border-radius: var(--rPill);
+  padding: 4px 12px;
+}
+.dep-method-note { font-size: 11px; color: var(--muted2); }
+
+.dep-label {
+  display: block;
+  font: 600 10px ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  margin: 14px 0 6px;
+}
+/* Підпис під полем, а не абзац над ним: пояснює вже введене й не
+   відсуває саме поле вниз. */
+.dep-sub {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted2);
+  margin-top: 6px;
+}
+
+/* Швидкі чипи ДОДАЮТЬ до суми, а не задають її — тому потрібен спосіб
+   скинути введене одним рухом, а не стирати цифри по одній. */
+.dep-field { position: relative; }
+.dep-field .input { padding-right: 44px; }
+.dep-clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  translate: 0 -50%;
+  width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font: 800 18px inherit;
-  line-height: 1;
-  color: #08210f;
-  background: #4ec86a;
-  border-top: 2px solid #86e79b;
-  border-left: 2px solid #86e79b;
-  border-right: 2px solid #2a8544;
-  border-bottom: 2px solid #2a8544;
-  outline: 1px solid #0d0f13;
+  background: none;
+  border: 0;
+  border-radius: var(--r1);
+  color: var(--muted2);
+  font: 600 13px inherit;
   cursor: pointer;
+  transition: color var(--t) var(--ease), background var(--t) var(--ease);
 }
-.deposit-btn:hover { background: #5cd97a; }
+.dep-clear:hover { color: var(--text); background: var(--surface3); }
 
-/* ---- депозит ---- */
-.dep-method {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 6px 0 16px;
-}
-.dep-method-badge {
-  font: 700 11px ui-monospace, monospace;
-  letter-spacing: .06em;
-  color: #57eede;
-  border: 1px solid #2c5a55;
-  background: #12241f;
-  border-radius: 999px;
-  padding: 3px 10px;
-}
-.dep-method-note { font-size: 10px; color: #8b95a3; }
-.dep-label {
-  display: block;
-  font: 700 10px ui-monospace, monospace;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  color: #8b95a3;
-  margin: 12px 0 6px;
-}
 .dep-chips { display: flex; gap: 8px; margin: 10px 0 4px; }
 .dep-chip {
   flex: 1;
-  font: 700 12px ui-monospace, monospace;
-  color: #dfe4ea;
-  background: #55606e;
-  border-top: 2px solid #77828f;
-  border-left: 2px solid #77828f;
-  border-right: 2px solid #333c47;
-  border-bottom: 2px solid #333c47;
-  outline: 1px solid #0d0f13;
-  padding: 8px 0;
+  font: 600 12px ui-monospace, monospace;
+  color: var(--text2);
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  padding: 9px 0;
   cursor: pointer;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              transform var(--t-press) var(--ease);
 }
-.dep-chip:hover { background: #64707f; }
-.dep-est { font-size: 11px; color: #8b95a3; margin: 10px 0; }
+.dep-chip:hover:not(:disabled) { border-color: var(--border2); }
+.dep-chip:active:not(:disabled) { transform: scale(.96); }
+.dep-chip:disabled { opacity: .4; cursor: default; }
 
 /* ---- вибір монети й мережі ----
-
    Мережі стоять сіткою з комісією на кожній: це єдине, чим вони
    відрізняються для гравця, і саме через неї він і вибирає. Іконку
    малюємо, якщо файл є; немає — лишається назва, і нічого не ламається. */
@@ -784,7 +1018,6 @@ canvas {
   width: 18px;
   height: 18px;
   object-fit: contain;
-  image-rendering: auto;
   flex: none;
 }
 .dep-tokens { display: flex; gap: 8px; }
@@ -794,20 +1027,22 @@ canvas {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  font: 700 12px ui-monospace, monospace;
-  letter-spacing: .04em;
-  color: #b9c2ce;
-  background: #2b323c;
-  border: 2px solid #3d4652;
-  outline: 1px solid #0d0f13;
-  padding: 9px 0;
+  font: 600 12px ui-monospace, monospace;
+  color: var(--text2);
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  padding: 10px 0;
   cursor: pointer;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              color var(--t) var(--ease), transform var(--t-press) var(--ease);
 }
-.dep-token:hover { background: #333b47; }
+.dep-token:hover { border-color: var(--border2); }
+.dep-token:active { transform: scale(.97); }
 .dep-token.on {
-  color: #0d0f13;
-  background: #57eede;
-  border-color: #8ff5ea;
+  color: var(--okText);
+  background: var(--okBg);
+  border-color: var(--okBorder);
 }
 
 .dep-nets {
@@ -821,18 +1056,22 @@ canvas {
   gap: 8px;
   text-align: left;
   font: 600 11.5px ui-monospace, monospace;
-  color: #dfe4ea;
-  background: #2b323c;
-  border: 2px solid #3d4652;
-  outline: 1px solid #0d0f13;
-  padding: 9px 10px;
+  color: var(--text2);
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  padding: 10px;
   cursor: pointer;
   overflow: hidden;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              color var(--t) var(--ease), transform var(--t-press) var(--ease);
 }
-.dep-net:hover { background: #333b47; }
+.dep-net:hover { border-color: var(--border2); }
+.dep-net:active { transform: scale(.98); }
 .dep-net.on {
-  border-color: #57eede;
-  background: #16302c;
+  color: var(--okText);
+  background: var(--okBg);
+  border-color: var(--okBorder);
 }
 .dep-net-name {
   flex: 1;
@@ -841,115 +1080,184 @@ canvas {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.dep-net-fee {
-  flex: none;
-  font-size: 10px;
-  color: #8b95a3;
-}
-.dep-net.on .dep-net-fee { color: #57eede; }
+.dep-net-fee { flex: none; font-size: 10px; color: var(--muted2); }
+.dep-net.on .dep-net-fee { color: var(--okText); }
 
-.dep-method-badge { display: inline-flex; align-items: center; gap: 6px; }
-
-/* Курс не приїхав з біржі — сума в заявці приблизна. Помітно, але не
-   червоною помилкою: заявка робоча, просто цифру варто уточнити. */
+/* Попередження, яке рятує гроші: один рядок, не абзац. Жовте, а не
+   червоне — заявка робоча, просто помилитись тут коштує дорого. */
 .dep-warn {
   margin: 10px 0;
-  padding: 9px 10px;
-  border-left: 4px solid #ffd34d;
-  background: #2a2417;
-  font-size: 11px;
-  line-height: 1.6;
-  color: #f0dca8;
+  padding: 9px 12px;
+  border: 1px solid var(--warnBorder);
+  border-left-width: 3px;
+  border-radius: 0 var(--r1) var(--r1) 0;
+  background: var(--warnBg);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--warnText);
 }
+.dep-warn b { color: var(--gold); }
 
-.dep-active .dep-hint {
-  font-size: 11.5px;
-  line-height: 1.6;
-  color: #b9c2ce;
-  margin: 4px 0 14px;
-}
 .dep-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 2px solid #1b1f26;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
 }
-.dep-k { font: 700 10px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; color: #8b95a3; }
-.dep-v { font: 700 14px ui-monospace, monospace; color: #e6e9ee; }
-.dep-v.big { font-size: 20px; color: #ffd34d; }
-.dep-v small { font-size: 11px; color: #8b95a3; }
+.dep-k {
+  font: 600 10px ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted2);
+}
+.dep-v {
+  font: 600 14px ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.dep-v.big { font-size: 20px; font-weight: 700; color: var(--gold); }
+.dep-v small { font-size: 11px; color: var(--muted2); }
+
 .dep-addr {
   display: flex;
   gap: 8px;
   align-items: stretch;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
 }
 .dep-addr code {
   flex: 1;
   min-width: 0;
   font: 600 12px ui-monospace, monospace;
-  color: #dfe4ea;
-  background: #0e1216;
-  border: 1px solid #2a333c;
-  border-radius: 6px;
-  padding: 9px 11px;
+  color: var(--text2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  padding: 10px 12px;
   word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
 }
+.dep-addr .btn { flex: 0 0 auto; }
+
 .dep-timer {
   text-align: center;
-  font: 800 16px ui-monospace, monospace;
-  letter-spacing: .1em;
-  color: #5ce08a;
-  padding: 10px 0 2px;
+  font: 700 16px ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .06em;
+  color: var(--okText);
+  padding: 14px 0 2px;
 }
-.dep-timer.urgent { color: #ff8a7d; }
+.dep-timer.urgent { color: var(--dangerText); }
 .dep-expired { text-align: center; }
-.dep-expired p { font: 700 13px inherit; color: #ff8a7d; margin: 8px 0; }
-.dep-expired .dep-hint { color: #8b95a3; }
+.dep-expired p { font: 600 14px inherit; color: var(--text); margin: 8px 0; }
+.dep-expired .hint { color: var(--muted); }
 
-.dep-hist { display: flex; flex-direction: column; gap: 4px; }
+.dep-hist { display: flex; flex-direction: column; gap: 6px; }
 .dep-hist-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 10px;
   font: 600 12px ui-monospace, monospace;
-  padding: 6px 8px;
-  background: #1b1f26;
-  border-left: 3px solid #4d5764;
+  padding: 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 0 var(--r1) var(--r1) 0;
 }
-.dep-hist-row.st-pending { border-left-color: #e0a53c; }
-.dep-hist-row.st-approved { border-left-color: #5ce08a; }
-.dep-hist-row.st-rejected { border-left-color: #ff6a5c; }
-.dep-hist-amt { color: #e6e9ee; }
-.dep-hist-st { color: #8b95a3; font-size: 11px; }
+.dep-hist-amt { color: var(--text); }
+.dep-hist-st { color: var(--muted2); font-size: 11px; }
 
 /* ---- історія платежів (окреме вікно) ---- */
 .pay-list { display: flex; flex-direction: column; gap: 8px; }
 .pay-item {
-  border: 1px solid #2a333c;
+  border: 1px solid var(--border);
   border-left-width: 3px;
-  border-radius: 6px;
-  padding: 10px 12px;
-  background: #12171c;
+  border-radius: 0 var(--r1) var(--r1) 0;
+  padding: 11px 13px;
+  background: var(--surface);
 }
-.pay-item.st-pending { border-left-color: #e0a53c; }
-.pay-item.st-approved { border-left-color: #5ce08a; }
-.pay-item.st-rejected { border-left-color: #ff6a5c; }
-.pay-item.st-expired { border-left-color: #4d5764; }
-.pay-item-top { display: flex; justify-content: space-between; align-items: baseline; }
-.pay-amt { font: 700 15px ui-monospace, monospace; color: #ffd34d; }
-.pay-status { font: 700 11px ui-monospace, monospace; color: #8b95a3; text-transform: uppercase; letter-spacing: .06em; }
-.pay-item-sub { display: flex; justify-content: space-between; font: 500 11px ui-monospace, monospace; color: #8b95a3; margin-top: 6px; }
-.pay-note { font-size: 11px; color: #b9c2ce; margin-top: 6px; padding-top: 6px; border-top: 1px solid #222a31; }
+.pay-item-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.pay-amt {
+  font: 700 15px ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+}
+.pay-status {
+  font: 600 11px ui-monospace, monospace;
+  color: var(--muted2);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.pay-item-sub {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font: 400 11px ui-monospace, monospace;
+  color: var(--muted2);
+  margin-top: 6px;
+}
+.pay-note {
+  font-size: 11.5px;
+  color: var(--text2);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
 
-/* Дизайн і так мобільний за замовчуванням (компактні панелі,
-   висувне меню для другорядного) — на ширших екранах просто
-   даємо головній кнопці й степеру трохи більше повітря. */
-@media (min-width: 560px) {
-  .playbtn { width: 88px; height: 88px; }
-  .playbtn-spin { width: 34px; height: 34px; }
-  .control-row { gap: 20px; }
+/* Статус заявки — колір лівої грані. Один набір на всі три списки
+   (активна історія депозиту, історія платежів, історія виводів). */
+.st-pending { border-left-color: var(--goldText); }
+/* Синій — «перевод найден, работает бот»: не очікування і не готово,
+   а третій стан, який з жодним не сплутати. */
+.st-processing { border-left-color: var(--infoText); }
+.st-approved { border-left-color: var(--ok); }
+.st-rejected { border-left-color: var(--danger); }
+.st-expired, .st-canceled { border-left-color: var(--border2); }
+
+/* ---- виведення коштів ---- */
+.wd-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0 4px;
+  font-size: 12px;
+}
+
+/* ============================================================
+   ПАНЕЛЬ ЧЕСНОСТІ
+   ============================================================ */
+.series {
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+}
+.check {
+  margin-top: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--okBorder);
+  border-left-width: 3px;
+  border-radius: 0 var(--r1) var(--r1) 0;
+  background: var(--okBg);
+  color: var(--okText);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+.check.bad {
+  border-color: var(--noBorder);
+  background: var(--noBg);
+  color: var(--dangerText);
+}
+.check .small { color: inherit; opacity: .75; }
+.check .payout {
+  margin-top: 6px;
+  font: 700 15px ui-monospace, monospace;
+  color: var(--gold);
 }
 
 /* ============================================================
@@ -967,20 +1275,20 @@ canvas {
 
 .buy-arrow {
   flex: 0 0 auto;
-  width: 38px;
-  height: 64px;
-  font: 700 26px ui-monospace, monospace;
+  width: 40px;
+  height: 72px;
+  font: 600 24px inherit;
   line-height: 1;
-  color: #dfe4ea;
-  background: #4a525d;
-  border-top: 3px solid #6b7480;
-  border-left: 3px solid #6b7480;
-  border-right: 3px solid #333c47;
-  border-bottom: 3px solid #333c47;
-  outline: 2px solid #0d0f13;
+  color: var(--text2);
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
   cursor: pointer;
+  transition: border-color var(--t) var(--ease), color var(--t) var(--ease),
+              opacity var(--t) var(--ease), transform var(--t-press) var(--ease);
 }
-.buy-arrow:hover:not(:disabled) { background: #58616e; }
+.buy-arrow:hover:not(:disabled) { border-color: var(--border2); color: var(--text); }
+.buy-arrow:active:not(:disabled) { transform: scale(.94); }
 .buy-arrow:disabled { opacity: .3; cursor: default; }
 
 .buy-slide {
@@ -990,114 +1298,130 @@ canvas {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 14px 10px;
-  background: #1b1f26;
-  border-top: 3px solid #0d0f13;
-  border-left: 3px solid #0d0f13;
-  border-right: 3px solid #3a424e;
-  border-bottom: 3px solid #3a424e;
+  padding: 16px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
 }
 .buy-pick {
-  width: 96px;
-  height: 96px;
+  width: 88px;
+  height: 88px;
   object-fit: contain;
   image-rendering: pixelated;
 }
 .buy-name {
-  font: 800 17px ui-monospace, monospace;
-  letter-spacing: .14em;
-  text-shadow: 2px 2px 0 rgba(0,0,0,.7);
+  font: 700 16px inherit;
+  letter-spacing: .08em;
 }
 .buy-stats {
   display: flex;
   gap: 16px;
-  font: 700 11px ui-monospace, monospace;
-  color: #8b95a3;
+  font: 400 11.5px ui-monospace, monospace;
+  color: var(--muted2);
 }
-.buy-stats b { color: #dfe4ea; }
-.buy-coef {
-  font: 700 10px ui-monospace, monospace;
-  letter-spacing: .1em;
-  color: #7a8595;
-}
+.buy-stats b { color: var(--text2); font-weight: 600; }
+.buy-coef { font: 400 10.5px ui-monospace, monospace; color: var(--muted2); }
 
 /* крапки-індикатор: активна підсвічена */
 .buy-dots {
   display: flex;
   justify-content: center;
-  gap: 8px;
-  margin: 12px 0 4px;
+  gap: 2px;
+  margin: 10px 0 0;
 }
+/* Крапка завбільшки 8px — це не тач-ціль. Тому кнопка прозора й
+   завширшки з палець, а видима крапка малюється всередині неї. */
 .buy-dot {
-  width: 9px;
-  height: 9px;
-  padding: 0;
-  border: 0;
-  background: #3a424e;
-  outline: 2px solid #0d0f13;
-  cursor: pointer;
-}
-.buy-dot.on { background: #ffd34d; }
-
-.buy-go { margin-top: 6px; }
-.buy-go:disabled { opacity: .45; cursor: default; }
-.buy-note { margin: 10px 0 0; text-align: center; }
-
-/* «БОНУС БАЙ» у меню — акцентна, це головна платна дія */
-.drawer-btn.accent {
-  background: #b8860b;
-  border-top-color: #e0ab2c;
-  border-left-color: #e0ab2c;
-  border-right-color: #6d4f06;
-  border-bottom-color: #6d4f06;
-  color: #fff8dc;
-}
-.drawer-btn.accent:hover { background: #c9951a; }
-
-/* ---- виведення коштів ---- */
-.wd-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 12px 0 4px;
-  font-size: 12px;
-}
-.wd-cancel {
-  margin-top: 14px;
-  background: #6b3a3a;
-  border-top-color: #8f5050;
-  border-left-color: #8f5050;
-  border-right-color: #3d2020;
-  border-bottom-color: #3d2020;
-}
-.wd-cancel:hover:not(:disabled) { background: #7d4444; }
-.dep-chip:disabled { opacity: .4; cursor: default; }
-
-
-/* Виграна скаттерами бонуска чекає на наступний прокрут. Стоїть на
-   місці pity-індикатора — це теж «що буде далі», і два таких написи
-   поруч сперечалися б за увагу. */
-.bonusnext {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border: 2px solid #ff9a3c;
-  background: #3a2210;
-  color: #ffc27a;
-  font: 800 10px ui-monospace, monospace;
-  letter-spacing: .08em;
-  text-align: center;
-  animation: bonusnext-pulse 1.6s ease-in-out infinite;
+  width: 30px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
 }
-.bonusnext-stars { color: #ff9a3c; letter-spacing: .12em; }
+.buy-dot::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border2);
+  transition: background var(--t) var(--ease), scale var(--t) var(--ease);
+}
+.buy-dot.on::before { background: var(--gold); scale: 1.3; }
+
+.buy-note { margin: 12px 0 0; text-align: center; }
+
+/* ============================================================
+   РУХ
+
+   Одна система, а не випадкові transition: поява (вікна, плашки),
+   стан (наведення, вибір) і натискання. Усе — на transform/opacity,
+   щоб анімація йшла в композиторі й не забирала кадри в канваса.
+   ============================================================ */
+@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes overlay-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(14px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes modal-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(8px) scale(.98); }
+}
+@keyframes status-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to   { opacity: 1; transform: translateX(-50%); }
+}
+/* Зміну числа треба помітити, не відриваючись від поля: короткий
+   поштовх плюс колір напрямку. Зелений — прийшло, червоний — пішло. */
+@keyframes bump-up {
+  0%   { transform: none; }
+  35%  { transform: translateY(-3px) scale(1.07); color: var(--okText); }
+  100% { transform: none; }
+}
+@keyframes bump-down {
+  0%   { transform: none; }
+  35%  { transform: translateY(2px) scale(.96); color: var(--dangerText); }
+  100% { transform: none; }
+}
+.bump { display: inline-flex; }
+.bump.up { animation: bump-up .42s var(--ease); }
+.bump.down { animation: bump-down .42s var(--ease); }
 
 @keyframes bonusnext-pulse {
-  0%, 100% { border-color: #ff9a3c; }
-  50%      { border-color: #ffd9a8; }
+  0%, 100% { border-color: var(--bonus); }
+  50%      { border-color: var(--bonusUp); }
 }
+
+/* Хто просив менше руху — тому лишається тільки те, що несе зміст. */
 @media (prefers-reduced-motion: reduce) {
-  .bonusnext { animation: none; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+  /* Виняток: панель під час розіграшу не їде, але згасає — інакше
+     кнопки просто зникнуть поверх живого логу. */
+  .bonusnext, .buybtn, .bet-readout, .control-core, .autobtn,
+  .stepbtn, .sidebtn, .playbtn {
+    transition: opacity .2s ease !important;
+  }
+  .controls.playing .bonusnext,
+  .controls.playing .buybtn,
+  .controls.playing .bet-readout,
+  .controls.playing .control-core,
+  .controls.playing .autobtn { transform: none; }
+  .bonusnext { animation: none !important; }
+}
+
+/* Дизайн і так мобільний за замовчуванням (компактні панелі,
+   висувне меню для другорядного) — на ширших екранах просто
+   даємо головній кнопці й степеру трохи більше повітря. */
+@media (min-width: 560px) {
+  .playbtn { width: 88px; height: 88px; }
+  .playbtn-spin { width: 34px; height: 34px; }
+  .control-row { gap: 20px; }
 }

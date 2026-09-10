@@ -208,4 +208,41 @@ export class PlayersService implements OnModuleInit {
     this.log.warn(`поповнення (${by}): ${telegramId} +${amount} -> ${rec.balance}`);
     return rec.balance;
   }
+
+  /* Обнулити баланс.
+
+     Не «списати скільки треба», а саме поставити нуль: інструмент для
+     випадку, коли гроші нараховані помилково або гравця спіймали на
+     зловживанні, і рахувати різницю руками — зайвий шанс помилитись.
+
+     Скільки саме зняли, повертаємо назад тому, хто кличе, і пишемо в
+     лог: обнулення необоротне, і слід від нього має лишитись. */
+  zeroBalance(telegramId: number, by = 'система'):
+  { balance: number; taken: number } | null {
+    const rec = this.players.get(telegramId);
+    if (!rec) return null;
+    const taken = rec.balance;
+    rec.balance = 0;
+    this.persist(rec);
+    this.log.warn(`обнулення (${by}): ${telegramId} -${taken} -> 0`);
+    return { balance: 0, taken };
+  }
+
+  /* Видалити гравця НАЗАВЖДИ.
+
+     Разом із ним зникають баланс, сид, nonce й історія раундів. Заявки
+     на депозит і виведення живуть в інших колекціях і лишаються: це
+     фінансові документи, і чистити їх заднім числом не можна — саме за
+     ними потім і розбирають, куди пішли гроші.
+
+     Зайде в гру знову — заведеться заново, з нуля й новим сидом. */
+  remove(telegramId: number, by = 'система'): boolean {
+    const rec = this.players.get(telegramId);
+    if (!rec) return false;
+    this.players.delete(telegramId);
+    this.store?.delete(telegramId).catch((e) =>
+      this.log.error(`не видалився гравець ${telegramId}: ${(e as Error).message}`));
+    this.log.warn(`видалення (${by}): ${telegramId}, баланс на момент ${rec.balance}`);
+    return true;
+  }
 }

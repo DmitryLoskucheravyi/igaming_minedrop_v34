@@ -38,6 +38,23 @@ export interface Env {
   /** Адреса гаманця USDT TRC20 для депозитів. Порожньо — депозит вимкнено. */
   usdtTrc20Address: string | null;
 
+  /* ---- ключі до блокчейн-API ----
+     Родина без ключа просто не слухається: спостерігач пропускає її і
+     каже про це в лог один раз, а не падає. Решта родин працює. */
+  chainKeys: {
+    /** tonapi.io — Bearer */
+    ton: string | null;
+    /** TronGrid — заголовок TRON-PRO-API-KEY */
+    tron: string | null;
+    /** Helius — api-key у запиті */
+    solana: string | null;
+    /** Ankr Advanced API — один ключ на всі шість EVM-мереж */
+    evm: string | null;
+  };
+
+  /** Як часто спостерігач обходить адреси, мс */
+  watcherPollMs: number;
+
   /* ---- CRM ----
      Обліковий запис адміна засівається в колекцію `admins` при старті.
      Пароль у БД лежить хешем (scrypt + сіль), у .env — відкритим:
@@ -101,6 +118,16 @@ export function loadEnv(): Env {
     devAuth: resolveDevAuth(isProd, botToken),
     mongoUrl,
     usdtTrc20Address: process.env.USDT_TRC20_ADDRESS?.trim() || null,
+    chainKeys: {
+      ton: process.env.TONAPI_KEY?.trim() || null,
+      tron: process.env.TRONGRID_KEY?.trim() || null,
+      solana: process.env.HELIUS_KEY?.trim() || null,
+      evm: process.env.ANKR_KEY?.trim() || null,
+    },
+    /* 20 секунд: TON і Solana фіналізуються за 20-30 с, тож частіше
+       безглуздо, а рідше — гравець дивиться на таймер і не розуміє,
+       чому переказ уже пройшов, а заявка все ще чекає. */
+    watcherPollMs: Math.max(5_000, Number(process.env.WATCHER_POLL_MS ?? 20_000)),
     adminLogin: process.env.ADMIN_LOGIN?.trim() || null,
     adminEmail: process.env.ADMIN_EMAIL?.trim() || null,
     // пароль не тримаємо: у ньому можуть бути значущі пробіли по краях

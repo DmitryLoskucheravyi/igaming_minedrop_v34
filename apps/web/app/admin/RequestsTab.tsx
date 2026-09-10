@@ -20,12 +20,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import s from './admin.module.css';
 import {
-  api, rub, when, STATUS_RU, WITHDRAW_STATUS_RU,
+  api, rub, when, statusLabel, WITHDRAW_STATUS_RU, type WatcherStatus,
   type AdminPayment, type AdminWithdraw,
 } from './lib';
 import { EMPTY_FILTER, Filters, passes, type ReqFilter } from './Filters';
 import { UnmatchedTab } from './UnmatchedTab';
-import { useAsk } from './Ask';
+import { useAsk } from '../../src/ui/Ask';
 
 function mmss(ms: number): string {
   const t = Math.max(0, Math.floor(ms / 1000));
@@ -42,6 +42,10 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const [fresh, setFresh] = useState(0);
+  /* Продакшн это или нет — знает только сервер. Спрашиваем один раз:
+     от этого зависит лишь наличие кнопки симуляции, и ошибка здесь
+     ничего не ломает (в проде сам запрос всё равно получит 403). */
+  const [dev, setDev] = useState(false);
   const ask = useAsk();
 
   /* Фільтри свої на кожну підвкладку: пошук по нашій адресі й по адресі
@@ -67,6 +71,13 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
   }, [onPending]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    api<WatcherStatus>('/watcher')
+      .then((w) => setDev(w.dev))
+      .catch(() => { /* не вышло — просто не показываем кнопку */ });
+  }, []);
+
   useEffect(() => {
     const p = setInterval(() => void load(), 10_000);
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -91,7 +102,10 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
     () => (wds ?? []).filter((w) => passes(wdFilter, w.amount, w.createdAt, w.address)),
     [wds, wdFilter]);
 
-  const depPending = (deps ?? []).filter((p) => p.status === 'pending').length;
+  /* В счётчике «ждёт решения» и то, что бот уже нашёл: это ровно те
+     заявки, где от админа что-то требуется (или вот-вот потребуется). */
+  const depPending = (deps ?? [])
+    .filter((p) => p.status === 'pending' || p.status === 'processing').length;
   const wdPending = (wds ?? []).filter((w) => w.status === 'pending').length;
 
   const sub = (id: Kind) => `${s.subTab} ${kind === id ? s.on : ''}`;
@@ -165,23 +179,45 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                       {p.addressLabel && <div className={s.dim}>{p.addressLabel}</div>}
                     </td>
                     <td data-label="Статус">
-                      <span className={`${s.badge} ${s[p.status]}`}>{STATUS_RU[p.status]}</span>
+                      <span className={`${s.badge} ${s[p.status]}`}>{statusLabel(p)}</span>
                       {p.status === 'pending' && (
                         <div className={`${s.timer} ${p.expiresAt - now < 5 * 60000 ? s.urgent : ''}`}>
                           {mmss(p.expiresAt - now)}
                         </div>
                       )}
+                      {/* Заявка в обработке: показываем, чего именно ждём.
+                          Пока сеть не подтвердила — кнопку жать рано, и
+                          видно почему, а не просто «нельзя». */}
+                      {p.status === 'processing' && !p.confirmedAt && (
+                        <div className={s.timer}>
+                          сеть подтверждает{p.confirmAt && p.confirmAt > now
+                            ? ` · ${mmss(p.confirmAt - now)}` : ''}
+                        </div>
+                      )}
                       {p.txid && (
                         <div className={s.paid} title={p.txid}>
                           перевод найден{p.paidAmount ? `: ${p.paidAmount}` : ''}
+                          {p.confirmedAt && ', подтверждён сетью'}
                         </div>
                       )}
                       {p.adminNote && <div className={s.dim}>{p.adminNote}</div>}
                     </td>
                     <td data-label="Создана">{when(p.createdAt)}</td>
                     <td data-label="">
-                      {p.status === 'pending' ? (
+                      {p.status === 'pending' || p.status === 'processing' ? (
                         <div className={s.rowActions}>
+                          {/* Только вне продакшна: подделать перевод и
+                              посмотреть, что сделает бот, не тратя
+                              реальных денег. Сервер запрещает это сам —
+                              кнопка лишь не мозолит глаза в проде. */}
+                          {dev && p.status === 'pending' && (
+                            <button type="button" className={s.btnSm}
+                              disabled={busyId !== null}
+                              title="Подделать перевод на сумму заявки (только dev)"
+                              onClick={() => void act(`/payments/${p.id}/simulate`)}>
+                              Симулировать
+                            </button>
+                          )}
                           <button type="button" className={`${s.btnSm} ${s.ok}`}
                             disabled={busyId !== null}
                             onClick={() => void act(`/payments/${p.id}/approve`)}>Зачислить</button>

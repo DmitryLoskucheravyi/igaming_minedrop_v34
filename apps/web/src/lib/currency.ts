@@ -32,10 +32,10 @@ export interface CurrencyMeta {
 }
 
 export const CURRENCY_META: Record<CurrencyCode, CurrencyMeta> = {
-  RUB:  { icon: '/rub.png',   mono: true,  label: 'Рубли',  decimals: 2 },
-  USDT: { icon: '/usdt.png',  mono: false, label: 'USDT',   decimals: 2 },
+  RUB:  { icon: '/coins/rub.png',   mono: true,  label: 'Рубли',  decimals: 2 },
+  USDT: { icon: '/coins/usdt.png',  mono: false, label: 'USDT',   decimals: 2 },
   // зірки цілі — дробові «89.3 ⭐» виглядають зламано
-  XTR:  { icon: '/зірка.png', mono: false, label: 'Звёзды', decimals: 0 },
+  XTR:  { icon: '/coins/xtr.png', mono: false, label: 'Звёзды', decimals: 0 },
 };
 
 const STORAGE_KEY = 'minedrop.currency';

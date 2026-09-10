@@ -3,7 +3,7 @@
 /* ============================================================
    ASK — свої підтвердження й поле вводу замість confirm() і prompt().
 
-   Нативні діалоги малює браузер: вони світлі в темній CRM, у різних
+   Нативні діалоги малює браузер: вони світлі в темній темі, у різних
    браузерах різні, у деяких (і в iOS-вебв'ю) їх узагалі можна вимкнути
    назавжди галочкою «більше не показувати» — і тоді підтвердження
    мовчки перестане працювати, а видалення почне спрацьовувати одразу.
@@ -11,10 +11,15 @@
 
    Обидва повертають Promise, тому виклик лишається таким самим
    послідовним, як був із confirm().
+
+   Живе в src/ui, а не в app/admin: тими самими діалогами користується
+   і гра (скасування заявки на виведення). Через це й розмітка на
+   глобальних класах globals.css, а не на модулі CRM — інакше половина
+   застосунку не змогла б їх імпортувати.
    ============================================================ */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import s from './admin.module.css';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useEscape, useFocusTrap } from './overlay';
 
 interface AskState {
   text: string;
@@ -58,6 +63,11 @@ export function useAsk() {
 function AskDialog({ state, onDone }: { state: AskState | null; onDone: () => void }) {
   const [value, setValue] = useState('');
   const field = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLFormElement>(null);
+  /* Свій id на кожен екземпляр: діалогів у застосунку кілька (гра, три
+     вкладки CRM), і фіксований "ask-input" дав би дубль id, щойно два
+     з них опиняться в DOM одночасно — label показував би на чужий. */
+  const inputId = useId();
 
   useEffect(() => {
     if (!state) return;
@@ -67,14 +77,15 @@ function AskDialog({ state, onDone }: { state: AskState | null; onDone: () => vo
     return () => clearTimeout(t);
   }, [state]);
 
-  useEffect(() => {
+  /* Esc — через спільний стек: діалог відкривають ПОВЕРХ вікна, і
+     власний слухач на document гасив би заодно й вікно під ним. */
+  const cancel = useCallback(() => {
     if (!state) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); state.resolve(null); onDone(); }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    state.resolve(null);
+    onDone();
   }, [state, onDone]);
+  useEscape(cancel, !!state);
+  useFocusTrap(box, !!state);
 
   if (!state) return null;
 
@@ -82,20 +93,24 @@ function AskDialog({ state, onDone }: { state: AskState | null; onDone: () => vo
   const ok = () => close(state.input ? value : true);
 
   return (
-    <div className={s.overlay} onMouseDown={(e) => { if (e.target === e.currentTarget) close(null); }}>
+    <div className="modal ask" onMouseDown={(e) => { if (e.target === e.currentTarget) close(null); }}>
       <form
-        className={s.modal}
+        className="modalbox ask-box"
+        ref={box}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
         onSubmit={(e) => { e.preventDefault(); ok(); }}
       >
         <h2>{state.text}</h2>
 
         {state.input && (
           <>
-            <label className={s.label} htmlFor="ask-input">{state.input.label}</label>
+            <label className="dep-label" htmlFor={inputId}>{state.input.label}</label>
             <input
-              id="ask-input"
+              id={inputId}
               ref={field}
-              className={s.input}
+              className="input"
               value={value}
               onChange={(e) => setValue(e.target.value)}
               maxLength={60}
@@ -103,11 +118,11 @@ function AskDialog({ state, onDone }: { state: AskState | null; onDone: () => vo
           </>
         )}
 
-        <div className={s.actions}>
-          <button type="submit" className={state.danger ? `${s.confirm} ${s.confirmDanger}` : s.confirm}>
+        <div className="ask-actions">
+          <button type="submit" className={'btn wide' + (state.danger ? ' danger' : '')}>
             {state.input ? 'Сохранить' : state.danger ? 'Да, продолжить' : 'Подтвердить'}
           </button>
-          <button type="button" className={s.cancel} onClick={() => close(null)}>Отмена</button>
+          <button type="button" className="btn" onClick={() => close(null)}>Отмена</button>
         </div>
       </form>
     </div>

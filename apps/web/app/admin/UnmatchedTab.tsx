@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import s from './admin.module.css';
 import { api, rub, when, UNMATCHED_RU, type AdminUnmatched } from './lib';
-import { useAsk } from './Ask';
+import { useAsk } from '../../src/ui/Ask';
 
 export function UnmatchedTab({ onFresh }: { onFresh?: (n: number) => void }) {
   const [rows, setRows] = useState<AdminUnmatched[] | null>(null);

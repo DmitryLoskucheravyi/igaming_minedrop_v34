@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { IsIn, IsInt, Max, Min } from 'class-validator';
 import { PaymentsService } from './payments.service';
 import { PlayersService } from '../players/players.service';
@@ -35,11 +35,22 @@ export class PaymentsController {
   me(@TgUser() user: TelegramUser) {
     this.players.findOrCreate(user);   // на випадок першого звернення
     const cfg = this.settings.getDeposits();
+    const rate = this.payments.currentRate();
     return {
       active: this.payments.activeFor(user.id) ?? null,
       history: this.payments.listForPlayer(user.id),
       minRub: PAYMENT_MIN_RUB,
       maxRub: PAYMENT_MAX_RUB,
+      /* Курс — щоб гравець бачив, скільки USDT вийде, ДО створення
+         заявки. Скасувати її можна лише поки переказу немає, тож
+         дізнаватись ціну постфактум — це дізнаватись запізно. */
+      rate: rate.rubPerUsdt,
+      rateApprox: rate.approx,
+      /* Годинник телефону буває збитий на години, а таймер заявки
+         рахується як expiresAt - now. Віддаємо СВІЙ час, щоб клієнт
+         міг порахувати поправку й не лякати людину «істекло» на
+         живій заявці. */
+      now: Date.now(),
       /* Що саме показувати у виборі — вирішує сервер: список увімкнених
          мереж міняється в CRM на ходу, і клієнт не має його вгадувати.
          Разом із мережею віддаємо комісію й доступні в ній токени. */
@@ -61,5 +72,13 @@ export class PaymentsController {
   create(@TgUser() user: TelegramUser, @Body() dto: CreateDto) {
     this.players.findOrCreate(user);
     return this.payments.create(user.id, dto.amount, dto.network, dto.token);
+  }
+
+  /* Зняти власну заявку, поки переказу ще немає. Без цього помилка в
+     сумі чи мережі коштувала півгодини очікування: друга заявка не
+     створюється, доки висить перша. */
+  @Post(':id/cancel')
+  cancel(@TgUser() user: TelegramUser, @Param('id') id: string) {
+    return this.payments.cancelByPlayer(user.id, id);
   }
 }

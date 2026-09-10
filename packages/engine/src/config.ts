@@ -441,15 +441,15 @@ export const CONFIG = {
    Міняєш будь-яку вагу — перераховуй payoutK через sim/final.ts. */
 export const TIERS: readonly Tier[] = [
   { id: 'lvl2', name: 'Wooden', weight: 9, hp: 100, dmg: 2, color: '#a9803f', color2: '#6b4a20',
-    skin: '/assets/pickaxes/lvl2.webp', skinMagic: '/assets/pickaxes/lvl2_magic.webp' },
+    skin: '/pickaxes/lvl2.webp', skinMagic: '/pickaxes/lvl2-magic.webp' },
   { id: 'lvl3', name: 'Stone', weight: 5, hp: 150, dmg: 3, color: '#a8a8a8', color2: '#6e6e6e',
-    skin: '/assets/pickaxes/lvl3.png', skinMagic: '/assets/pickaxes/lvl3_magic.webp' },
+    skin: '/pickaxes/lvl3.png', skinMagic: '/pickaxes/lvl3-magic.webp' },
   { id: 'lvl4', name: 'Iron', weight: 3, hp: 200, dmg: 4, color: '#e2e2e2', color2: '#9d9d9d',
-    skin: '/assets/pickaxes/lvl4.png', skinMagic: '/assets/pickaxes/lvl4_magic.gif' },
+    skin: '/pickaxes/lvl4.png', skinMagic: '/pickaxes/lvl4-magic.gif' },
   { id: 'gold', name: 'Golden', weight: 2, hp: 300, dmg: 5, color: '#f7d13a', color2: '#c79a10',
-    skin: '/assets/pickaxes/gold.png', skinMagic: '/assets/pickaxes/gold_magic.webp' },
+    skin: '/pickaxes/gold.png', skinMagic: '/pickaxes/gold-magic.webp' },
   { id: 'diamond', name: 'Diamond', weight: 1, hp: 400, dmg: 7, color: '#57eede', color2: '#22b7a8',
-    skin: '/assets/pickaxes/diamond.png', skinMagic: '/assets/pickaxes/diamond_magic.webp' },
+    skin: '/pickaxes/diamond.png', skinMagic: '/pickaxes/diamond-magic.webp' },
 ];
 
 export const TIER_BY_ID: Record<string, Tier> =
@@ -488,25 +488,25 @@ export const NOTHING = { id: 'none', name: 'Пусто', color: '#39424f', color
        не лікує; 3 фіксовані рівні множника кірки (×1.25 / ×1.5 / ×2.0).
 */
 export const BLOCKS: Record<BlockId, BlockDef> = {
-  grass:    { id: 'grass',    name: 'Дёрн',     kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#5f8a3f', skin: '/земля_трава.jpg' },
-  dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/assets/blocks/1.webp' },
-  stone:    { id: 'stone',    name: 'Камень',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/assets/blocks/2.png' },
+  grass:    { id: 'grass',    name: 'Дёрн',     kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#5f8a3f', skin: '/blocks/grass.jpg' },
+  dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/blocks/dirt.webp' },
+  stone:    { id: 'stone',    name: 'Камень',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/blocks/stone.png' },
   /* Вартості зрізано рівно на 15% (× 0.85) від попередніх цілих:
      1 / 5 / 10 / 15 / 20 / 45 / 130. Дроби лишені навмисно — округлення
      до цілих зіпсувало б саме те, заради чого правка робиться: вугілля
      з 0.85 стало б 1 (нуль зрізу), а редстоун із 12.75 -> 13 (-13%
      замість -15%). value ніде не показується як є: у виплату йде
      value * ставка / payoutK, тож дробове значення нічого не ламає. */
-  coal:     { id: 'coal',     name: 'Уголь',    kind: 'solid', tough: 2,  cost: 1, value: 0.85,  color: '#5f5f5f', skin: '/assets/blocks/5.webp' },
-  iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 4.25,  color: '#b98b6c', skin: '/assets/blocks/7.png' },
-  lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 8.5,   color: '#1f4fa8', skin: '/лазурит.jpg' },
-  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 5,  cost: 1, value: 12.75, color: '#b3241f', skin: '/редстоун.jpg' },
-  gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 17,    color: '#e8c33a', skin: '/assets/blocks/6.png' },
-  diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 38.25, color: '#4fe6e0', skin: '/assets/blocks/4.jpg' },
-  emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 110.5, color: '#16c96a', skin: '/ізумруд.jpg' },
-  tnt:      { id: 'tnt',      name: 'TNT',      kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/assets/blocks/3.jpg' },
-  magic:    { id: 'magic',    name: 'Верстак',           kind: 'upgrade', tough: 1, cost: 1, value: 0, color: '#c8a165', skin: '/assets/blocks/4.png' },
-  enchant:  { id: 'enchant',  name: 'Стол зачарования',  kind: 'magic', tough: 1, cost: 1, value: 0, color: '#6c3ec9', skin: '/чарстол.jpg' },
+  coal:     { id: 'coal',     name: 'Уголь',    kind: 'solid', tough: 2,  cost: 1, value: 0.85,  color: '#5f5f5f', skin: '/blocks/coal.webp' },
+  iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 4.25,  color: '#b98b6c', skin: '/blocks/iron.png' },
+  lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 8.5,   color: '#1f4fa8', skin: '/blocks/lapis.jpg' },
+  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 5,  cost: 1, value: 12.75, color: '#b3241f', skin: '/blocks/redstone.jpg' },
+  gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 17,    color: '#e8c33a', skin: '/blocks/gold.png' },
+  diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 38.25, color: '#4fe6e0', skin: '/blocks/diamond.jpg' },
+  emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 110.5, color: '#16c96a', skin: '/blocks/emerald.jpg' },
+  tnt:      { id: 'tnt',      name: 'TNT',      kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/blocks/tnt.jpg' },
+  magic:    { id: 'magic',    name: 'Верстак',           kind: 'upgrade', tough: 1, cost: 1, value: 0, color: '#c8a165', skin: '/blocks/magic.png' },
+  enchant:  { id: 'enchant',  name: 'Стол зачарования',  kind: 'magic', tough: 1, cost: 1, value: 0, color: '#6c3ec9', skin: '/blocks/enchant.jpg' },
   // блок-множник. Множник (x2, x3...) лежить у самій клітинці
   mult:     { id: 'mult',     name: 'Множитель', kind: 'mult',  tough: 1, cost: 1, value: 0,  color: '#c9a227' },
   /* Стрілка вгору — кірка більшає втричі (CONFIG.grow.scale) разом із

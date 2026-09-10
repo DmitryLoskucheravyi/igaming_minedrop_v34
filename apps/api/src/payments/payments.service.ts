@@ -10,7 +10,7 @@ import { PlayersService } from '../players/players.service';
 import { PaymentStore } from './payment-store';
 import {
   PAYMENT_MAX_RUB, PAYMENT_MIN_RUB, PAYMENT_TTL_MS,
-  type DepositAddress, type PaymentRecord,
+  type DepositAddress, type PaymentRecord, type ResolvedBy,
 } from './payment.types';
 import {
   NETWORKS, TOKENS, isValidAddress, type Family, type NetworkId, type TokenId,
@@ -43,6 +43,14 @@ export interface IncomingTx {
   /** час переказу в мережі, мс */
   at: number;
   memo?: string;
+  /* Переказ виглядає не так, як має, і сумі в ньому вірити не можна.
+
+     Єдиний випадок на сьогодні — знаки після коми з API не збіглися з
+     каталогом (networks.ts). Помилитись тут означало б зарахувати в
+     мільйон разів більше, тож такий переказ не зіставляється з
+     заявкою НІКОЛИ, а йде адміну з цим поясненням. Викидати його не
+     можна: гроші справжні й уже в нас. */
+  suspect?: string;
 }
 
 /* Одна адреса + усе, що спостерігачу треба знати, щоб її слухати.
@@ -62,6 +70,25 @@ export interface WatchTarget {
   /** монети, які приймаємо просто зараз */
   tokens: TokenId[];
 }
+
+/* «Заявка ще жива»: або чекає переказу, або переказ уже знайдено й
+   він дозріває в мережі. Скрізь, де раніше стояло `status === 'pending'`,
+   тепер має стояти це — інакше заявка в processing перестане займати
+   свій дріб суми, і наступна заявка на ту саму адресу отримає такий
+   самий «хвостик». Два відкриті рахунки з однаковою сумою на одній
+   адресі — це рівно те, від чого дріб і рятує. */
+const isOpen = (p: PaymentRecord): boolean =>
+  p.status === 'pending' || p.status === 'processing';
+
+/* Чи знайшлась заявка під переказ — і якщо ні, то чому саме.
+
+   Причина потрібна не для краси: вона лягає в рядок неопізнаного
+   платежу, і саме з неї адмін розуміє, що сталося, не лізучи в
+   блокчейн. «Не зіставилось» без пояснення означало б ручне
+   розслідування на кожен такий переказ. */
+type Match =
+  | { ok: true; rec: PaymentRecord }
+  | { ok: false; reason: string };
 
 export type IngestResult =
   | { kind: 'duplicate'; txid: string }
@@ -124,6 +151,10 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       this.log.error(`не зберіглась адреса ${a.id}: ${(e as Error).message}`));
   }
 
+  /* Протухає ТІЛЬКИ pending. Заявка в processing уже оплачена — гроші
+     в мережі, і зняти їх назад не можна; протухнути їй означало б
+     втратити переказ, який ми самі й знайшли. Вона висить, доки мережа
+     не підтвердить, а далі йде за режимом. */
   private sweep(): void {
     const now = Date.now();
     for (const p of this.items.values()) {
@@ -193,7 +224,9 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
      Режим off повертає порожньо: це і є «бот не слухає взагалі». */
   watchTargets(): WatchTarget[] {
     const cfg = this.settings.getDeposits();
-    if (cfg.mode === 'off') return [];
+    /* Два різні «ні»: рубильник вимкнено або боту не довіряють нічого.
+       Обидва означають одне — не ходити в мережу зовсім. */
+    if (!cfg.enabled || cfg.mode === 'off') return [];
 
     const tokens = cfg.tokens.filter((t) => !!TOKENS[t]);
     if (!tokens.length) return [];
@@ -228,7 +261,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private pendingByAddr(): Map<string, number> {
     const m = new Map<string, number>();
     for (const p of this.items.values()) {
-      if (p.status === 'pending' && p.addressId) m.set(p.addressId, (m.get(p.addressId) ?? 0) + 1);
+      if (isOpen(p) && p.addressId) m.set(p.addressId, (m.get(p.addressId) ?? 0) + 1);
     }
     return m;
   }
@@ -254,7 +287,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private freeMemoUnit(addressId: string, base: number): number {
     const taken = new Set<number>();
     for (const p of this.items.values()) {
-      if (p.status === 'pending' && p.addressId === addressId) {
+      if (isOpen(p) && p.addressId === addressId) {
         taken.add(Math.round((p.usdtAmount - Math.floor(p.usdtAmount * 100) / 100) / MEMO_UNIT));
       }
     }
@@ -265,10 +298,13 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
   /* ---- заявки ---- */
 
+  /* Активна заявка гравця. Заявка в processing теж активна: гравець
+     уже переказав, і показати йому «заявок немає» означало б спонукати
+     переказати вдруге. */
   activeFor(telegramId: number): PaymentRecord | undefined {
     this.sweep();
     return [...this.items.values()].find(
-      (p) => p.telegramId === telegramId && p.status === 'pending');
+      (p) => p.telegramId === telegramId && isOpen(p));
   }
 
   create(telegramId: number, amount: number, network: NetworkId, token: TokenId): PaymentRecord {
@@ -351,7 +387,10 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
   listAll(): PaymentRecord[] {
     this.sweep();
-    const rank = (s: PaymentRecord['status']) => (s === 'pending' ? 0 : 1);
+    /* Угорі те, що ще живе: спершу оплачені (їх чекає рішення), далі
+       ті, що чекають переказу, далі закриті. */
+    const rank = (s: PaymentRecord['status']) =>
+      s === 'processing' ? 0 : s === 'pending' ? 1 : 2;
     return [...this.items.values()].sort(
       (a, b) => rank(a.status) - rank(b.status) || b.createdAt - a.createdAt);
   }
@@ -364,37 +403,77 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
      topUp повертає null, гроші не зараховані, але заявка вже «погоджена»
      й повторно підтвердити її не можна: mustPending() кине конфлікт.
      Тобто помилка адміна тихо з'їдала депозит. */
-  approve(id: string): PaymentRecord {
-    const rec = this.mustPending(id);
+  approve(id: string, by: ResolvedBy = 'admin'): PaymentRecord {
+    const rec = this.mustOpen(id);
 
-    const balance = this.players.topUp(rec.telegramId, rec.amount);
+    const balance = this.players.topUp(rec.telegramId, rec.amount, by === 'bot' ? 'бот' : 'адмін');
     if (balance === null) {
       throw new NotFoundException(
         `Игрок ${rec.telegramId} не найден — баланс не начислен, заявка осталась в ожидании`);
     }
 
     rec.status = 'approved';
+    rec.resolvedBy = by;
     rec.resolvedAt = Date.now();
     this.persist(rec);
-    this.log.log(`заявку ${id} погоджено: ${rec.telegramId} +${rec.amount}₽ -> ${balance}`);
+    this.log.log(`заявку ${id} погоджено (${by}): ${rec.telegramId} +${rec.amount}₽ -> ${balance}`);
     return rec;
   }
 
-  reject(id: string, note?: string): PaymentRecord {
-    const rec = this.mustPending(id);
+  reject(id: string, note?: string, by: ResolvedBy = 'admin'): PaymentRecord {
+    const rec = this.mustOpen(id);
     rec.status = 'rejected';
+    rec.resolvedBy = by;
     rec.resolvedAt = Date.now();
     if (note) rec.adminNote = note.slice(0, 300);
     this.persist(rec);
-    this.log.warn(`заявку ${id} скасовано адміном`);
+    this.log.warn(`заявку ${id} скасовано (${by})${note ? `: ${note}` : ''}`);
     return rec;
   }
 
-  private mustPending(id: string): PaymentRecord {
+  /* Гравець знімає СВОЮ заявку сам.
+
+     Дві перевірки, і обидві принципові:
+
+     - заявка мусить належати тому, хто просить. Без цього будь-хто з
+       валідним telegram-логіном закривав би чужі заявки за id;
+     - тільки pending. У processing переказ уже знайдено в мережі:
+       скасувати таку заявку означає викинути гроші, які вже пішли, —
+       і саме тому тут ConflictException, а не мовчазний no-op. */
+  cancelByPlayer(telegramId: number, id: string): PaymentRecord {
+    this.sweep();
+    const rec = this.items.get(id);
+    if (!rec || rec.telegramId !== telegramId) {
+      throw new NotFoundException('Заявка не найдена');
+    }
+    if (rec.status === 'processing') {
+      throw new ConflictException(
+        'Перевод уже найден в сети — заявку отменить нельзя, дождитесь зачисления');
+    }
+    if (rec.status !== 'pending') {
+      throw new ConflictException(`Заявка уже в статусе «${rec.status}»`);
+    }
+    rec.status = 'canceled';
+    rec.resolvedAt = Date.now();
+    this.persist(rec);
+    this.log.log(`заявку ${id} знято гравцем (${telegramId}, ${rec.amount}₽)`);
+    return rec;
+  }
+
+  /** Курс, за яким порахується заявка, якщо створити її просто зараз. */
+  currentRate(): { rubPerUsdt: number; approx: boolean } {
+    return { rubPerUsdt: this.rates.snapshot().rubPerUsdt, approx: this.rates.isApproximate() };
+  }
+
+  /* Заявка, яку ще можна закрити. Це і pending, і processing: у другому
+     випадку бот уже знайшов переказ, але рішення все одно за адміном
+     (напівавтомат) — і кнопка «Зарахувати» має працювати, а не казати
+     «заявка вже в статусі processing». */
+  private mustOpen(id: string): PaymentRecord {
     this.sweep();
     const rec = this.items.get(id);
     if (!rec) throw new NotFoundException('Заявка не найдена');
-    if (rec.status !== 'pending') {
+    if (rec.status !== 'pending' && rec.status !== 'processing') {
       throw new ConflictException(`Заявка уже в статусе «${rec.status}»`);
     }
     return rec;
@@ -432,28 +511,61 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
      обидві мережі, і карати за це втратою грошей нема за що. Токен
      звіряємо: USDT і USDC — різні гроші.
 
-     У мережах із memo (TON) ідентифікує ТІЛЬКИ коментар. Відкату на суму
-     там немає, і це принципово: сума в таких заявках кругла, бо
-     хвостика їй не дописують, тож два гравці на однакову суму в ₽
-     отримають однакове число USDT. Зіставлення за сумою в такій мережі
-     зарахувало б переказ першій-ліпшій із них — тобто не тій людині.
-     Немає memo або він чужий — переказ іде в неопізнані, і адмін
-     розбереться сам. */
-  private findCandidate(tx: IncomingTx): PaymentRecord | undefined {
-    const family = NETWORKS[tx.network]?.family;
-    if (!family) return undefined;
+     У мережах із memo (TON) ЗНАЙТИ заявку можна тільки за коментарем, і
+     це принципово: сума в таких заявках кругла, бо хвостика їй не
+     дописують, тож два гравці на однакову суму в ₽ отримають однакове
+     число USDT. Пошук за сумою в такій мережі зарахував би переказ
+     першій-ліпшій із них — тобто не тій людині.
 
+     Але ЗНАЙТИ і ЗАРАХУВАТИ — різні речі. Коментар лише каже, чия це
+     заявка; чи вистачає грошей, він не каже нічого. Доки суму не
+     звіряли, будь-хто міг створити заявку на п'ять мільйонів, надіслати
+     0.01 USDT із її кодом — і отримати п'ять мільйонів на баланс.
+     Тому нижче стоїть окрема перевірка на недоплату. */
+  private findCandidate(tx: IncomingTx): Match {
+    const family = NETWORKS[tx.network]?.family;
+    if (!family) return { ok: false, reason: 'неизвестная сеть' };
+
+    /* Саме pending, а не isOpen: у заявці в processing переказ уже є,
+       і другий переказ на ту саму суму — це окремі гроші, які мають
+       піти в неопізнані, а не тихо злитись із першим. */
     const open = [...this.items.values()].filter((p) =>
       p.status === 'pending' &&
       p.token === tx.token &&
       NETWORKS[p.network]?.family === family &&
       PaymentsService.sameAddress(p.address, tx.to));
 
-    if (NETWORKS[tx.network].memo) {
-      const memo = tx.memo?.trim().toUpperCase();
-      return memo ? open.find((p) => p.memo?.toUpperCase() === memo) : undefined;
+    if (!NETWORKS[tx.network].memo) {
+      /* Тут сума І Є пошуком: унікальний дріб робить пару «адреса +
+         сума» вказівником на одну заявку. Не збіглась — не наша. */
+      const byAmount = open.find((p) => Math.abs(p.usdtAmount - tx.amount) < AMOUNT_EPS);
+      return byAmount
+        ? { ok: true, rec: byAmount }
+        : { ok: false, reason: 'сумма не совпала ни с одной заявкой' };
     }
-    return open.find((p) => Math.abs(p.usdtAmount - tx.amount) < AMOUNT_EPS);
+
+    const memo = tx.memo?.trim().toUpperCase();
+    if (!memo) return { ok: false, reason: 'перевод без комментария — опознать некому' };
+
+    const rec = open.find((p) => p.memo?.toUpperCase() === memo);
+    if (!rec) return { ok: false, reason: 'нет заявки с таким комментарием' };
+
+    /* НЕДОПЛАТА. Коментар правильний, але грошей менше, ніж просили.
+
+       Не відхиляємо й не зараховуємо: це справжні гроші конкретної
+       людини, яку ми навіть знаємо на ім'я. Кладемо адміну з точною
+       різницею — хай вирішить, зарахувати частково чи попросити
+       доплатити. Переплату, навпаки, пропускаємо: заявка закриється,
+       а надлишок буде видно в paidAmount. */
+    if (tx.amount < rec.usdtAmount - AMOUNT_EPS) {
+      const short = Math.round((rec.usdtAmount - tx.amount) * 10000) / 10000;
+      return {
+        ok: false,
+        reason: `недоплата по заявке ${rec.id.slice(0, 8)}: пришло ${tx.amount} ` +
+          `из ${rec.usdtAmount} ${tx.token.toUpperCase()} (не хватает ${short})`,
+      };
+    }
+    return { ok: true, rec };
   }
 
   private addUnmatched(tx: IncomingTx, reason: string): UnmatchedPayment {
@@ -485,15 +597,19 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     const mode = this.settings.getDeposits().mode;
     if (this.knownTxid(tx.txid)) return { kind: 'duplicate', txid: tx.txid };
 
-    const rec = this.findCandidate(tx);
-    if (!rec) {
-      const reason = !NETWORKS[tx.network]?.memo
-        ? 'сумма не совпала ни с одной заявкой'
-        : tx.memo
-          ? 'нет заявки с таким комментарием'
-          : 'перевод без комментария — опознать некому';
+    /* Підозрілий переказ не зіставляємо взагалі — навіть якщо сума
+       випадково зійшлася з якоюсь заявкою. Сума й є те, чому тут не
+       можна вірити. */
+    if (tx.suspect) {
+      return { kind: 'unmatched', row: this.addUnmatched(tx, tx.suspect), reason: tx.suspect };
+    }
+
+    const match = this.findCandidate(tx);
+    if (!match.ok) {
+      const { reason } = match;
       return { kind: 'unmatched', row: this.addUnmatched(tx, reason), reason };
     }
+    const rec = match.rec;
 
     if (mode === 'watch') {
       this.log.log(`[watch] зарахував би заявку ${rec.id}: ${rec.telegramId} ` +
@@ -501,26 +617,89 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       return { kind: 'matched', payment: rec, credited: false };
     }
 
+    /* Переказ знайдено — але грошей ще не чіпаємо НІ В ЯКОМУ режимі.
+
+       Індексатор бачить переказ, щойно той потрапив у блок, а блок ще
+       може відкотитись. Тому заявка йде в processing і лежить там
+       finalitySec цієї мережі; далі її добиває settleReady() — теж не
+       навмання, а перепитавши мережу, чи переказ на місці.
+
+       Одна й та сама пауза для авто й напівавтомата навмисно: у
+       напівавтоматі адмін теж не має тиснути «Зарахувати» на переказі,
+       який ще не встоявся. */
+    const now = Date.now();
+    rec.status = 'processing';
     rec.txid = tx.txid;
     rec.paidAmount = tx.amount;
-    rec.matchedAt = Date.now();
+    rec.matchedAt = now;
+    rec.confirmAt = now + (NETWORKS[tx.network]?.finalitySec ?? 60) * 1000;
+    this.persist(rec);
+    this.log.log(`заявка ${rec.id} -> в обробці ботом: ${tx.amount} ` +
+      `${tx.token.toUpperCase()}, txid ${tx.txid}, чекаємо мережу ` +
+      `${Math.round((rec.confirmAt - now) / 1000)} с`);
+    return { kind: 'matched', payment: rec, credited: false };
+  }
 
-    if (mode !== 'auto') {
+  /* ============================================================
+     ФІНАЛІЗАЦІЯ — друга половина роботи бота.
+
+     ingest() лише ловить переказ, ці два методи його добивають.
+     Розділено, бо між ними стоїть ЧАС: заявка мусить відлежати
+     finalitySec своєї мережі, і тільки потім її можна закривати.
+     ============================================================ */
+
+  /** Заявки, які відлежали своє й чекають перевірки в мережі. */
+  settleReady(): PaymentRecord[] {
+    const now = Date.now();
+    return [...this.items.values()].filter(
+      (p) => p.status === 'processing' && !!p.txid && !p.confirmedAt &&
+             (p.confirmAt ?? 0) <= now);
+  }
+
+  /* Рішення після перевірки переказу в мережі.
+
+     'ok'      — переказ на місці: авто зараховує, напівавтомат лишає
+                 заявку в processing із позначкою «підтверджено» і
+                 чекає кнопки адміна;
+     'gone'    — мережа ПРЯМО каже, що такого переказу немає (відкат
+                 блока). Єдиний випадок, коли бот відхиляє сам;
+     'unknown' — перепитати не вийшло (провайдер ліг, метод не
+                 підтримується). Тоді віримо індексатору, який цей
+                 переказ нам і показав, і рахуємо його підтвердженим:
+                 підвісити чужі гроші через нашу проблему зі зв'язком
+                 гірше, ніж зарахувати їх на секунду раніше. */
+  settle(id: string, verdict: 'ok' | 'gone' | 'unknown'): PaymentRecord | undefined {
+    const rec = this.items.get(id);
+    if (!rec || rec.status !== 'processing') return rec;
+
+    if (verdict === 'gone') {
+      this.log.error(`переказ заявки ${rec.id} зник із мережі (txid ${rec.txid}) — відхиляю`);
+      return this.reject(rec.id, 'перевод пропал из сети (откат блока)', 'bot');
+    }
+
+    rec.confirmedAt = Date.now();
+    if (verdict === 'unknown') {
+      this.log.warn(`переказ заявки ${rec.id} перепитати не вийшло — ` +
+        'вірю індексатору й вважаю підтвердженим');
+    }
+
+    if (this.settings.getDeposits().mode !== 'auto') {
       this.persist(rec);
-      this.log.log(`заявку ${rec.id} позначено оплаченою, чекає кнопки адміна`);
-      return { kind: 'matched', payment: rec, credited: false };
+      this.log.log(`заявка ${rec.id} підтверджена мережею, чекає кнопки адміна`);
+      return rec;
     }
 
     /* approve() сам поставить статус і збереже; якщо гравця немає —
-       кине, і заявка лишиться pending із проставленим txid. Тоді її
-       видно адміну як оплачену, але не зараховану, і він розбереться. */
+       кине, і заявка лишиться в processing із проставленим txid. Тоді
+       її видно адміну як оплачену, але не зараховану, і він розбереться
+       сам. Другого автоматичного заходу не буде: confirmedAt уже
+       стоїть, і settleReady() її більше не поверне. */
     try {
-      this.approve(rec.id);
-      return { kind: 'matched', payment: rec, credited: true };
+      return this.approve(rec.id, 'bot');
     } catch (e) {
       this.persist(rec);
       this.log.error(`авто-зарахування заявки ${rec.id} впало: ${(e as Error).message}`);
-      return { kind: 'matched', payment: rec, credited: false };
+      return rec;
     }
   }
 

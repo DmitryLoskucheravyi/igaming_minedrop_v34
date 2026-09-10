@@ -10,9 +10,11 @@ import { Modal } from './Modal';
 const rub = (n: number) => Math.round(n).toLocaleString('ru-RU');
 const STATUS_RU: Record<Payment['status'], string> = {
   pending: 'ожидает',
+  processing: 'перевод найден',
   approved: 'зачислено',
   rejected: 'отклонено',
   expired: 'истёк срок',
+  canceled: 'отменено',
 };
 const when = (ms: number) =>
   new Date(ms).toLocaleString('ru-RU',
@@ -29,7 +31,7 @@ export function PaymentsPanel({ onClose }: { onClose: () => void }) {
   }, []);
 
   return (
-    <Modal title="ИСТОРИЯ ПЛАТЕЖЕЙ" onClose={onClose}>
+    <Modal title="История платежей" onClose={onClose}>
       {err && <p className="err">{err}</p>}
       {!rows && !err && <p className="hint">Загрузка…</p>}
       {rows && rows.length === 0 && <p className="hint">Платежей ещё не было.</p>}

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import s from './admin.module.css';
 import { api, rub, when } from './lib';
+import { useAsk } from '../../src/ui/Ask';
+import { NumField } from '../../src/ui/NumField';
 
 interface Player {
   telegramId: number;
@@ -24,6 +26,10 @@ export function PlayersTab() {
   const [target, setTarget] = useState<Player | null>(null);
   const [amount, setAmount] = useState(0);
   const [saving, setSaving] = useState(false);
+  /* ID игроков, чья опасная кнопка сейчас в полёте. Множество, а не
+     флаг: обнуление одного не должно блокировать строку другого. */
+  const [rowBusy, setRowBusy] = useState<ReadonlySet<number>>(() => new Set());
+  const ask = useAsk();
 
   /* quiet — фонове оновлення: без «Загрузка…» на кнопці, щоб таблиця
      не блимала кожні 15 секунд. */
@@ -50,6 +56,47 @@ export function PlayersTab() {
     const t = setInterval(() => void load(true), 15_000);
     return () => clearInterval(t);
   }, [load, target]);
+
+  /* ---- необратимое ----
+
+     Обе кнопки временные: их просили, чтобы разгребать последствия
+     тестов и злоупотреблений вручную. Поэтому обе спрашивают
+     подтверждение своим текстом (не «уверены?», а что именно
+     произойдёт) и обе пишут в лог сервера, кто их нажал. */
+
+  const withRow = async (id: number, fn: () => Promise<void>) => {
+    if (rowBusy.has(id)) return;
+    setRowBusy((prev) => new Set(prev).add(id));
+    setErr(null);
+    try {
+      await fn();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRowBusy((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    }
+  };
+
+  const zeroBalance = (p: Player) => void withRow(p.telegramId, async () => {
+    const who = p.firstName || 'ID ' + p.telegramId;
+    if (!(await ask.confirm(
+      `Обнулить баланс: ${who}? Сейчас там ${rub(p.balance)} ₽ — вернуть их можно ` +
+      'только пополнением вручную.', true))) return;
+    const body = await api<{ telegramId: number; balance: number }>(
+      `/players/${p.telegramId}/zero`, { method: 'POST', body: '{}' });
+    setPlayers((prev) => prev?.map((x) =>
+      x.telegramId === body.telegramId ? { ...x, balance: body.balance } : x) ?? prev);
+  });
+
+  const removePlayer = (p: Player) => void withRow(p.telegramId, async () => {
+    const who = p.firstName || 'ID ' + p.telegramId;
+    if (!(await ask.confirm(
+      `Удалить игрока ${who} насовсем? Пропадут баланс (${rub(p.balance)} ₽), сид и ` +
+      'история раундов. Заявки на депозит и вывод останутся. Зайдёт снова — ' +
+      'заведётся с нуля.', true))) return;
+    await api(`/players/${p.telegramId}/delete`, { method: 'POST', body: '{}' });
+    setPlayers((prev) => prev?.filter((x) => x.telegramId !== p.telegramId) ?? prev);
+  });
 
   const submit = async () => {
     if (!target || amount < 1) return;
@@ -101,8 +148,15 @@ export function PlayersTab() {
                 <td className={s.num} data-label="Серия">{p.dryStreak}</td>
                 <td data-label="Был">{when(p.seenAt)}</td>
                 <td className={s.num} data-label="">
-                  <button type="button" className={s.addBtn} aria-label="Пополнить"
-                    onClick={() => { setTarget(p); setAmount(0); setErr(null); }}>+</button>
+                  <div className={s.rowActions}>
+                    <button type="button" className={s.addBtn} aria-label="Пополнить"
+                      onClick={() => { setTarget(p); setAmount(0); setErr(null); }}>+</button>
+                    <button type="button" className={s.btnSm} disabled={rowBusy.has(p.telegramId)}
+                      onClick={() => zeroBalance(p)}>Обнулить</button>
+                    <button type="button" className={`${s.btnSm} ${s.no}`}
+                      disabled={rowBusy.has(p.telegramId)}
+                      onClick={() => removePlayer(p)}>Удалить</button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -125,10 +179,8 @@ export function PlayersTab() {
               текущий баланс <b>{rub(target.balance)} ₽</b>
             </p>
             <label className={s.label} htmlFor="topup-amount">Сумма пополнения, ₽</label>
-            <input id="topup-amount" className={s.input} type="number" inputMode="numeric" min={1}
-              value={amount || ''}
-              onChange={(e) => setAmount(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
-              autoFocus />
+            <NumField id="topup-amount" className={s.input}
+              value={amount} onChange={setAmount} autoFocus />
             <div className={s.chips}>
               {QUICK.map((q) => (
                 <button key={q} type="button" className={s.chip} onClick={() => setAmount((a) => a + q)}>
@@ -149,6 +201,7 @@ export function PlayersTab() {
           </div>
         </div>
       )}
+      {ask.dialog}
     </>
   );
 }

@@ -75,7 +75,7 @@ export function FairPanel({ fair, onClose }: Props) {
   };
 
   return (
-    <Modal title="ЧЕСТНОСТЬ РАУНДА" onClose={onClose}>
+    <Modal title="Честность раунда" onClose={onClose}>
       {err && <p className="err">{err}</p>}
 
       <section>
@@ -88,8 +88,6 @@ export function FairPanel({ fair, onClose }: Props) {
         </dl>
         <p className="hint">
           Хеш опубликован до игры. Сид раунда = HMAC(serverSeed, «clientSeed:nonce»).
-          Пока серия открыта, serverSeed не показывается — иначе можно было бы
-          посчитать результат заранее.
         </p>
 
         <div className="row">
@@ -100,11 +98,11 @@ export function FairPanel({ fair, onClose }: Props) {
             placeholder="свой clientSeed"
             maxLength={128}
           />
-          <button type="button" className="btn" disabled={busy} onClick={saveSeed}>СОХРАНИТЬ</button>
+          <button type="button" className="btn" disabled={busy} onClick={saveSeed}>Сохранить</button>
         </div>
 
         <button type="button" className="btn wide" disabled={busy} onClick={rotate}>
-          РАСКРЫТЬ СИД И НАЧАТЬ НОВУЮ СЕРИЮ
+          Раскрыть сид и начать новую серию
         </button>
       </section>
 
@@ -164,16 +162,26 @@ function SeriesCheck({ series, onError }: {
       <div className="row">
         <input className="input mono nn" value={nonce} onChange={(e) => setNonce(e.target.value)} placeholder="nonce" />
         <input className="input mono nn" value={bet} onChange={(e) => setBet(e.target.value)} placeholder="ставка" />
-        <button type="button" className="btn" onClick={verifyRound}>ПЕРЕСЧИТАТЬ</button>
+        <button type="button" className="btn" onClick={verifyRound}>Пересчитать</button>
       </div>
 
-      <label className="check-pity">
-        <input type="checkbox" checked={pity} onChange={(e) => setPity(e.target.checked)} />
+      {/* Свій перемикач, а не <input type="checkbox">: системний малює
+          браузер — світлий у темній темі, у кожному рушії свій і надто
+          дрібний під палець. role="switch" лишає його перемикачем для
+          читалки з екрана. */}
+      <button
+        type="button"
+        className="toggle"
+        role="switch"
+        aria-checked={pity}
+        onClick={() => setPity((v) => !v)}
+      >
+        <span className="toggle-track" />
         <span>
-          гарантированная кирка (каждая {CONFIG.pity + 1}-я ставка после серии пустых) —
-          возьми это значение из самого раунда, иначе пересчёт не сойдётся
+          гарантированная кирка (каждая {CONFIG.pity + 1}-я ставка после пустых) —
+          значение бери из самого раунда
         </span>
-      </label>
+      </button>
 
       {check && (
         <div className={'check ' + (check.commitOk ? 'ok' : 'bad')}>

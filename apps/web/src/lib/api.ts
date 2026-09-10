@@ -54,7 +54,11 @@ export interface RevealedSeries {
   rounds: number;
 }
 
-export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+/* processing — перевод найден в сети и «отлёживается» до окончательного
+   подтверждения. Заявка в этом состоянии НЕ истекает: деньги уже
+   отправлены, и таймер к ним отношения не имеет. */
+export type PaymentStatus =
+  'pending' | 'processing' | 'approved' | 'rejected' | 'expired' | 'canceled';
 
 /* Мережі й токени описані на сервері (payments/networks.ts). Клієнт їх
    не перелічує: список увімкнених міняється в CRM на ходу й приходить
@@ -92,6 +96,12 @@ export interface Payment {
   status: PaymentStatus;
   createdAt: number;
   expiresAt: number;
+  /** сколько на самом деле пришло, в токене */
+  paidAmount?: number;
+  /** раньше этого момента перевод ещё не считается окончательным */
+  confirmAt?: number;
+  /** сеть признала перевод окончательным */
+  confirmedAt?: number;
   resolvedAt?: number;
   adminNote?: string;
 }
@@ -101,6 +111,12 @@ export interface PaymentsInfo {
   history: Payment[];
   minRub: number;
   maxRub: number;
+  /** курс ₽/USDT просто зараз — для оцінки суми ДО створення заявки */
+  rate: number;
+  /** курс приблизний (біржа не відповіла) */
+  rateApprox: boolean;
+  /** час сервера на момент відповіді — поправка до годинника телефону */
+  now: number;
   /** що зараз увімкнено адміном — саме це показуємо у виборі */
   networks: DepositNetwork[];
 }
@@ -228,6 +244,11 @@ export const Api = {
   },
 
   /** Створити заявку на депозит (₽). Повертає заявку з адресою й таймером. */
+  /** зняти власну заявку, поки переказу ще немає */
+  cancelPayment(id: string) {
+    return call<Payment>(`/payments/${id}/cancel`, { method: 'POST' });
+  },
+
   createPayment(amount: number, network: NetworkId, token: TokenId) {
     return call<Payment>('/payments', {
       method: 'POST',

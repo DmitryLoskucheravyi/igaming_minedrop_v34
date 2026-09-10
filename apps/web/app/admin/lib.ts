@@ -126,7 +126,14 @@ export interface AdminMe {
   lastLoginAt?: number;
 }
 
-export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'expired';
+/* processing — бот знайшов перевод и держит заявку, пока сеть его не
+   подтвердит. Заявка в этом состоянии НЕ истекает: деньги уже
+   переведены, и таймер к ним отношения не имеет. */
+export type PaymentStatus =
+  'pending' | 'processing' | 'approved' | 'rejected' | 'expired' | 'canceled';
+
+/** Кто закрыл заявку. Разбирая жалобу, надо видеть это сразу. */
+export type ResolvedBy = 'admin' | 'bot';
 
 /* Мережі описані на сервері (payments/networks.ts) і приходять
    каталогом. CRM їх не перелічує: додану мережу видно тут одразу,
@@ -149,6 +156,8 @@ export interface CatalogueNetwork {
 export type DepositMode = 'off' | 'watch' | 'semi' | 'auto';
 
 export interface DepositSettings {
+  /** рубильник слушателя — отдельно от режима */
+  enabled: boolean;
   mode: DepositMode;
   networks: string[];
   tokens: TokenId[];
@@ -218,6 +227,11 @@ export interface AdminPayment {
   addressId?: string;
   addressLabel: string | null;
   status: PaymentStatus;
+  resolvedBy?: ResolvedBy;
+  /** когда сеть признала перевод окончательным */
+  confirmedAt?: number;
+  /** раньше этого момента перевод ещё «отлёживается» в сети */
+  confirmAt?: number;
   createdAt: number;
   expiresAt: number;
   adminNote?: string;
@@ -286,7 +300,44 @@ export const UNMATCHED_RU: Record<UnmatchedStatus, string> = {
 
 export const STATUS_RU: Record<PaymentStatus, string> = {
   pending: 'ожидает',
+  processing: 'в обработке ботом',
   approved: 'зачислено',
   rejected: 'отклонено',
   expired: 'истёк',
+  canceled: 'отменена игроком',
 };
+
+/* Кто именно закрыл заявку — приписка к статусу, а не отдельная
+   колонка: важно это ровно в тот момент, когда смотришь на статус. */
+export const statusLabel = (p: { status: PaymentStatus; resolvedBy?: ResolvedBy }): string =>
+  (p.status === 'approved' || p.status === 'rejected') && p.resolvedBy
+    ? `${STATUS_RU[p.status]} ${p.resolvedBy === 'bot' ? 'ботом' : 'админом'}`
+    : STATUS_RU[p.status];
+
+/* ---- слушатель ----
+
+   Здоровье родины сетей: есть ли ключ, сколько адресов слушает, что
+   сломалось в последнем цикле. Считается на сервере тем же кодом,
+   который и ходит в сеть. */
+export interface FamilyHealth {
+  family: Family;
+  provider: string;
+  hasKey: boolean;
+  addresses: number;
+  lastRunAt?: number;
+  lastOkAt?: number;
+  lastError?: string;
+  seen: number;
+}
+
+export interface WatcherStatus {
+  /** не продакшн — в «Заявках» доступна кнопка симуляции перевода */
+  dev: boolean;
+  enabled: boolean;
+  mode: DepositMode;
+  running: boolean;
+  pollMs: number;
+  lastCycleAt?: number;
+  credited: number;
+  families: FamilyHealth[];
+}

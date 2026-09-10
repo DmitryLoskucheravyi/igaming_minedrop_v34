@@ -10,11 +10,13 @@ import { RatesModule } from './rates/rates.module';
 import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WithdrawModule } from './withdrawals/withdraw.module';
+import { WatcherModule } from './watcher/watcher.module';
 
 @Module({
   imports: [
     ConfigModule, DbModule, SettingsModule, RatesModule, TelegramModule, PlayersModule,
-    FairnessModule, RoundsModule, PaymentsModule, WithdrawModule, AdminModule,
+    FairnessModule, RoundsModule, PaymentsModule, WithdrawModule, WatcherModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

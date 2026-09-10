@@ -50,4 +50,12 @@ export class PlayerStore {
   async save(rec: PlayerRecord): Promise<void> {
     await this.col.replaceOne({ _id: rec.telegramId }, { ...rec }, { upsert: true });
   }
+
+  /* Видалення НАЗАВЖДИ. Разом із документом зникають баланс, сид,
+     nonce й історія раундів. Заявки на депозит і виведення лежать в
+     інших колекціях і не чіпаються — це фінансові документи, і
+     переписувати їх заднім числом не можна навіть тут. */
+  async delete(telegramId: number): Promise<void> {
+    await this.col.deleteOne({ _id: telegramId });
+  }
 }

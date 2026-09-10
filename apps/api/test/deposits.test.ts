@@ -21,6 +21,7 @@ const TON = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
 let balances = new Map<number, number>();
 
 const settings: DepositSettings = {
+  enabled: true,
   mode: 'auto',
   networks: ['ton', 'tron', 'bsc', 'polygon', 'base'],
   tokens: ['usdt', 'usdc'],
@@ -53,6 +54,17 @@ async function init(svc: PaymentsService): Promise<void> {
   svc.addAddress('ton', TON, 'test-ton');
 }
 
+/* Прокрутити очікування мережі.
+
+   Бот не зараховує переказ одразу: заявка лягає в processing і лежить
+   там finalitySec своєї мережі, а потім бот перепитує мережу, чи
+   переказ на місці. У тесті чекати ці секунди безглуздо, тож ставимо
+   строк у минуле й проганяємо ту саму фіналізацію, що й у бою. */
+function network(svc: PaymentsService, verdict: 'ok' | 'gone' | 'unknown' = 'ok'): void {
+  for (const p of svc.listAll()) if (p.status === 'processing') p.confirmAt = 0;
+  for (const rec of svc.settleReady()) svc.settle(rec.id, verdict);
+}
+
 const tx = (over: Partial<IncomingTx>): IncomingTx => ({
   network: 'polygon', token: 'usdt', to: EVM, from: '0xdead',
   amount: 0, txid: 'tx-' + Math.random().toString(36).slice(2), at: Date.now(),
@@ -79,8 +91,15 @@ async function main(): Promise<void> {
     const p = svc.create(1, 1000, 'polygon', 'usdt');
     const r = svc.ingest(tx({ amount: p.usdtAmount }));
     assert.equal(r.kind, 'matched');
-    assert.equal(r.kind === 'matched' && r.credited, true);
+    // переказ знайдено, але гроші чекають фіналізації мережі
+    assert.equal(svc.activeFor(1)?.status, 'processing');
+    assert.equal(balances.get(1), 0, 'до підтвердження мережею нічого не нараховано');
+
+    network(svc);
     assert.equal(balances.get(1), 1000);
+    const done = svc.listForPlayer(1)[0];
+    assert.equal(done.status, 'approved');
+    assert.equal(done.resolvedBy, 'bot', 'зарахував бот, а не адмін');
     await svc.onModuleDestroy();
   });
 
@@ -91,6 +110,7 @@ async function main(): Promise<void> {
     const b = svc.create(2, 1000, 'polygon', 'usdt');
     assert.notEqual(a.usdtAmount, b.usdtAmount, 'суми мали розійтись хвостиком');
     svc.ingest(tx({ amount: b.usdtAmount }));
+    network(svc);
     assert.equal(balances.get(2), 1000, 'мала зарахуватись друга заявка');
     assert.equal(balances.get(1), 0, 'перша лишається чекати');
     await svc.onModuleDestroy();
@@ -103,6 +123,7 @@ async function main(): Promise<void> {
     // гравець обрав Polygon, а відправив у Base — адреса та сама
     const r = svc.ingest(tx({ network: 'base', amount: p.usdtAmount }));
     assert.equal(r.kind, 'matched');
+    network(svc);
     assert.equal(balances.get(1), 1000);
     await svc.onModuleDestroy();
   });
@@ -134,6 +155,7 @@ async function main(): Promise<void> {
     const p = svc.create(1, 1000, 'polygon', 'usdt');
     const one = tx({ amount: p.usdtAmount, txid: 'same-tx' });
     svc.ingest(one);
+    network(svc);
     const again = svc.ingest(one);
     assert.equal(again.kind, 'duplicate');
     assert.equal(balances.get(1), 1000, 'баланс мав лишитись від першого разу');
@@ -165,7 +187,56 @@ async function main(): Promise<void> {
 
     const yes = svc.ingest(tx({ network: 'ton', to: TON, amount: p.usdtAmount, memo: p.memo }));
     assert.equal(yes.kind, 'matched');
+    network(svc);
     assert.equal(balances.get(1), 1000);
+    await svc.onModuleDestroy();
+  });
+
+  /* НЕДОПЛАТА В TON — те, чим коштувало б довіряти самому лише memo.
+
+     У мережах із коментарем заявку знаходять за ним, а не за сумою.
+     Доки на цьому все й закінчувалось, схема була така: створити
+     заявку на п'ять мільйонів, надіслати 0.01 USDT із її кодом — і
+     отримати п'ять мільйонів на баланс. Коментар каже, ЧИЯ заявка,
+     але нічого не каже про те, чи вистачає грошей. */
+  await test('TON: правильний memo з мізерною сумою НЕ зараховує заявку', async () => {
+    const svc = make('auto');
+    await init(svc);
+    const p = svc.create(1, 100_000, 'ton', 'usdt');
+    const r = svc.ingest(tx({ network: 'ton', to: TON, amount: 0.01, memo: p.memo }));
+
+    assert.equal(r.kind, 'unmatched');
+    network(svc);
+    assert.equal(balances.get(1), 0, 'за 0.01 USDT нічого не нараховано');
+    assert.match(svc.unmatchedList()[0].adminNote ?? '', /недоплата/,
+      'адмін має бачити, що це саме недоплата, а не чужий переказ');
+    assert.equal(svc.activeFor(1)?.status, 'pending', 'заявка лишається чекати');
+    await svc.onModuleDestroy();
+  });
+
+  await test('TON: точна сума з правильним memo зараховує', async () => {
+    const svc = make('auto');
+    await init(svc);
+    const p = svc.create(1, 1000, 'ton', 'usdt');
+    svc.ingest(tx({ network: 'ton', to: TON, amount: p.usdtAmount, memo: p.memo }));
+    network(svc);
+    assert.equal(balances.get(1), 1000);
+    await svc.onModuleDestroy();
+  });
+
+  /* Переплату, навпаки, пропускаємо: людину ми знаємо за коментарем,
+     заявку вона оплатила, а надлишок видно в paidAmount — там і
+     розбирати. Кидати такий переказ у неопізнані означало б тримати
+     гравця без балансу за те, що він заплатив БІЛЬШЕ. */
+  await test('TON: переплата з правильним memo зараховує заявку', async () => {
+    const svc = make('auto');
+    await init(svc);
+    const p = svc.create(1, 1000, 'ton', 'usdt');
+    svc.ingest(tx({ network: 'ton', to: TON, amount: p.usdtAmount + 3, memo: p.memo }));
+    network(svc);
+    assert.equal(balances.get(1), 1000, 'нараховано рівно суму заявки');
+    assert.equal(svc.listForPlayer(1)[0].paidAmount, p.usdtAmount + 3,
+      'надлишок має бути видно адміну');
     await svc.onModuleDestroy();
   });
 
@@ -188,12 +259,18 @@ async function main(): Promise<void> {
     svc.ingest(tx({ amount: p.usdtAmount, txid: 'semi-tx' }));
     assert.equal(balances.get(1), 0, 'у semi гроші не нараховуються самі');
     const live = svc.activeFor(1)!;
-    assert.equal(live.status, 'pending');
+    assert.equal(live.status, 'processing', 'заявка в обробці ботом');
     assert.equal(live.txid, 'semi-tx');
     assert.equal(live.paidAmount, p.usdtAmount);
+
+    network(svc);
+    assert.equal(balances.get(1), 0, 'мережа підтвердила, але гроші все одно за адміном');
+    assert.ok(svc.activeFor(1)?.confirmedAt, 'підтвердження мережі має бути видно адміну');
+
     // адмін тисне кнопку
     svc.approve(live.id);
     assert.equal(balances.get(1), 1000);
+    assert.equal(svc.listForPlayer(1)[0].resolvedBy, 'admin');
     await svc.onModuleDestroy();
   });
 
@@ -222,6 +299,122 @@ async function main(): Promise<void> {
     await init(svc);
     // у Base ми описали лише USDC
     assert.throws(() => svc.create(1, 1000, 'base', 'usdt'), /не принимается/);
+    await svc.onModuleDestroy();
+  });
+
+  console.log('\nБОТ: ОБРОБКА Й РІШЕННЯ\n');
+
+  await test('переказ пропав із мережі — бот відхиляє сам', async () => {
+    const svc = make('auto');
+    await init(svc);
+    const p = svc.create(1, 1000, 'polygon', 'usdt');
+    svc.ingest(tx({ amount: p.usdtAmount, txid: 'reorg-tx' }));
+
+    network(svc, 'gone');
+    const rec = svc.listForPlayer(1)[0];
+    assert.equal(rec.status, 'rejected');
+    assert.equal(rec.resolvedBy, 'bot', 'відхилив бот, а не адмін');
+    assert.equal(balances.get(1), 0, 'за зниклий переказ нічого не нараховано');
+    await svc.onModuleDestroy();
+  });
+
+  /* Не додзвонились до провайдера — це НАША проблема, а не гравцева.
+     Переказ нам показав індексатор, і підвішувати чужі гроші через
+     власний збій зв'язку не можна. */
+  await test('перепитати не вийшло — віримо індексатору й зараховуємо', async () => {
+    const svc = make('auto');
+    await init(svc);
+    const p = svc.create(1, 1000, 'polygon', 'usdt');
+    svc.ingest(tx({ amount: p.usdtAmount }));
+
+    network(svc, 'unknown');
+    assert.equal(balances.get(1), 1000);
+    assert.equal(svc.listForPlayer(1)[0].resolvedBy, 'bot');
+    await svc.onModuleDestroy();
+  });
+
+  await test('заявка в обробці ботом НЕ протухає', async () => {
+    const svc = make('semi');
+    await init(svc);
+    const p = svc.create(1, 1000, 'polygon', 'usdt');
+    svc.ingest(tx({ amount: p.usdtAmount }));
+
+    // тридцять хвилин минуло, поки мережа підтверджувала переказ
+    svc.listAll()[0].expiresAt = Date.now() - 1;
+    assert.equal(svc.activeFor(1)?.status, 'processing',
+      'гроші вже в мережі — протухнути заявка не має права');
+    await svc.onModuleDestroy();
+  });
+
+  /* Хвостик заявки, яку бот уже взяв у роботу, мусить лишатись зайнятим.
+
+     Інакше вийшло б так: гравець переказав, заявка пішла в processing і
+     звільнила свій дріб, наступний гравець отримав РІВНО ту саму суму —
+     і його переказ зіставився б навмання з однією з двох. Дріб для того
+     й існує, щоб такого не було. */
+  await test('дріб заявки в обробці лишається зайнятим для інших', async () => {
+    const svc = make('semi');
+    await init(svc);
+    const first = svc.create(1, 1000, 'polygon', 'usdt');
+    svc.ingest(tx({ amount: first.usdtAmount }));
+    assert.equal(svc.activeFor(1)?.status, 'processing');
+
+    const second = svc.create(2, 1000, 'polygon', 'usdt');
+    assert.notEqual(second.usdtAmount, first.usdtAmount,
+      'суми мали розійтись, хоч перша заявка вже й оплачена');
+    await svc.onModuleDestroy();
+  });
+
+  /* Той самий гравець переказав двічі на ту саму суму. Друга сотня
+     доларів — це ОКРЕМІ гроші, а не повтор першої: злити їх у ту саму
+     заявку означало б з'їсти другий переказ мовчки. */
+  await test('другий переказ на ту саму суму йде адміну, а не в ту саму заявку', async () => {
+    const svc = make('auto');
+    await init(svc);
+    const p = svc.create(1, 1000, 'polygon', 'usdt');
+    svc.ingest(tx({ amount: p.usdtAmount, txid: 'first-tx' }));
+
+    const again = svc.ingest(tx({ amount: p.usdtAmount, txid: 'second-tx' }));
+    assert.equal(again.kind, 'unmatched');
+    assert.equal(svc.unmatchedList().length, 1);
+
+    network(svc);
+    assert.equal(balances.get(1), 1000, 'зараховано рівно один переказ');
+    await svc.onModuleDestroy();
+  });
+
+  await test('поки заявка в обробці, другу створити не можна', async () => {
+    const svc = make('semi');
+    await init(svc);
+    const p = svc.create(1, 1000, 'polygon', 'usdt');
+    svc.ingest(tx({ amount: p.usdtAmount }));
+    assert.throws(() => svc.create(1, 500, 'polygon', 'usdt'), /активная заявка/,
+      'інакше гравець переказав би вдруге');
+    await svc.onModuleDestroy();
+  });
+
+  /* Знаки після коми з API не збіглися з каталогом. Сумі в такому
+     переказі вірити не можна взагалі — помилка на порядок тут означала
+     б зарахування в тисячі разів більше. */
+  await test('підозріла кількість знаків не зіставляється навіть при точній сумі', async () => {
+    const svc = make('auto');
+    await init(svc);
+    const p = svc.create(1, 1000, 'polygon', 'usdt');
+    const r = svc.ingest(tx({ amount: p.usdtAmount, suspect: '18 знаков вместо 6' }));
+    assert.equal(r.kind, 'unmatched');
+    assert.equal(balances.get(1), 0);
+    assert.equal(svc.unmatchedList()[0].adminNote, '18 знаков вместо 6');
+    await svc.onModuleDestroy();
+  });
+
+  await test('рубильник вимкнено — слухати нічого, хоч режим і авто', async () => {
+    const svc = make('auto');
+    await init(svc);
+    assert.ok(svc.watchTargets().length > 0, 'при увімкненому рубильнику адреси є');
+    settings.enabled = false;
+    assert.equal(svc.watchTargets().length, 0,
+      'вимкнений слухач не ходить у мережу зовсім');
+    settings.enabled = true;
     await svc.onModuleDestroy();
   });
 
@@ -299,6 +492,41 @@ async function main(): Promise<void> {
     const t = svc.watchTargets().find((x) => x.addressId === id)!;
     assert.equal(t.cursor, 'block-12345');
     assert.ok(t.scannedAt && t.scannedAt > 0);
+    await svc.onModuleDestroy();
+  });
+
+  /* ---- скасування заявки самим гравцем ----
+     Дві межі, і обидві про гроші: чужу заявку зняти не можна взагалі,
+     а свою — тільки поки переказу немає. Заявка в processing означає,
+     що кошти вже пішли в мережу, і «скасувати» її з телефона — це
+     викинути їх. */
+  await test('гравець знімає власну заявку, поки переказу немає', async () => {
+    const svc = make('manual');
+    await init(svc);
+    const p = svc.create(1, 1000, 'polygon', 'usdt');
+    const out = svc.cancelByPlayer(1, p.id);
+    assert.equal(out.status, 'canceled');
+    assert.equal(svc.activeFor(1), undefined, 'після скасування можна створити нову');
+    svc.create(1, 500, 'polygon', 'usdt');
+    await svc.onModuleDestroy();
+  });
+
+  await test('чужу заявку зняти не можна', async () => {
+    const svc = make('manual');
+    await init(svc);
+    const p = svc.create(1, 1000, 'polygon', 'usdt');
+    assert.throws(() => svc.cancelByPlayer(2, p.id), /не найдена/i);
+    assert.equal(svc.activeFor(1)?.id, p.id, 'заявка лишилась на місці');
+    await svc.onModuleDestroy();
+  });
+
+  await test('знайдений переказ скасувати не можна', async () => {
+    const svc = make('manual');
+    await init(svc);
+    const p = svc.create(1, 1000, 'polygon', 'usdt');
+    svc.ingest(tx({ amount: p.usdtAmount }));
+    assert.equal(svc.activeFor(1)?.status, 'processing');
+    assert.throws(() => svc.cancelByPlayer(1, p.id), /найден/i);
     await svc.onModuleDestroy();
   });
 

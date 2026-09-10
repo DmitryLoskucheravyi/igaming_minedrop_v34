@@ -19,6 +19,17 @@ import type { NetworkId, TokenId } from '../payments/networks';
 export type DepositMode = 'off' | 'watch' | 'semi' | 'auto';
 
 export interface DepositSettings {
+  /* ГОЛОВНИЙ рубильник слухача — окремо від режиму.
+
+     Режим відповідає на питання «наскільки довіряємо боту гроші»,
+     а це — на питання «чи він узагалі зараз бігає в мережу». Вимкнув:
+     перекази від цього нікуди не діваються, гравці так само створюють
+     заявки, просто зіставляє їх адмін руками, як робив досі.
+
+     Потрібно це для випадків, коли з ботом щось не так (провайдер ліг,
+     ключ протух, бачиш дивні зіставлення) — вимкнути його одним кліком
+     і спокійно розібратись, не зупиняючи прийом грошей. */
+  enabled: boolean;
   mode: DepositMode;
   /** які мережі показуємо гравцю й слухаємо */
   networks: NetworkId[];
@@ -29,6 +40,7 @@ export interface DepositSettings {
 /* Стартовий набір: звичний для СНД TRON плюс три дешеві. Решта мереж
    описана в networks.ts і вмикається перемикачем у CRM. */
 export const DEFAULT_DEPOSIT_SETTINGS: DepositSettings = {
+  enabled: false,
   mode: 'off',
   networks: ['ton', 'tron', 'bsc', 'polygon'],
   tokens: ['usdt', 'usdc'],

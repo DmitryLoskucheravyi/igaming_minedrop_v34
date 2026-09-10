@@ -40,19 +40,19 @@ class AssetStore {
       if (skin) p['block.' + key] = skin;
     }
     // вінок з рубінами; на ньому ж горить прогрес до гарантованої кірки
-    p['reelFrame'] = '/рамка2.png';
+    p['reelFrame'] = '/ui/reel-frame.png';
     // фон екрана рулетки — розтягується на весь кадр
-    p['slotBg'] = '/gray_dark_pixel_bg_square.png';
+    p['slotBg'] = '/ui/slot-bg.png';
     // зелений рубін — ним перекриваються червоні, коли кірка гарантована
-    p['gemGreen'] = '/green_ruby3.png';
+    p['gemGreen'] = '/ui/gem-green.png';
     /* Другий скін каменю. Це НЕ окремий блок: та сама клітинка stone,
        просто з глибиною вона частіше малюється булижником (див.
        Render.block). Тому шляху немає в BLOCKS — він тільки тут. */
-    p['block.stone2'] = '/камінь2.png';
+    p['block.stone2'] = '/blocks/stone2.png';
     /* Огорожа поля. Теж не блок у сітці: межа шахти й так існує у
        фізиці (Mine.get повертає WALL за краєм), огорожа лише робить
        її видимою. */
-    p['fence'] = '/стіна.jpg';
+    p['fence'] = '/ui/fence.jpg';
     return p;
   }
 
@@ -62,9 +62,9 @@ class AssetStore {
      переживає (малює лише текст). */
   private loadCurrencies(): Promise<void[]> {
     return Promise.all([
-      this.one('cur.RUB', '/rub.png'),
-      this.one('cur.USDT', '/usdt.png'),
-      this.one('cur.XTR', '/зірка.png'),
+      this.one('cur.RUB', '/coins/rub.png'),
+      this.one('cur.USDT', '/coins/usdt.png'),
+      this.one('cur.XTR', '/coins/xtr.png'),
     ]);
   }
 

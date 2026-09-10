@@ -71,6 +71,16 @@ interface Props {
   addressLabel: string;
 }
 
+/* Фільтр по сумі приймає дроби (сума заявки — не завжди ціле), тому
+   NumField тут не годиться: він цілочисловий. Але й type="number" не
+   повертаємо — у темі його стрілки чужі. Просто лишаємо все, крім цифр
+   і одного роздільника. */
+const onlyNum = (raw: string): string => {
+  const clean = raw.replace(',', '.').replace(/[^\d.]/g, '');
+  const [whole, ...rest] = clean.split('.');
+  return rest.length ? `${whole}.${rest.join('')}` : whole;
+};
+
 export function Filters({ value, onChange, shown, total, addressLabel }: Props) {
   const set = (patch: Partial<ReqFilter>) => onChange({ ...value, ...patch });
 
@@ -78,13 +88,13 @@ export function Filters({ value, onChange, shown, total, addressLabel }: Props) 
     <div className={s.filters}>
       <label className={s.filterField}>
         <span>Сумма ₽ от</span>
-        <input className={s.input} type="number" inputMode="numeric"
-          value={value.min} onChange={(e) => set({ min: e.target.value })} />
+        <input className={s.input} inputMode="decimal" autoComplete="off"
+          value={value.min} onChange={(e) => set({ min: onlyNum(e.target.value) })} />
       </label>
       <label className={s.filterField}>
         <span>до</span>
-        <input className={s.input} type="number" inputMode="numeric"
-          value={value.max} onChange={(e) => set({ max: e.target.value })} />
+        <input className={s.input} inputMode="decimal" autoComplete="off"
+          value={value.max} onChange={(e) => set({ max: onlyNum(e.target.value) })} />
       </label>
       <div className={s.filterField}>
         <span>Дата с</span>

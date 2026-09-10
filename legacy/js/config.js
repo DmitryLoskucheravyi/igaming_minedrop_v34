@@ -108,15 +108,15 @@ const TIERS = [
   { id:'copper',  name:'Copper',  weight:6.60, hp:100, dmg:1, color:'#c87f5a', color2:'#8c4f34',
     skin:'../apps/web/public/assets/pickaxes/copper.webp',  skinMagic:'../apps/web/public/assets/pickaxes/coper_magic.webp' },
   { id:'lvl2',    name:'Wooden',  weight:4.30, hp:160, dmg:2, color:'#a9803f', color2:'#6b4a20',
-    skin:'../apps/web/public/assets/pickaxes/lvl2.webp',    skinMagic:'../apps/web/public/assets/pickaxes/lvl2_magic.webp' },
+    skin:'../apps/web/public/pickaxes/lvl2.webp',    skinMagic:'../apps/web/public/pickaxes/lvl2-magic.webp' },
   { id:'lvl3',    name:'Stone',   weight:2.70, hp:220, dmg:3, color:'#a8a8a8', color2:'#6e6e6e',
-    skin:'../apps/web/public/assets/pickaxes/lvl3.png',     skinMagic:'../apps/web/public/assets/pickaxes/lvl3_magic.webp' },
+    skin:'../apps/web/public/pickaxes/lvl3.png',     skinMagic:'../apps/web/public/pickaxes/lvl3-magic.webp' },
   { id:'lvl4',    name:'Iron',    weight:1.60, hp:280, dmg:4, color:'#e2e2e2', color2:'#9d9d9d',
-    skin:'../apps/web/public/assets/pickaxes/lvl4.png',     skinMagic:'../apps/web/public/assets/pickaxes/lvl4_magic.gif' },
+    skin:'../apps/web/public/pickaxes/lvl4.png',     skinMagic:'../apps/web/public/pickaxes/lvl4-magic.gif' },
   { id:'gold',    name:'Golden',  weight:0.66, hp:340, dmg:5, color:'#f7d13a', color2:'#c79a10',
-    skin:'../apps/web/public/assets/pickaxes/gold.png',     skinMagic:'../apps/web/public/assets/pickaxes/gold_magic.webp' },
+    skin:'../apps/web/public/pickaxes/gold.png',     skinMagic:'../apps/web/public/pickaxes/gold-magic.webp' },
   { id:'diamond', name:'Diamond', weight:0.14, hp:400, dmg:7, color:'#57eede', color2:'#22b7a8',
-    skin:'../apps/web/public/assets/pickaxes/diamond.png',  skinMagic:'../apps/web/public/assets/pickaxes/diamond_magic.webp' }
+    skin:'../apps/web/public/pickaxes/diamond.png',  skinMagic:'../apps/web/public/pickaxes/diamond-magic.webp' }
 ];
 
 /* Порожній результат прокруту. Іконка поки просто «Х». */
@@ -131,14 +131,14 @@ const NOTHING = { id:'none', name:'Пусто', none:true, color:'#39424f', colo
    value — скільки грошей дає розколотий блок (множиться на ставку)
 */
 const BLOCKS = {
-  dirt:    { id:'dirt',    name:'Земля',   kind:'solid', tough: 1, cost: 3, value: 2, color:'#8a5f38', skin:'../apps/web/public/assets/blocks/1.webp' },
-  stone:   { id:'stone',   name:'Камінь',  kind:'solid', tough: 1, cost: 3, value: 4, color:'#8f8f8f', skin:'../apps/web/public/assets/blocks/2.png'  },
-  coal:    { id:'coal',    name:'Вугілля', kind:'solid', tough: 2, cost: 5, value: 8, color:'#5f5f5f', skin:'../apps/web/public/assets/blocks/5.webp' },
-  iron:    { id:'iron',    name:'Залізо',  kind:'solid', tough: 4, cost: 6, value:16, color:'#b98b6c', skin:'../apps/web/public/assets/blocks/7.png'  },
-  gold:    { id:'gold',    name:'Золото',  kind:'solid', tough: 6, cost: 7, value:30, color:'#e8c33a', skin:'../apps/web/public/assets/blocks/6.png'  },
-  diamond: { id:'diamond', name:'Алмаз',   kind:'solid', tough: 9, cost: 8, value:60, color:'#4fe6e0', skin:'../apps/web/public/assets/blocks/4.jpg'  },
-  tnt:     { id:'tnt',     name:'TNT',     kind:'tnt',   tough: 1, cost:20, value: 0, color:'#d63b1f', skin:'../apps/web/public/assets/blocks/3.jpg'  },
-  magic:   { id:'magic',   name:'Верстак', kind:'magic', tough: 1, cost: 0, value: 0, color:'#c8a165', skin:'../apps/web/public/assets/blocks/4.png'  },
+  dirt:    { id:'dirt',    name:'Земля',   kind:'solid', tough: 1, cost: 3, value: 2, color:'#8a5f38', skin:'../apps/web/public/blocks/dirt.webp' },
+  stone:   { id:'stone',   name:'Камінь',  kind:'solid', tough: 1, cost: 3, value: 4, color:'#8f8f8f', skin:'../apps/web/public/blocks/stone.png'  },
+  coal:    { id:'coal',    name:'Вугілля', kind:'solid', tough: 2, cost: 5, value: 8, color:'#5f5f5f', skin:'../apps/web/public/blocks/coal.webp' },
+  iron:    { id:'iron',    name:'Залізо',  kind:'solid', tough: 4, cost: 6, value:16, color:'#b98b6c', skin:'../apps/web/public/blocks/iron.png'  },
+  gold:    { id:'gold',    name:'Золото',  kind:'solid', tough: 6, cost: 7, value:30, color:'#e8c33a', skin:'../apps/web/public/blocks/gold.png'  },
+  diamond: { id:'diamond', name:'Алмаз',   kind:'solid', tough: 9, cost: 8, value:60, color:'#4fe6e0', skin:'../apps/web/public/blocks/diamond.jpg'  },
+  tnt:     { id:'tnt',     name:'TNT',     kind:'tnt',   tough: 1, cost:20, value: 0, color:'#d63b1f', skin:'../apps/web/public/blocks/tnt.jpg'  },
+  magic:   { id:'magic',   name:'Верстак', kind:'magic', tough: 1, cost: 0, value: 0, color:'#c8a165', skin:'../apps/web/public/blocks/magic.png'  },
   // блок-множник, тільки в бонусній шахті. Множник (x2, x3...) лежить у самій клітинці
   mult:    { id:'mult',    name:'Множник', kind:'mult',  tough: 1, cost: 2, value: 0, color:'#c9a227' }
 };

@@ -23,7 +23,10 @@
     "typecheck": "npm run typecheck -w @minedrop/engine && npm run typecheck -w @minedrop/api && npm run typecheck -w @minedrop/web",
     "sim:e2e": "npm run sim:e2e -w @minedrop/engine",
     "test:auth": "npm run test:auth -w @minedrop/api",
-    "tg": "node scripts/tg-dev.mjs"
+    "tg": "node scripts/tg-dev.mjs",
+    "test:deposits": "npm run test:deposits -w @minedrop/api",
+    "test:chains": "npm run test:chains -w @minedrop/api",
+    "test:icons": "npm run test:icons -w @minedrop/api"
   },
   "devDependencies": {
     "cloudflared": "^0.7.3",

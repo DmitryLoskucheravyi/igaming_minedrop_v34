@@ -72,85 +72,86 @@ export function BonusBuyModal({
   );
 
   return (
-    <Modal title="БОНУС БАЙ" onClose={onClose}>
-      <p className="hint buy-lead">
-        Покупка даёт выбранную кирку <b>гарантированно</b> — рулетка не крутится.
-        В бонусной шахте чаще попадаются блоки-множители и столы зачарования.
-      </p>
+    <Modal title="Бонус бай" onClose={onClose}>
+      {(close) => (
+        <>
+          <p className="hint buy-lead">
+            Кирка достаётся <b>гарантированно</b>, без рулетки.
+          </p>
 
-      <div
-        className="buy-slider"
-        onTouchStart={(e) => {
-          const t = e.touches[0];
-          touch.current = { x: t.clientX, y: t.clientY };
-        }}
-        onTouchEnd={(e) => {
-          const start = touch.current;
-          touch.current = null;
-          if (!start) return;
-          const t = e.changedTouches[0];
-          const dx = t.clientX - start.x;
-          // вертикальний рух — це скрол вікна, а не гортання слайдера
-          if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(t.clientY - start.y)) return;
-          go(dx < 0 ? i + 1 : i - 1);
-        }}
-      >
-        <button
-          type="button"
-          className="buy-arrow left"
-          onClick={() => go(i - 1)}
-          disabled={i === 0}
-          aria-label="Предыдущая кирка"
-        >
-          ‹
-        </button>
+          <div
+            className="buy-slider"
+            onTouchStart={(e) => {
+              const t = e.touches[0];
+              touch.current = { x: t.clientX, y: t.clientY };
+            }}
+            onTouchEnd={(e) => {
+              const start = touch.current;
+              touch.current = null;
+              if (!start) return;
+              const t = e.changedTouches[0];
+              const dx = t.clientX - start.x;
+              // вертикальний рух — це скрол вікна, а не гортання слайдера
+              if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(t.clientY - start.y)) return;
+              go(dx < 0 ? i + 1 : i - 1);
+            }}
+          >
+            <button
+              type="button"
+              className="buy-arrow"
+              onClick={() => go(i - 1)}
+              disabled={i === 0}
+              aria-label="Предыдущая кирка"
+            >
+              ‹
+            </button>
 
-        <div className="buy-slide">
-          <img className="buy-pick" src={tier.skin} alt="" />
-          <div className="buy-name" style={{ color: tier.color }}>{tier.name.toUpperCase()}</div>
-          <div className="buy-stats">
-            <span><b>{tier.hp}</b> прочность</span>
-            <span><b>{tier.dmg}</b> урон</span>
+            <div className="buy-slide">
+              <img className="buy-pick" src={tier.skin} alt="" />
+              <div className="buy-name" style={{ color: tier.color }}>{tier.name.toUpperCase()}</div>
+              <div className="buy-stats">
+                <span><b>{tier.hp}</b> прочность</span>
+                <span><b>{tier.dmg}</b> урон</span>
+              </div>
+              <div className="buy-coef">коэффициент цены &times;{buyPrices[tier.id] ?? '—'}</div>
+            </div>
+
+            <button
+              type="button"
+              className="buy-arrow"
+              onClick={() => go(i + 1)}
+              disabled={i === last}
+              aria-label="Следующая кирка"
+            >
+              ›
+            </button>
           </div>
-          <div className="buy-coef">коэффициент цены &times;{buyPrices[tier.id] ?? '—'}</div>
-        </div>
 
-        <button
-          type="button"
-          className="buy-arrow right"
-          onClick={() => go(i + 1)}
-          disabled={i === last}
-          aria-label="Следующая кирка"
-        >
-          ›
-        </button>
-      </div>
+          <div className="buy-dots">
+            {TIERS.map((t, n) => (
+              <button
+                key={t.id}
+                type="button"
+                className={'buy-dot' + (n === i ? ' on' : '')}
+                onClick={() => go(n)}
+                aria-label={t.name}
+                aria-current={n === i}
+              />
+            ))}
+          </div>
 
-      <div className="buy-dots">
-        {TIERS.map((t, n) => (
           <button
-            key={t.id}
             type="button"
-            className={'buy-dot' + (n === i ? ' on' : '')}
-            onClick={() => go(n)}
-            aria-label={t.name}
-            aria-current={n === i}
-          />
-        ))}
-      </div>
+            className="btn wide"
+            disabled={!enough || price <= 0}
+            onClick={() => { onBuy(tier.id as TierId); close(); }}
+          >
+            {enough ? <>Купить за {money(price)}</> : <>Не хватает {money(price - balance)}</>}
+          </button>
 
-      <button
-        type="button"
-        className="btn wide buy-go"
-        disabled={!enough || price <= 0}
-        onClick={() => onBuy(tier.id as TierId)}
-      >
-        {enough ? <>КУПИТЬ ЗА {money(price)}</> : <>НЕ ХВАТАЕТ {money(price - balance)}</>}
-      </button>
-
-      <p className="hint buy-note">
-        Ставка сейчас {money(bet)} — цена считается от неё. Меняешь ставку — меняется и цена.
-      </p>
+          <p className="hint buy-note">Цена от ставки {money(bet)}.</p>
+        </>
+      )}
     </Modal>
   );
 }

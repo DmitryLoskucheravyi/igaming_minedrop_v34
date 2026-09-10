@@ -25,9 +25,9 @@ import {
   api, when, FAMILY_RU, MODE_RU,
   type AdminAddress, type CatalogueNetwork, type DepositCatalogue,
   type DepositMode, type DepositSettings, type Family, type TokenId,
-  type WatchTarget,
+  type WatchTarget, type WatcherStatus,
 } from './lib';
-import { useAsk } from './Ask';
+import { useAsk } from '../../src/ui/Ask';
 
 const MODES: DepositMode[] = ['off', 'watch', 'semi', 'auto'];
 const FAMILIES: Family[] = ['evm', 'tron', 'ton', 'solana'];
@@ -51,6 +51,14 @@ interface Payload {
   catalogue: DepositCatalogue;
 }
 
+const ago = (ms?: number): string => {
+  if (!ms) return 'ещё не ходил';
+  const sec = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (sec < 60) return `${sec} с назад`;
+  if (sec < 3600) return `${Math.round(sec / 60)} мин назад`;
+  return when(ms);
+};
+
 export function CryptoIntake() {
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -65,11 +73,21 @@ export function CryptoIntake() {
      подвійний клік по ОДНІЙ і тій самій адресі не відправить два PATCH
      одночасно, а перемикання ІНШИХ адрес тим часом не блокується. */
   const [addrBusy, setAddrBusy] = useState<ReadonlySet<string>>(() => new Set());
+  /* Состояние слушателя приходит отдельным запросом: настройки меняет
+     админ, а это — то, что бот делает прямо сейчас, и обновляться оно
+     должно само, без нажатий. */
+  const [watcher, setWatcher] = useState<WatcherStatus | null>(null);
+  const [watcherBusy, setWatcherBusy] = useState(false);
   const ask = useAsk();
 
   const load = useCallback(async () => {
     try {
-      setData(await api<Payload>('/deposit-settings'));
+      const [payload, status] = await Promise.all([
+        api<Payload>('/deposit-settings'),
+        api<WatcherStatus>('/watcher'),
+      ]);
+      setData(payload);
+      setWatcher(status);
       setErr(null);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -77,6 +95,38 @@ export function CryptoIntake() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  /* Пока слушатель включён, экран освежается сам: ошибка провайдера и
+     «когда последний раз ходил» — это то, ради чего сюда и заходят. */
+  useEffect(() => {
+    if (!watcher?.enabled) return;
+    const t = setInterval(() => void load(), 15_000);
+    return () => clearInterval(t);
+  }, [load, watcher?.enabled]);
+
+  const toggleWatcher = async (enabled: boolean) => {
+    if (!enabled && !(await ask.confirm(
+      'Выключить слушателя? Переводы от этого никуда не денутся — ' +
+      'заявки просто снова придётся сверять руками.', true))) return;
+    setWatcherBusy(true); setErr(null);
+    try {
+      setWatcher(await api<WatcherStatus>('/watcher',
+        { method: 'POST', body: JSON.stringify({ enabled }) }));
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setWatcherBusy(false); }
+  };
+
+  const runWatcher = async () => {
+    setWatcherBusy(true); setErr(null);
+    try {
+      setWatcher(await api<WatcherStatus>('/watcher/run', { method: 'POST', body: '{}' }));
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally { setWatcherBusy(false); }
+  };
 
   /* Пишем сразу, без кнопки «Сохранить»: она создала бы состояние
      «на экране одно, на сервере другое». Экран обновляем оптимистично,
@@ -196,10 +246,10 @@ export function CryptoIntake() {
       {err && <div className={s.err}>{err}</div>}
 
       <div className={s.watchBar}>
-        <span className={`${s.badge} ${cfg.mode === 'off' ? s.expired : cfg.mode === 'auto' ? s.approved : s.pending}`}>
-          {MODE_RU[cfg.mode].name}
+        <span className={`${s.badge} ${!cfg.enabled ? s.expired : cfg.mode === 'off' ? s.expired : cfg.mode === 'auto' ? s.approved : s.pending}`}>
+          {cfg.enabled ? MODE_RU[cfg.mode].name : 'Слушатель выключен'}
         </span>
-        {cfg.mode === 'off' ? (
+        {!cfg.enabled || cfg.mode === 'off' ? (
           <span className={s.dim}>бот не слушает сеть — переводы придётся сверять руками</span>
         ) : (
           <span className={s.dim}>
@@ -208,6 +258,68 @@ export function CryptoIntake() {
           </span>
         )}
         <button type="button" className={s.refresh} onClick={() => void load()}>Обновить</button>
+      </div>
+
+      {/* ---- РУБИЛЬНИК ----
+
+          Отдельно от режима и выше него, потому что отвечает на другой
+          вопрос: не «насколько доверяем боту», а «бегает ли он вообще».
+          Выключать безопасно — приём денег от этого не останавливается,
+          и об этом сказано прямо здесь, а не в документации. */}
+      <h2 className={s.sect}>Слушатель переводов</h2>
+      <div className={s.watcher}>
+        <div className={s.watcherHead}>
+          <button
+            type="button"
+            className={`${s.switch} ${cfg.enabled ? s.on : ''}`}
+            disabled={watcherBusy}
+            onClick={() => void toggleWatcher(!cfg.enabled)}
+          >
+            <span className={s.switchDot} />
+            {cfg.enabled ? 'Включён' : 'Выключен'}
+          </button>
+          <span className={s.dim}>
+            {cfg.enabled
+              ? <>обходит адреса раз в <b>{Math.round((watcher?.pollMs ?? 20000) / 1000)} с</b>
+                  {' · '}последний обход {ago(watcher?.lastCycleAt)}
+                  {watcher?.running && ' · идёт прямо сейчас'}</>
+              : 'заявки приходят как обычно — сверять переводы придётся руками'}
+          </span>
+          {cfg.enabled && (
+            <button type="button" className={s.btnSm} disabled={watcherBusy}
+              onClick={() => void runWatcher()}>
+              {watcherBusy ? '…' : 'Проверить сейчас'}
+            </button>
+          )}
+        </div>
+
+        {watcher && (
+          <div className={s.famGrid}>
+            {watcher.families.map((f) => (
+              <div key={f.family} className={`${s.famCard} ${f.lastError ? s.bad : ''}`}>
+                <div className={s.famCardTop}>
+                  <span className={s.famName}>{FAMILY_RU[f.family]}</span>
+                  <span className={s.netFee}>{f.provider}</span>
+                </div>
+                {!f.hasKey ? (
+                  <span className={s.netBad}>нет ключа — не слушается</span>
+                ) : f.lastError ? (
+                  <span className={s.netBad} title={f.lastError}>{f.lastError}</span>
+                ) : (
+                  <span className={s.netOk}>
+                    {f.addresses ? `${f.addresses} адрес. · ` : 'адресов нет · '}
+                    {f.seen ? `${f.seen} перевод.` : 'переводов не было'}
+                  </span>
+                )}
+                <span className={s.dim}>{ago(f.lastOkAt ?? f.lastRunAt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {cfg.enabled && !!watcher?.credited && (
+          <div className={s.dim}>бот закрыл сам с момента запуска: <b>{watcher.credited}</b> заявок</div>
+        )}
       </div>
 
       <h2 className={s.sect}>Режим бота</h2>

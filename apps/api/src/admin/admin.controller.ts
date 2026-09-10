@@ -3,7 +3,7 @@ import {
   NotFoundException, Param, Post, Req, UseGuards,
 } from '@nestjs/common';
 import {
-  ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsOptional, IsString,
+  ArrayUnique, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString,
   Max, MaxLength, Min, MinLength,
 } from 'class-validator';
 import { PlayersService } from '../players/players.service';
@@ -15,6 +15,7 @@ import {
 import { SettingsService } from '../settings/settings.service';
 import type { DepositMode } from '../settings/settings.types';
 import { WithdrawService } from '../withdrawals/withdraw.service';
+import { WatcherService } from '../watcher/watcher.service';
 import { RateLimiter, clientKey } from '../common/rate-limit';
 
 /* Обмін токенів відкритий назовні, тому має свій ліміт. 60 на хвилину —
@@ -87,6 +88,9 @@ class CreditUnmatchedDto {
 }
 
 class DepositSettingsDto {
+  @IsOptional() @IsBoolean()
+  enabled?: boolean;
+
   @IsOptional() @IsIn(['off', 'watch', 'semi', 'auto'])
   mode?: DepositMode;
 
@@ -95,6 +99,19 @@ class DepositSettingsDto {
 
   @IsOptional() @IsArray() @ArrayUnique() @IsIn(Object.keys(TOKENS), { each: true })
   tokens?: TokenId[];
+}
+
+class WatcherDto {
+  @IsBoolean()
+  enabled!: boolean;
+}
+
+class SimulateDto {
+  /* Сума не обов'язкова: без неї симулюється РІВНО те, що просили в
+     заявці. Задав — перевіряєш недоплату чи переплату, не створюючи
+     нової заявки. */
+  @IsOptional() @IsNumber() @Min(0.000001)
+  amount?: number;
 }
 
 class PatchAddressDto {
@@ -113,6 +130,7 @@ export class AdminController {
     private readonly withdraw: WithdrawService,
     private readonly admins: AdminsService,
     private readonly settings: SettingsService,
+    private readonly watcher: WatcherService,
   ) {}
 
   /* ---- вхід ---- */
@@ -190,6 +208,38 @@ export class AdminController {
     return { telegramId, balance, added: dto.amount };
   }
 
+  /* Обнулити баланс.
+
+     Окремо від поповнення й з іншим підтвердженням у CRM: поповнення
+     помилкою на нуль не зробиш, а обнулення — необоротне. Повертаємо
+     СКІЛЬКИ зняли, щоб адмін бачив, що саме щойно сталося, а не лише
+     новий нуль. */
+  @Post('players/:id/zero')
+  @UseGuards(AdminAuthGuard)
+  zeroBalance(@Param('id') id: string, @CurrentAdmin() session: AdminSession) {
+    const telegramId = Number(id);
+    if (!Number.isInteger(telegramId)) throw new NotFoundException('Игрок не найден');
+    const res = this.players.zeroBalance(telegramId, session.login);
+    if (!res) throw new NotFoundException('Игрок не найден');
+    return { telegramId, balance: res.balance, taken: res.taken };
+  }
+
+  /* Видалити гравця НАЗАВЖДИ.
+
+     Заявки на депозит і виведення при цьому лишаються: за ними потім
+     і розбирають, куди пішли гроші, і зачищати їх разом із гравцем
+     означало б втратити слід платежу. */
+  @Post('players/:id/delete')
+  @UseGuards(AdminAuthGuard)
+  removePlayer(@Param('id') id: string, @CurrentAdmin() session: AdminSession) {
+    const telegramId = Number(id);
+    if (!Number.isInteger(telegramId)) throw new NotFoundException('Игрок не найден');
+    if (!this.players.remove(telegramId, session.login)) {
+      throw new NotFoundException('Игрок не найден');
+    }
+    return { telegramId, deleted: true };
+  }
+
   /* ---- заявки на депозит ---- */
 
   /** Усі заявки: pending зверху. Плюс ім'я/нік гравця й заголовок адреси. */
@@ -208,7 +258,10 @@ export class AdminController {
           : null,
       };
     });
-    const pending = payments.filter((p) => p.status === 'pending').length;
+    /* У лічильнику для бейджа і те, що бот уже знайшов: це рівно ті
+       заявки, де від адміна щось потрібно або ось-ось знадобиться. */
+    const pending = payments.filter(
+      (p) => p.status === 'pending' || p.status === 'processing').length;
     return { payments, count: payments.length, pending };
   }
 
@@ -330,6 +383,53 @@ export class AdminController {
   @UseGuards(AdminAuthGuard)
   async depSettingsSave(@Body() dto: DepositSettingsDto) {
     return { settings: await this.settings.setDeposits(dto) };
+  }
+
+  /* ---- слухач переказів ----
+
+     Рубильник окремо від режиму й окремо від мереж, бо відповідає на
+     інше питання: не «наскільки довіряємо боту», а «чи він узагалі
+     зараз бігає в мережу».
+
+     Вимкнути його безпечно: прийом грошей від цього не зупиняється.
+     Гравці так само створюють заявки, перекази так само приходять —
+     просто зіставляє їх адмін руками, як робив до появи бота. */
+
+  @Get('watcher')
+  @UseGuards(AdminAuthGuard)
+  watcherStatus() {
+    return this.watcher.status();
+  }
+
+  @Post('watcher')
+  @UseGuards(AdminAuthGuard)
+  async watcherToggle(@Body() dto: WatcherDto) {
+    await this.settings.setDeposits({ enabled: dto.enabled });
+    return this.watcher.status();
+  }
+
+  /* Позачерговий обхід. Потрібен рівно там, де чекати наступного циклу
+     незручно: гравець на лінії каже «я переказав», і треба подивитись
+     зараз, а не через двадцять секунд. */
+  @Post('watcher/run')
+  @UseGuards(AdminAuthGuard)
+  watcherRun() {
+    return this.watcher.runNow();
+  }
+
+  /* Підробити переказ, щоб перевірити ланцюжок без реальних грошей.
+
+     Тільки поза продакшном — це стереже сам WatcherService, і стереже
+     не налаштуванням, а NODE_ENV. Тут лишається перекласти його відмову
+     в 403, щоб CRM показала зрозуміле, а не «500». */
+  @Post('payments/:id/simulate')
+  @UseGuards(AdminAuthGuard)
+  simulate(@Param('id') id: string, @Body() dto: SimulateDto) {
+    try {
+      return this.watcher.simulate(id, dto.amount);
+    } catch (e) {
+      throw new HttpException((e as Error).message, HttpStatus.FORBIDDEN);
+    }
   }
 
   /* ---- неопізнані платежі ----

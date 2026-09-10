@@ -62,8 +62,8 @@ export interface NetworkDef {
 }
 
 export const TOKENS: Record<TokenId, { name: string; icon: string }> = {
-  usdt: { name: 'USDT', icon: '/tokens/usdt.png' },
-  usdc: { name: 'USDC', icon: '/tokens/usdc.png' },
+  usdt: { name: 'USDT', icon: '/coins/usdt.png' },
+  usdc: { name: 'USDC', icon: '/coins/usdc.png' },
 };
 
 /* Ethereum свідомо відсутній: комісія $2-20 на депозиті в кілька сотень
@@ -158,6 +158,26 @@ export const networkList = (): NetworkDef[] => Object.values(NETWORKS);
 /** Мережі, у яких цей токен узагалі існує. */
 export const networksForToken = (token: TokenId): NetworkDef[] =>
   networkList().filter((n) => !!n.tokens[token]);
+
+/* Знайти монету за адресою контракту.
+
+   Саме цим спостерігач відрізняє наш переказ від чужого: на нашу
+   адресу може прийти будь-який токен, включно зі скам-монетами, які
+   розсилають пачками. Контракт немає в каталозі — це не наші гроші. */
+export const tokenByContract = (
+  network: NetworkId,
+  contract: string,
+): { id: TokenId; def: TokenOnNetwork } | undefined => {
+  const net = NETWORKS[network];
+  if (!net) return undefined;
+  const want = contract.trim().toLowerCase();
+  for (const [id, def] of Object.entries(net.tokens)) {
+    if (def && def.contract.toLowerCase() === want) {
+      return { id: id as TokenId, def };
+    }
+  }
+  return undefined;
+};
 
 export const isNetwork = (v: string): v is NetworkId => v in NETWORKS;
 export const isToken = (v: string): v is TokenId => v in TOKENS;

@@ -26,6 +26,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TierId } from '@minedrop/engine';
 import { Presenter, type HudState } from '../game/presenter';
+import { Api } from '../lib/api';
 import {
   CURRENCIES, CURRENCY_META, FALLBACK_RATES, fmtAmount, fmtWhole,
   loadCurrency, saveCurrency, type CurrencyCode, type Rates,
@@ -64,15 +65,50 @@ const EMPTY: HudState = {
    нижня панель кнопок їде вниз, звільняючи місце під живий лог. */
 const PLAYING_STATES: HudState['state'][] = ['SPIN', 'RISE', 'RUNNING', 'DROPDONE'];
 
+/* Зміна суми має бути помітною, не відриваючи погляд від поля: число
+   коротко штовхається й підсвічується напрямком (прийшло / пішло).
+   Скільки клас живе на вузлі — стільки й триває анімація в CSS. */
+const BUMP_MS = 460;
+
+function useBump(value: number): string {
+  const prev = useRef(value);
+  const [dir, setDir] = useState('');
+
+  useEffect(() => {
+    if (value === prev.current) return;
+    const next = value > prev.current ? ' up' : ' down';
+    prev.current = value;
+
+    /* Спершу знімаємо клас на один кадр. Поставити той самий ' up'
+       удруге недостатньо: React не ререндерить однакове значення, а
+       якби й ререндерив — computed animation-name не змінюється, і
+       браузер анімацію не перезапускає. Два виграші поспіль швидше
+       за BUMP_MS другий раз проходили б мовчки. */
+    setDir('');
+    let off: ReturnType<typeof setTimeout> | null = null;
+    const raf = requestAnimationFrame(() => {
+      setDir(next);
+      off = setTimeout(() => setDir(''), BUMP_MS);
+    });
+    return () => { cancelAnimationFrame(raf); if (off) clearTimeout(off); };
+  }, [value]);
+
+  return dir;
+}
+
 /* Сума + іконка валюти. whole — велика сума (баланс, ставка): у рублях
-   ціле; дрібна (напр. частина виграшу) — з дробом. */
-function Money({ rub, currency, rates, whole }: {
-  rub: number; currency: CurrencyCode; rates: Rates; whole?: boolean;
+   ціле; дрібна (напр. частина виграшу) — з дробом.
+   bump — стежити за змінами (баланс, ставка); у статичних написах
+   (ціна покупки, сума заявки) смикатись нема від чого. */
+function Money({ rub, currency, rates, whole, bump }: {
+  rub: number; currency: CurrencyCode; rates: Rates; whole?: boolean; bump?: boolean;
 }) {
   const meta = CURRENCY_META[currency];
   const s = whole ? fmtWhole(rub, currency, rates) : fmtAmount(rub, currency, rates);
+  // хук викликаємо завжди — порядок хуків не може залежати від пропса
+  const beat = useBump(bump ? rub : 0);
   return (
-    <span className="money">
+    <span className={'money' + (bump ? ' bump' + beat : '')}>
       {s}
       <img className={'cur-ico' + (meta.mono ? ' mono' : '')} src={meta.icon} alt="" />
     </span>
@@ -91,6 +127,11 @@ export function GameClient() {
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [showPayments, setShowPayments] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  /* Заявка на поповнення живе 30 хвилин і не показується ніде, крім
+     свого вікна: закрив — і про таймер більше ніщо не нагадує. Тому
+     питаємо про неї один раз на старті й після кожного закриття вікна,
+     а показуємо крапкою на кнопці «+». */
+  const [depositPending, setDepositPending] = useState(false);
   // Іконку профілю кладемо файлом у public/. Поки її нема (або не
   // завантажилась) — показуємо квадрат із першою літерою імені.
   const [avatarOk, setAvatarOk] = useState(true);
@@ -112,6 +153,12 @@ export function GameClient() {
     };
   }, []);
 
+  const checkDeposit = useCallback(() => {
+    // тиха перевірка: не вийшло — просто не показуємо крапку
+    void Api.payments().then((r) => setDepositPending(!!r.active)).catch(() => {});
+  }, []);
+  useEffect(() => { checkDeposit(); }, [checkDeposit]);
+
   useEffect(() => { setCurrencyState(loadCurrency()); }, []);
   useEffect(() => { gameRef.current?.setCurrency(currency); }, [currency]);
 
@@ -125,9 +172,10 @@ export function GameClient() {
   const refreshPlayer = useCallback(() => { void gameRef.current?.refreshPlayer(); }, []);
 
   const spin = useCallback(() => gameRef.current?.primary(), []);
-  /* Бонус бай: купівля запускає раунд одразу, тож вікно закриваємо. */
+  /* Бонус бай: купівля запускає раунд одразу. Вікно закриває СЕБЕ САМЕ
+     (Modal віддає close у children), інакше стан знімався б тут — і
+     вікно зникало б ривком, повз анімацію закриття. */
   const buyBonus = useCallback((tier: TierId) => {
-    setShowBuy(false);
     gameRef.current?.buyBonus(tier);
   }, []);
   const setBet = useCallback((b: number) => gameRef.current?.setBet(b), []);
@@ -199,12 +247,12 @@ export function GameClient() {
         <div className="balance-chip">
           <span className="label">БАЛАНС</span>
           <span className="value">
-            <Money rub={hud.balance} currency={currency} rates={hud.rates} whole />
+            <Money rub={hud.balance} currency={currency} rates={hud.rates} whole bump />
           </span>
           <button
             type="button"
-            className="deposit-btn"
-            aria-label="Пополнить"
+            className={'deposit-btn' + (depositPending ? ' pending' : '')}
+            aria-label={depositPending ? 'Пополнить (есть активная заявка)' : 'Пополнить'}
             onClick={() => setShowDeposit(true)}
           >
             +
@@ -223,7 +271,7 @@ export function GameClient() {
           </div>
         )}
 
-        {hud.state === 'LOADING' && <div className="loader"><span>ЗАГРУЗКА…</span></div>}
+        {hud.state === 'LOADING' && <div className="loader"><span>Загрузка…</span></div>}
         {hud.state === 'ERROR' && (
           <div className="loader">
             <span>
@@ -257,11 +305,11 @@ export function GameClient() {
             onClick={() => setShowBuy(true)}
             disabled={roundInFlight}
           >
-            БОНУС БАЙ
+            Бонус бай
           </button>
 
           <div className="bet-readout">
-            <Money rub={hud.bet} currency={currency} rates={hud.rates} whole />
+            <Money rub={hud.bet} currency={currency} rates={hud.rates} whole bump />
           </div>
 
           <div className="control-row">
@@ -329,7 +377,7 @@ export function GameClient() {
       >
         <aside className={'drawer' + (menuOpen ? ' open' : '')} onClick={(e) => e.stopPropagation()}>
           <div className="drawer-head">
-            <h2>МЕНЮ</h2>
+            <h2>Меню</h2>
             <button type="button" className="x" onClick={() => setMenuOpen(false)}>✕</button>
           </div>
 
@@ -338,7 +386,7 @@ export function GameClient() {
               {avatarOk ? (
                 <img
                   className="avatar avatar-img"
-                  src="/profile.png"
+                  src="/ui/profile.png"
                   alt=""
                   onError={() => setAvatarOk(false)}
                 />
@@ -357,7 +405,7 @@ export function GameClient() {
           <div className="drawer-row">
             <span className="label">БАЛАНС</span>
             <span className="drawer-value">
-              <Money rub={hud.balance} currency={currency} rates={hud.rates} whole />
+              <Money rub={hud.balance} currency={currency} rates={hud.rates} whole bump />
             </span>
           </div>
 
@@ -384,27 +432,27 @@ export function GameClient() {
           </div>
 
           <button type="button" className="drawer-btn" onClick={() => { setMenuOpen(false); setShowDeposit(true); }}>
-            ПОПОЛНИТЬ БАЛАНС
+            Пополнить баланс
           </button>
           <button
             type="button"
             className="drawer-btn accent"
             onClick={() => { setMenuOpen(false); setShowBuy(true); }}
           >
-            БОНУС БАЙ
+            Бонус бай
           </button>
           <button
             type="button"
             className="drawer-btn"
             onClick={() => { setMenuOpen(false); setShowWithdraw(true); }}
           >
-            ВЫВОД СРЕДСТВ
+            Вывод средств
           </button>
           <button type="button" className="drawer-btn" onClick={openPayments}>
-            ИСТОРИЯ ПЛАТЕЖЕЙ
+            История платежей
           </button>
           <button type="button" className="drawer-btn" onClick={openFair}>
-            ЧЕСТНОСТЬ РАУНДА
+            Честность раунда
           </button>
         </aside>
       </div>
@@ -425,8 +473,8 @@ export function GameClient() {
       {showFair && <FairPanel fair={hud.fair} onClose={() => setShowFair(false)} />}
       {showDeposit && (
         <DepositModal
-          onClose={() => setShowDeposit(false)}
-          onResolved={refreshPlayer}
+          onClose={() => { setShowDeposit(false); checkDeposit(); }}
+          onResolved={() => { refreshPlayer(); checkDeposit(); }}
         />
       )}
       {showWithdraw && (

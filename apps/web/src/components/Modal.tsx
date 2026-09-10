@@ -9,45 +9,77 @@
    на телефоні це відчувалось як пастка, бо решта інтерфейсу
    (включно з адмінкою) закривається саме тапом повз вікно.
 
+   Esc іде через спільний стек шарів (src/ui/overlay), а не через
+   власний слухач: поки вікно одне, різниці немає, але коли поверх
+   нього стоїть підтвердження, одне натискання закривало обидва.
+
    Закриття по фону повішено на mousedown, а не на click: інакше
    виділення тексту, розпочате ВСЕРЕДИНІ вікна (наприклад, адреса
    гаманця) і відпущене за його межами, рахувалось би як клік по
    фону й закривало вікно посеред копіювання.
+
+   ЗАКРИТТЯ МАЛЮЄМО САМІ. Вікно з'являється анімацією, а зникало б
+   ривком: батько просто перестає його рендерити. Тому тут є власний
+   стан `closing` — він вішає клас, під який CSS програє зворотні
+   кадри, і аж потім віддає onClose нагору. Затримка мусить збігатися
+   з тривалістю modal-out у globals.css.
+
+   children може бути функцією: вона отримує `close` і закриває вікно
+   ТИМ САМИМ шляхом, з анімацією. Без цього дія всередині вікна
+   (купівля бонуски) знімала стан у батька, і вікно зникало ривком,
+   тоді як хрестик поруч закривав його плавно.
    ============================================================ */
 
-import { useEffect, type ReactNode } from 'react';
+import {
+  useCallback, useEffect, useRef, useState,
+  type ReactNode,
+} from 'react';
+import { useEscape, useFocusTrap } from '../ui/overlay';
+
+/** має відповідати --t (.16s) у tokens.css + запас на кадр */
+const CLOSE_MS = 180;
 
 interface Props {
   title: string;
   onClose: () => void;
-  children: ReactNode;
+  children: ReactNode | ((close: () => void) => ReactNode);
 }
 
 export function Modal({ title, onClose, children }: Props) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      onClose();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+  const [closing, setClosing] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+
+  const close = useCallback(() => {
+    // подвійний виклик (Esc під час анімації) не має перезапускати таймер
+    if (timer.current) return;
+    setClosing(true);
+    timer.current = setTimeout(onClose, CLOSE_MS);
   }, [onClose]);
+
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  useEscape(close);
+  useFocusTrap(box);
 
   return (
     <div
-      className="modal"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className={'modal' + (closing ? ' closing' : '')}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}
     >
-      <div className="modalbox">
+      <div
+        className="modalbox"
+        ref={box}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className="modalhead">
           <h2>{title}</h2>
-          <button type="button" className="x" onClick={onClose} aria-label="Закрыть">✕</button>
+          <button type="button" className="x" onClick={close} aria-label="Закрыть">✕</button>
         </div>
-        {children}
+        {typeof children === 'function' ? children(close) : children}
       </div>
     </div>
   );
