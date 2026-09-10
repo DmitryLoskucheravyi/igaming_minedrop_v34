@@ -76,9 +76,13 @@ class AssetStore {
     p['reelRing'] = '/ui/reel-ring.png';
     // темний диск ПІД стрічкою, малюється всередині вирізу кільця
     p['reelBacking'] = '/ui/reel-backing.png';
-    // палички прогресу pity: червона — набрана пуста ставка, зелена — гарантія
-    p['pipGreen'] = '/ui/reel-pip-green.png';
-    p['pipRed'] = '/ui/reel-pip-red.png';
+    /* Палички прогресу pity: червона — набрана пуста ставка, зелена —
+       гарантія. Кожна намальована ПІД СВІЙ сегмент кільця, тому їх
+       по файлу на сегмент, а не одна на всі (див. SEGMENTS у reel.ts).
+       Трьох поки немає — там тимчасово перефарбовується форма
+       сусіднього кольору. */
+    for (const i of [1, 2, 4, 5, 6, 7]) p['pip.green.' + i] = '/ui/pip-green-' + i + '.png';
+    for (const i of [2, 3, 4, 6, 7]) p['pip.red.' + i] = '/ui/pip-red-' + i + '.png';
     // «пусто» на стрічці
     p['reelNothing'] = '/ui/reel-nothing.png';
     // сердечко в підписі HP над кіркою
@@ -98,11 +102,13 @@ class AssetStore {
        її видимою. */
     p['fence'] = '/blocks/wall.png';
 
-    /* Руда залізо/золото — НАКЛАДКИ на булижник, а не самостійні
-       картинки блоку: спершу малюється cobble, зверху накладка (див.
-       Render.block). Тому вони й не в BLOCKS[*].skin. */
+    /* Руда заліза/золота/редстоуну — НАКЛАДКИ на булижник, а не
+       самостійні картинки блоку: спершу малюється cobble, зверху
+       накладка (див. Render.block). Тому вони й не в BLOCKS[*].skin —
+       там у всіх трьох стоїть той самий булижник. */
     p['ore.iron'] = '/blocks/ore-iron-overlay.png';
     p['ore.gold'] = '/blocks/ore-gold-overlay.png';
+    p['ore.redstone'] = '/blocks/ore-redstone-overlay.png';
 
     // чотири стадії тріщин; потрібні з першого ж удару по руді
     for (let i = 1; i <= 4; i++) p['crack' + i] = '/fx/crack-' + i + '.png';

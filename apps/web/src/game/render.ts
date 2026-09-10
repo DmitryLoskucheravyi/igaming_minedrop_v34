@@ -11,6 +11,18 @@ type Ctx = CanvasRenderingContext2D;
 /* Елемент рулетки: кірка або «пусто» */
 export type ReelItem = Tier | null;
 
+/* Кірка у вікні рулетки: наскільки заповнює вписаний квадрат і під
+   яким кутом лежить.
+
+   На спрайті кірка намальована по діагоналі — держак іде з
+   лівого-нижнього кута в правий-верхній, тобто її власна вісь уже
+   під 45°. Було -0.5 рад: разом із власними 45° це ставило її майже
+   сторч. -0.28 лишає помітний, але спокійний нахил, а не «стійку».
+   Розмір зменшено з 0.74 до 0.66 — щоб кірка не впиралась у край
+   круглого вирізу. */
+const REEL_PICK_ROT = -0.28;
+const REEL_PICK_FILL = 0.66;
+
 export const Render = {
   pixelate(ctx: Ctx) {
     ctx.imageSmoothingEnabled = false;
@@ -134,10 +146,9 @@ export const Render = {
     return h < p ? 'block.stone2' : 'block.stone';
   },
 
-  /* Блок-стрілка: кірка більшає втричі. Малюється кодом — картинки для
-     нього поки немає; щойно з'явиться, досить прописати skin у BLOCKS. */
+  /* Блок-стрілка: кірка більшає. Картинка є (BLOCKS.grow.skin),
+     намальована стрілка нижче — запасний варіант, якщо файл не доїхав. */
   growBlock(ctx: Ctx, x: number, y: number, s: number) {
-    // з'явиться картинка (skin у BLOCKS.grow) — вона й піде в діло
     const img = Assets.get('block.grow');
     if (img) { ctx.drawImage(img, x, y, s + 1, s + 1); return; }
     this.panel(ctx, x + 2, y + 2, s - 3, s - 3, '#1f8f6d', 4);
@@ -202,7 +213,9 @@ export const Render = {
      художник дав саме накладки (чорний малюнок руди на прозорому), а
      не готові блоки. Тому база в BLOCKS[*].skin у них — той самий
      cobble, а різницю дає ця мапа. */
-  ORE_OVERLAY: { iron: 'ore.iron', gold: 'ore.gold' } as Partial<Record<Cell['id'], string>>,
+  ORE_OVERLAY: {
+    iron: 'ore.iron', gold: 'ore.gold', redstone: 'ore.redstone',
+  } as Partial<Record<Cell['id'], string>>,
 
   /* Блок. cell = { id, dmg, seed, m }, row — номер ряду (для скінів,
      що залежать від глибини) */
@@ -377,10 +390,9 @@ export const Render = {
     const cx = x + w / 2;
     const cy = y + h / 2;
     const box = Math.min(w, h) * 0.7;
-    const s = box * 0.74;
 
-    if (!item) this.cross(ctx, cx, cy, s * 0.58, 0.95);
-    else this.pickaxe(ctx, cx, cy, s, item, -0.5);
+    if (!item) this.cross(ctx, cx, cy, box * 0.74 * 0.58, 0.95);
+    else this.pickaxe(ctx, cx, cy, box * REEL_PICK_FILL, item, REEL_PICK_ROT);
   },
 
   /* HP над кіркою: сердечко + «40/100» */

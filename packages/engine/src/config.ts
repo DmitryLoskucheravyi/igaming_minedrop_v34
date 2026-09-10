@@ -515,10 +515,10 @@ export const NOTHING = { id: 'none', name: 'Пусто', color: '#39424f', color
    кірки. Його прибрано як механіку цілком, лишився тільки верстак.
    Перейменовувати id не стали: він їздить у збережених раундах.
 */
-/* РУДА ЗАЛІЗА Й ЗОЛОТА малюється двома шарами: булижник (skin нижче)
-   + накладка з рудою поверх нього. Художник дав саме накладки, а не
-   готові блоки, тому skin у них — cobble, а накладку підмішує
-   Render.block (мапа ORE_OVERLAY). */
+/* РУДА ЗАЛІЗА, ЗОЛОТА Й РЕДСТОУНУ малюється двома шарами: булижник
+   (skin нижче) + накладка з рудою поверх нього. Художник дав саме
+   накладки, а не готові блоки, тому skin у них — cobble, а накладку
+   підмішує Render.block (мапа ORE_OVERLAY). */
 export const BLOCKS: Record<BlockId, BlockDef> = {
   grass:    { id: 'grass',    name: 'Дёрн',     kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#5f8a3f', skin: '/blocks/grass.png' },
   dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/blocks/dirt.png' },
@@ -532,7 +532,7 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   coal:     { id: 'coal',     name: 'Уголь',    kind: 'solid', tough: 2,  cost: 1, value: 0.85,  color: '#5f5f5f', skin: '/blocks/coal.webp' },
   iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 4.25,  color: '#b98b6c', skin: '/blocks/cobble.png' },
   lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 8.5,   color: '#1f4fa8', skin: '/blocks/lapis.jpg' },
-  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 5,  cost: 1, value: 12.75, color: '#b3241f', skin: '/blocks/redstone.jpg' },
+  redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 5,  cost: 1, value: 12.75, color: '#b3241f', skin: '/blocks/cobble.png' },
   gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 17,    color: '#e8c33a', skin: '/blocks/cobble.png' },
   diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 38.25, color: '#4fe6e0', skin: '/blocks/diamond.png' },
   emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 110.5, color: '#16c96a', skin: '/blocks/emerald.png' },
@@ -542,7 +542,7 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
   mult:     { id: 'mult',     name: 'Множитель', kind: 'mult',  tough: 1, cost: 1, value: 0,  color: '#c9a227' },
   /* Стрілка вгору — кірка більшає втричі (CONFIG.grow.scale) разом із
      запасом HP. Рідкісний і глибокий: ефект сильний. */
-  grow:     { id: 'grow',     name: 'Рост',      kind: 'grow',   tough: 1, cost: 1, value: 0,  color: '#3ad1a0' },
+  grow:     { id: 'grow',     name: 'Рост',      kind: 'grow',   tough: 1, cost: 1, value: 0,  color: '#3ad1a0', skin: '/blocks/grow.png' },
   /* Слайм — трамплін. НЕ ЛАМАЄТЬСЯ: кірка від нього відскакує й летить
      далі, а блок лишається на місці, тож на нього можна натрапити знову.
      Через це ж дотик не коштує HP (cost 0, як у TNT): інакше застрягти

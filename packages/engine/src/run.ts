@@ -120,6 +120,18 @@ export const STRAIGHT_SEC = 0.7;    // скільки терпіти верти�
 export const STRAIGHT_VX = 1.3;     // нижче цього |vx| рух вважається вертикальним
 export const STRAIGHT_PUSH = 3.0;   // база бічного імпульсу
 
+/* ---- ВИШТОВХУВАННЯ З БЛОКУ (див. Run.separate) ----
+   Скільки разів за крок повторити розділення. Одного проходу мало:
+   вилізши з одного блоку, кірка може впертись у сусідній — у куті
+   тунелю таких блоків одразу два. Трьох вистачає з запасом, а ціна
+   кожного — той самий перебір 3x3, що й у колізії.
+
+   EPS — нижче цього перекриття вважаємо дотиком і не смикаємо кірку:
+   без нього вона щокроку зсувалась би на 1e-15 і без потреби гасила
+   швидкість. */
+const SEPARATE_PASSES = 3;
+const SEPARATE_EPS = 1e-4;
+
 /* Одна кірка — тіло у фізиці */
 export class Pick {
   level: number;
@@ -408,6 +420,76 @@ export class Run {
         const d = Math.hypot(p.x - nx, p.y - ny);
         if (d < R) this.impact(p, rr, cc, cell);
       }
+    }
+
+    this.separate(p, R);
+  }
+
+  /* ВИШТОВХУВАННЯ З БЛОКУ.
+
+     Колізія вище міняє лише ШВИДКІСТЬ — позицію вона не чіпала ніколи.
+     Через це кірка спокійно заїжджала тілом у блок, який пережив удар:
+     на екрані спрайт наполовину в текстурі, а гра вважає, що все гаразд.
+     З crackBounce (слабкий відскок від цілого блоку) це стало видно
+     постійно — саме тому виштовхування й додано.
+
+     Рахуємо як звичайне розділення кола й прямокутника: беремо
+     НАЙГЛИБШЕ проникнення й зсуваємо кірку по нормалі рівно настільки,
+     щоб дотик став дотиком, а не перекриттям. Кілька проходів — бо,
+     вилізши з одного блоку, можна впертись у сусідній (кут тунелю).
+
+     ДЕТЕРМІНІЗМ: жодного this.rnd() тут немає, порядок перебору
+     фіксований (rr, потім cc за зростанням), тож клієнт і сервер
+     рахують те саме. Але траєкторії це МІНЯЄ — потрібен новий прогін
+     балансу. */
+  private separate(p: Pick, R: number): void {
+    for (let pass = 0; pass < SEPARATE_PASSES; pass++) {
+      const cx = Math.floor(p.x), cy = Math.floor(p.y);
+      const reach = Math.ceil(R);
+      let bestDepth = 0, bestX = 0, bestY = 0;
+
+      for (let rr = cy - reach; rr <= cy + reach; rr++) {
+        for (let cc = cx - reach; cc <= cx + reach; cc++) {
+          const cell = this.mine.get(rr, cc);
+          if (!cell) continue;                 // порожньо — крізь неї й летимо
+          const nx = clamp(p.x, cc, cc + 1);
+          const ny = clamp(p.y, rr, rr + 1);
+          let dx = p.x - nx, dy = p.y - ny;
+          let d = Math.hypot(dx, dy);
+          if (d >= R) continue;
+
+          if (d < 1e-6) {
+            /* Центр кірки ВСЕРЕДИНІ клітинки — напрямку «назовні»
+               немає. Виходимо через найближчу грань: так кірка не
+               вистрибує через півблоку в довільний бік. */
+            const l = p.x - cc, r = cc + 1 - p.x, u = p.y - rr, b = rr + 1 - p.y;
+            const m = Math.min(l, r, u, b);
+            if (m === l) { dx = -1; dy = 0; d = 0; }
+            else if (m === r) { dx = 1; dy = 0; d = 0; }
+            else if (m === u) { dx = 0; dy = -1; d = 0; }
+            else { dx = 0; dy = 1; d = 0; }
+            const depth = R + m;
+            if (depth > bestDepth) { bestDepth = depth; bestX = dx; bestY = dy; }
+            continue;
+          }
+
+          const depth = R - d;
+          if (depth > bestDepth) { bestDepth = depth; bestX = dx / d; bestY = dy / d; }
+        }
+      }
+
+      if (bestDepth <= SEPARATE_EPS) return;   // ніде не перекриваємось
+      p.x += bestX * bestDepth;
+      p.y += bestY * bestDepth;
+      /* Виштовхування з блоку може підштовхнути кірку ЗА бічну стінку
+         шахти — обмеження ширини стоїть на початку collide(), тобто
+         ДО нас. Тому межу тримаємо тут-таки: інакше кірка виїжджає за
+         край поля на ті самі кілька тисячних, і це ловить smoke-тест. */
+      p.x = clamp(p.x, R, this.mine.cols - R);
+      /* Гасимо швидкість, спрямовану В блок: інакше наступний крок
+         інтегрування заганяє кірку назад, і вона тремтить на грані. */
+      const into = p.vx * bestX + p.vy * bestY;
+      if (into < 0) { p.vx -= into * bestX; p.vy -= into * bestY; }
     }
   }
 
