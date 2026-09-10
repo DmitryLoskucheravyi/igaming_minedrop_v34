@@ -20,37 +20,15 @@
    може скасувати її сам.
    ============================================================ */
 
-export type WithdrawMethod = 'usdt_trc20';
+import type { Withdraw } from '@minedrop/contracts';
 
-export type WithdrawStatus =
-  | 'pending'    // чекає рішення адміна, гроші вже зарезервовані
-  | 'approved'   // адмін відправив кошти
-  | 'rejected'   // адмін відхилив, гроші повернуто
-  | 'canceled';  // гравець скасував сам, гроші повернуто
+/* Спосіб і статуси — у @minedrop/contracts: їх читає і гра, і CRM. */
+export type { WithdrawMethod, WithdrawStatus } from '@minedrop/contracts';
 
-export interface WithdrawRecord {
-  id: string;
-  telegramId: number;
-  method: WithdrawMethod;
-
-  /** скільки списано з балансу, ₽ */
-  amount: number;
-  /** скільки відправити гравцю, USDT (за курсом на момент заявки) */
-  usdtAmount: number;
-  rate: number;
-  /** курс на момент заявки був приблизний — сума може не збігатись із ринком */
-  rateApprox?: boolean;
-
-  /** куди відправляти — адреса ГРАВЦЯ (на відміну від депозиту, де
-      адреса наша) */
-  address: string;
-
-  status: WithdrawStatus;
-  createdAt: number;
-  resolvedAt?: number;
-  /** нотатка адміна при відхиленні */
-  adminNote?: string;
-}
+/* Серверний запис нічим не відрізняється від того, що їде клієнту, —
+   у виведенні немає внутрішніх полів на кшталт id адреси з пулу. Тому
+   це просто псевдонім контракту, а не його копія. */
+export type WithdrawRecord = Withdraw;
 
 /* Нижня межа вища за депозитну: дрібні виплати з'їдає комісія мережі,
    а кожна вимагає ручної роботи адміна. */

@@ -4,9 +4,10 @@ import {
 import { randomUUID } from 'node:crypto';
 import { ENV, type Env } from '../config/env';
 import { NETWORKS, type Family } from '../payments/networks';
-import {
-  PaymentsService, type IncomingTx, type IngestResult, type WatchTarget,
-} from '../payments/payments.service';
+import { DepositAddressPool } from '../payments/deposit-addresses.service';
+import { PaymentRequests } from '../payments/payment-requests.service';
+import { TransferMatcher, type IngestResult } from '../payments/transfer-matcher.service';
+import type { IncomingTx, WatchTarget } from '../payments/payment.types';
 import { SettingsService } from '../settings/settings.service';
 import type { ChainReader } from './chain.types';
 import { evmReader } from './chains/evm';
@@ -89,7 +90,12 @@ export class WatcherService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     @Inject(ENV) private readonly env: Env,
-    private readonly payments: PaymentsService,
+    /* Три залежності замість одного PaymentsService — і кожну видно,
+       за чим саме спостерігач до неї ходить: адреси слухати, заявку
+       знайти для симуляції, переказ зіставити й добити. */
+    private readonly addresses: DepositAddressPool,
+    private readonly requests: PaymentRequests,
+    private readonly matcher: TransferMatcher,
     private readonly settings: SettingsService,
   ) {
     for (const [family, reader] of Object.entries(READERS) as [Family, ChainReader][]) {
@@ -128,7 +134,7 @@ export class WatcherService implements OnModuleInit, OnModuleDestroy {
     const cfg = this.settings.getDeposits();
     /* Адреси рахуємо тим самим методом, який читає й сам цикл, — щоб у
        CRM було видно не переказ наміру, а робочий список. */
-    const targets = this.payments.watchTargets();
+    const targets = this.addresses.watchTargets();
     for (const h of this.health.values()) {
       h.hasKey = !!this.keyFor(h.family);
       h.addresses = targets.filter((t) => t.family === h.family).length;
@@ -170,7 +176,7 @@ export class WatcherService implements OnModuleInit, OnModuleDestroy {
     if (this.env.isProd) {
       throw new Error('Симуляция перевода в продакшне недоступна');
     }
-    const rec = this.payments.listAll().find((p) => p.id === paymentId);
+    const rec = this.requests.listAll().find((p) => p.id === paymentId);
     if (!rec) throw new Error('Заявка не найдена');
 
     const tx: IncomingTx = {
@@ -189,7 +195,7 @@ export class WatcherService implements OnModuleInit, OnModuleDestroy {
 
     this.log.warn(`[СИМУЛЯЦІЯ] переказ ${tx.amount} ${tx.token.toUpperCase()} ` +
       `у ${tx.network} на ${tx.to}${tx.memo ? ` memo ${tx.memo}` : ''}`);
-    const res = this.payments.ingest(tx);
+    const res = this.matcher.ingest(tx);
     this.log.warn(`[СИМУЛЯЦІЯ] результат: ${res.kind}` +
       (res.kind === 'unmatched' ? ` — ${res.reason}` : ''));
     return res;
@@ -203,7 +209,7 @@ export class WatcherService implements OnModuleInit, OnModuleDestroy {
     if (this.running) return;
     this.running = true;
     try {
-      const targets = this.payments.watchTargets();
+      const targets = this.addresses.watchTargets();
       if (targets.length) await this.scanAll(targets);
       /* Фіналізацію робимо ЗАВЖДИ, навіть коли слухати нічого.
 
@@ -258,14 +264,14 @@ export class WatcherService implements OnModuleInit, OnModuleDestroy {
 
         for (const tx of txs) {
           h.seen++;
-          const res = this.payments.ingest(tx);
+          const res = this.matcher.ingest(tx);
           if (res.kind === 'matched' && res.credited) this.credited++;
         }
 
         /* Курсор рухаємо ПІСЛЯ обробки. Впали на середині — наступний
            цикл перечитає той самий відрізок; повтори відсіє knownTxid,
            а от пропущений відрізок не помітив би ніхто. */
-        this.payments.noteScan(t.addressId, cursor);
+        this.addresses.noteScan(t.addressId, cursor);
         h.lastOkAt = Date.now();
         h.lastError = undefined;
       } catch (e) {
@@ -276,9 +282,9 @@ export class WatcherService implements OnModuleInit, OnModuleDestroy {
   }
 
   /* Заявки, які відлежали свій finalitySec. Перепитуємо мережу й
-     закриваємо; що робити з відповіддю — вирішує PaymentsService. */
+     закриваємо; що робити з відповіддю — вирішує TransferMatcher. */
   private async settleAll(): Promise<void> {
-    for (const rec of this.payments.settleReady()) {
+    for (const rec of this.matcher.settleReady()) {
       const family = NETWORKS[rec.network]?.family;
       const key = family ? this.keyFor(family) : null;
       /* Підроблений переказ (simulate) у мережі перепитувати нічого:
@@ -286,11 +292,11 @@ export class WatcherService implements OnModuleInit, OnModuleDestroy {
          залежала б від того, чим саме провайдер відповість на вигаданий
          txid — 404 він вважає відкатом блока й ЗАБРАКУВАВ БИ заявку. */
       if (!family || !key || !rec.txid || rec.txid.startsWith('dev-')) {
-        this.payments.settle(rec.id, 'unknown');
+        this.matcher.settle(rec.id, 'unknown');
         continue;
       }
       const verdict = await READERS[family].confirm(key, rec.network, rec.txid);
-      const done = this.payments.settle(rec.id, verdict);
+      const done = this.matcher.settle(rec.id, verdict);
       if (done?.status === 'approved' && done.resolvedBy === 'bot') this.credited++;
     }
   }

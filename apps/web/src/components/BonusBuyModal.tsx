@@ -17,8 +17,9 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { TIERS, type TierId } from '@minedrop/engine';
-import { CURRENCY_META, fmtWhole, type CurrencyCode, type Rates } from '../lib/currency';
+import type { CurrencyCode, Rates } from '../lib/currency';
 import { Modal } from './Modal';
+import { Money } from './Money';
 
 interface Props {
   bet: number;
@@ -62,14 +63,7 @@ export function BonusBuyModal({
   const tier = TIERS[i];
   const price = Math.round(bet * (buyPrices[tier.id] ?? 0));
   const enough = balance >= price;
-  const meta = CURRENCY_META[currency];
-
-  const money = (rub: number) => (
-    <span className="money">
-      {fmtWhole(rub, currency, rates)}
-      <img className={'cur-ico' + (meta.mono ? ' mono' : '')} src={meta.icon} alt="" />
-    </span>
-  );
+  const money = (rub: number) => <Money rub={rub} currency={currency} rates={rates} whole />;
 
   return (
     <Modal title="Бонус бай" onClose={onClose}>

@@ -9,11 +9,11 @@
    токен викидається, а сторінці шлеться подія, щоб вона показала форму
    входу замість напівживої таблиці. */
 
-export const rub = (n: number) => Math.round(n).toLocaleString('ru-RU');
-
-export const when = (ms: number) =>
-  new Date(ms).toLocaleString('ru-RU',
-    { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+/* Форматування спільне з грою — див. src/lib/format. Перевипускаємо,
+   щоб виклики в CRM лишились короткими (`rub`, `when`), а джерело було
+   одне. Підписи статусів у CRM свої: адмін і гравець дивляться на ту
+   саму заявку з різних боків. */
+export { rub, when } from '../../src/lib/format';
 
 const TOKEN_KEY = 'minedrop.adminToken';
 const REFRESH_KEY = 'minedrop.adminRefresh';
@@ -126,20 +126,17 @@ export interface AdminMe {
   lastLoginAt?: number;
 }
 
-/* processing — бот знайшов перевод и держит заявку, пока сеть его не
-   подтвердит. Заявка в этом состоянии НЕ истекает: деньги уже
-   переведены, и таймер к ним отношения не имеет. */
-export type PaymentStatus =
-  'pending' | 'processing' | 'approved' | 'rejected' | 'expired' | 'canceled';
-
-/** Кто закрыл заявку. Разбирая жалобу, надо видеть это сразу. */
-export type ResolvedBy = 'admin' | 'bot';
-
-/* Мережі описані на сервері (payments/networks.ts) і приходять
-   каталогом. CRM їх не перелічує: додану мережу видно тут одразу,
-   без правок фронта. */
-export type Family = 'evm' | 'tron' | 'ton' | 'solana';
-export type TokenId = 'usdt' | 'usdc';
+/* Ідентифікатори й статуси описані в @minedrop/contracts — тими самими
+   користуються сервер і гра. CRM їх не перелічує вдруге: три копії
+   одного union-а вже розходились у перекладах. */
+export type {
+  Family, NetworkId, TokenId, DepositMode, UnmatchedStatus,
+  PaymentStatus, ResolvedBy, WithdrawStatus,
+} from '@minedrop/contracts';
+import type {
+  Family, TokenId, DepositMode, UnmatchedStatus,
+  PaymentStatus, ResolvedBy, WithdrawStatus, Payment,
+} from '@minedrop/contracts';
 
 export interface CatalogueNetwork {
   id: string;
@@ -149,11 +146,6 @@ export interface CatalogueNetwork {
   memo: boolean;
   tokens: TokenId[];
 }
-
-/* Режим прийому. Довіряти боту нарахування одразу — погана ідея, тому
-   станів чотири, а не «увімк/вимк»: спершу дивишся, що він БУВ БИ
-   зробив, потім даєш йому позначати, і лише потім — платити. */
-export type DepositMode = 'off' | 'watch' | 'semi' | 'auto';
 
 export interface DepositSettings {
   /** рубильник слушателя — отдельно от режима */
@@ -184,8 +176,6 @@ export interface WatchTarget {
   tokens: TokenId[];
 }
 
-export type UnmatchedStatus = 'new' | 'credited' | 'ignored';
-
 /** Переказ прийшов, але не зіставився з жодною заявкою. */
 export interface AdminUnmatched {
   id: string;
@@ -207,38 +197,14 @@ export interface AdminUnmatched {
   player: string | null;
 }
 
-export interface AdminPayment {
-  id: string;
-  telegramId: number;
-  network: string;
-  token: TokenId;
-  amount: number;
-  usdtAmount: number;
-  memo?: string;
-  /** проставляє спостерігач, коли знаходить переказ у мережі */
-  txid?: string;
-  paidAmount?: number;
-  matchedAt?: number;
-  rate: number;
-  /** курс на момент створення був приблизний — сума USDT може не
-      збігатися з ринковою, перед підтвердженням варто звірити */
-  rateApprox?: boolean;
-  address: string;
-  addressId?: string;
+/* Заявка в CRM — це контрактна Payment плюс те, що потрібне лише
+   адміну: підпис адреси з пулу й приєднаний гравець. Розширенням, а не
+   копією: поле, додане в контракт, з'явиться тут само. */
+export interface AdminPayment extends Payment {
+  /** людський підпис адреси прийому, щоб не звіряти хеші очима */
   addressLabel: string | null;
-  status: PaymentStatus;
-  resolvedBy?: ResolvedBy;
-  /** когда сеть признала перевод окончательным */
-  confirmedAt?: number;
-  /** раньше этого момента перевод ещё «отлёживается» в сети */
-  confirmAt?: number;
-  createdAt: number;
-  expiresAt: number;
-  adminNote?: string;
   player: { firstName: string; username: string | null; balance: number } | null;
 }
-
-export type WithdrawStatus = 'pending' | 'approved' | 'rejected' | 'canceled';
 
 export interface AdminWithdraw {
   id: string;

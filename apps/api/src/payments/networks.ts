@@ -16,13 +16,12 @@
    знайдеться, у якій би з них не прийшов.
    ============================================================ */
 
-export type Family = 'evm' | 'tron' | 'ton' | 'solana';
-
-export type NetworkId =
-  | 'ton' | 'tron' | 'solana'
-  | 'bsc' | 'polygon' | 'base' | 'arbitrum' | 'optimism' | 'avalanche';
-
-export type TokenId = 'usdt' | 'usdc';
+/* Ідентифікатори мереж і монет живуть у @minedrop/contracts: їх однаково
+   мусять знати сервер, гра й CRM, і три копії одного union-а вже
+   розходились. Тут лише перевипуск, щоб решта серверного коду й далі
+   імпортувала їх звідси — з каталогу мереж, де їм за змістом і місце. */
+export type { Family, NetworkId, TokenId } from '@minedrop/contracts';
+import type { Family, NetworkId, TokenId } from '@minedrop/contracts';
 
 export interface TokenOnNetwork {
   /* Адреса контракту токена в цій мережі.

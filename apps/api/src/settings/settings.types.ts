@@ -16,7 +16,8 @@ import type { NetworkId, TokenId } from '../payments/networks';
              пошуку по блокчейну;
      auto  — зараховує сам.
    ============================================================ */
-export type DepositMode = 'off' | 'watch' | 'semi' | 'auto';
+export type { DepositMode } from '@minedrop/contracts';
+import type { DepositMode } from '@minedrop/contracts';
 
 export interface DepositSettings {
   /* ГОЛОВНИЙ рубильник слухача — окремо від режиму.

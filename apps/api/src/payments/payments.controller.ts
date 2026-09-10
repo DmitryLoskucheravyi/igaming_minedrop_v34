@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { IsIn, IsInt, Max, Min } from 'class-validator';
-import { PaymentsService } from './payments.service';
+import { PaymentRequests } from './payment-requests.service';
 import { PlayersService } from '../players/players.service';
 import { SettingsService } from '../settings/settings.service';
 import { PAYMENT_MAX_RUB, PAYMENT_MIN_RUB } from './payment.types';
@@ -25,7 +25,7 @@ class CreateDto {
 @UseGuards(TelegramAuthGuard)
 export class PaymentsController {
   constructor(
-    private readonly payments: PaymentsService,
+    private readonly payments: PaymentRequests,
     private readonly players: PlayersService,
     private readonly settings: SettingsService,
   ) {}

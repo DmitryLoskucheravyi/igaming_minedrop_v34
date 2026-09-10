@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -w @minedrop/engine && npm run build -w @minedrop/api && npm run build -w @minedrop/web",
+    "build": "npm run build -w @minedrop/contracts && npm run build -w @minedrop/engine && npm run build -w @minedrop/api && npm run build -w @minedrop/web",
     "build:engine": "npm run build -w @minedrop/engine",
     "dev": "npm run build:engine && concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm run dev -w @minedrop/api",
@@ -20,13 +20,14 @@
     "sim:balance": "npm run sim:balance -w @minedrop/engine",
     "sim:tiers": "npm run sim:tiers -w @minedrop/engine",
     "sim:fair": "npm run sim:fair -w @minedrop/engine",
-    "typecheck": "npm run typecheck -w @minedrop/engine && npm run typecheck -w @minedrop/api && npm run typecheck -w @minedrop/web",
+    "typecheck": "npm run typecheck -w @minedrop/contracts && npm run typecheck -w @minedrop/engine && npm run typecheck -w @minedrop/api && npm run typecheck -w @minedrop/web",
     "sim:e2e": "npm run sim:e2e -w @minedrop/engine",
     "test:auth": "npm run test:auth -w @minedrop/api",
     "tg": "node scripts/tg-dev.mjs",
     "test:deposits": "npm run test:deposits -w @minedrop/api",
     "test:chains": "npm run test:chains -w @minedrop/api",
-    "test:icons": "npm run test:icons -w @minedrop/api"
+    "test:icons": "npm run test:icons -w @minedrop/api",
+    "build:contracts": "npm run build -w @minedrop/contracts"
   },
   "devDependencies": {
     "cloudflared": "^0.7.3",

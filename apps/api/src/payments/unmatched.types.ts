@@ -15,7 +15,8 @@ import type { NetworkId, TokenId } from './networks';
    Далі адмін вирішує вручну: знайти гравця й нарахувати або лишити.
    ============================================================ */
 
-export type UnmatchedStatus = 'new' | 'credited' | 'ignored';
+export type { UnmatchedStatus } from '@minedrop/contracts';
+import type { UnmatchedStatus } from '@minedrop/contracts';
 
 export interface UnmatchedPayment {
   id: string;

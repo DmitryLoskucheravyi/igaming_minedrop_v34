@@ -10,81 +10,41 @@
      - після цього будь-який раунд серії перераховується ПРЯМО
        в браузері тим самим рушієм, що й на сервері.
 
-   Перевірка справжня: resolveRound() тут — той самий код, який
-   рахував виплату на бекенді.
-
-   PITY. Кожна CONFIG.pity-та порожня ставка поспіль форсує кірку:
-   з таблиці прокруту прибирається «пусто», і той самий сид дає
-   ІНШИЙ результат. Тому прапорець обов'язково має збігатися з тим,
-   як раунд грався (RoundResult.pity — видно в історії раунду).
-   Доки його тут не було, кожен восьмий раунд «не сходився» — і
-   виглядало це рівно як обман, хоча обману не було.
+   Сам перерахунок живе в hooks/useFairness: там він — звичайна
+   функція, яку видно й без React. Тут лише поля й результат.
    ============================================================ */
 
 import { useEffect, useState } from 'react';
-import { CONFIG, resolveRound, roundSeed, verifyCommit } from '@minedrop/engine';
-import { Api, type RevealedSeries } from '../lib/api';
+import { CONFIG } from '@minedrop/engine';
+import type { RevealedSeries } from '../lib/api';
 import { Modal } from './Modal';
+import { useFairness, useRoundCheck, type Series } from '../hooks/useFairness';
 
 interface Props {
-  fair: { serverSeedHash: string; clientSeed: string; nonce: number } | null;
+  fair: Series | null;
   onClose: () => void;
 }
 
-interface CheckResult {
-  commitOk: boolean;
-  seed: string;
-  payout: number;
-  spins: string;
-  tiers: string;
-  pity: boolean;
-}
-
 export function FairPanel({ fair, onClose }: Props) {
-  const [current, setCurrent] = useState(fair);
-  const [revealed, setRevealed] = useState<RevealedSeries[]>([]);
+  const f = useFairness(fair);
   const [seedInput, setSeedInput] = useState(fair?.clientSeed ?? '');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    Api.fairness()
-      .then((f) => { setCurrent(f.current); setRevealed(f.revealed); setSeedInput(f.current.clientSeed); })
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, []);
-
-  const saveSeed = async () => {
-    setBusy(true); setErr(null);
-    try {
-      const p = await Api.setClientSeed(seedInput);
-      setCurrent({ serverSeedHash: p.serverSeedHash, clientSeed: p.clientSeed, nonce: p.nonce });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally { setBusy(false); }
-  };
-
-  const rotate = async () => {
-    setBusy(true); setErr(null);
-    try {
-      const r = await Api.rotate();
-      setRevealed((prev) => [r.revealed, ...prev]);
-      setCurrent((c) => c && { ...c, serverSeedHash: r.next.serverSeedHash, nonce: 0 });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally { setBusy(false); }
-  };
+  /* Сид приїхав із сервера — підставляємо його в поле, але тільки поки
+     гравець не почав правити своє. */
+  const serverSeed = f.current?.clientSeed;
+  useEffect(() => { if (serverSeed) setSeedInput(serverSeed); }, [serverSeed]);
 
   return (
     <Modal title="Честность раунда" onClose={onClose}>
-      {err && <p className="err">{err}</p>}
+      {f.error && <p className="err">{f.error}</p>}
 
       <section>
         <h3>Текущая серия</h3>
         <dl>
           <dt>sha256(serverSeed)</dt>
-          <dd className="mono">{current?.serverSeedHash ?? '—'}</dd>
+          <dd className="mono">{f.current?.serverSeedHash ?? '—'}</dd>
           <dt>nonce</dt>
-          <dd className="mono">{current?.nonce ?? 0}</dd>
+          <dd className="mono">{f.current?.nonce ?? 0}</dd>
         </dl>
         <p className="hint">
           Хеш опубликован до игры. Сид раунда = HMAC(serverSeed, «clientSeed:nonce»).
@@ -98,19 +58,26 @@ export function FairPanel({ fair, onClose }: Props) {
             placeholder="свой clientSeed"
             maxLength={128}
           />
-          <button type="button" className="btn" disabled={busy} onClick={saveSeed}>Сохранить</button>
+          <button
+            type="button"
+            className="btn"
+            disabled={f.busy}
+            onClick={() => void f.saveSeed(seedInput)}
+          >
+            Сохранить
+          </button>
         </div>
 
-        <button type="button" className="btn wide" disabled={busy} onClick={rotate}>
+        <button type="button" className="btn wide" disabled={f.busy} onClick={() => void f.rotate()}>
           Раскрыть сид и начать новую серию
         </button>
       </section>
 
-      {revealed.length > 0 && (
+      {f.revealed.length > 0 && (
         <section>
           <h3>Раскрытые серии</h3>
-          {revealed.map((s) => (
-            <SeriesCheck key={s.serverSeedHash} series={s} onError={setErr} />
+          {f.revealed.map((s) => (
+            <SeriesCheck key={s.serverSeedHash} series={s} onError={f.setError} />
           ))}
         </section>
       )}
@@ -118,41 +85,12 @@ export function FairPanel({ fair, onClose }: Props) {
   );
 }
 
-/* Одна розкрита серія зі СВОЇМИ полями й СВОЇМ результатом.
-
-   Раніше nonce, ставка й результат були одним станом на всю панель:
-   вводиш nonce для однієї серії, тиснеш «Пересчитать» у другій —
-   і рахується з чужим nonce, а результат підмінюється під усіма
-   серіями одразу. */
+/* Одна розкрита серія зі СВОЇМИ полями й СВОЇМ результатом. */
 function SeriesCheck({ series, onError }: {
   series: RevealedSeries;
   onError: (m: string | null) => void;
 }) {
-  const [nonce, setNonce] = useState('1');
-  const [bet, setBet] = useState('50');
-  const [pity, setPity] = useState(false);
-  const [check, setCheck] = useState<CheckResult | null>(null);
-
-  /* Локальний перерахунок — жодного запиту на сервер */
-  const verifyRound = () => {
-    const n = parseInt(nonce, 10);
-    const b = parseInt(bet, 10);
-    if (!Number.isFinite(n) || n < 1 || !Number.isFinite(b) || b < 1) {
-      onError('nonce и ставка должны быть положительными числами');
-      return;
-    }
-    onError(null);
-    const seed = roundSeed(series.serverSeed, series.clientSeed, n);
-    const r = resolveRound(seed, 'bet', b, pity);
-    setCheck({
-      commitOk: verifyCommit(series.serverSeed, series.serverSeedHash),
-      seed,
-      payout: r.payout,
-      pity: r.setup.pity,
-      spins: r.setup.spins.map((x) => x ?? '—').join(' '),
-      tiers: r.setup.tiers.join(', ') || 'кирка не выпала',
-    });
-  };
+  const c = useRoundCheck(series);
 
   return (
     <div className="series">
@@ -160,9 +98,13 @@ function SeriesCheck({ series, onError }: {
       <div className="mono small">clientSeed: {series.clientSeed} · раундов: {series.rounds}</div>
 
       <div className="row">
-        <input className="input mono nn" value={nonce} onChange={(e) => setNonce(e.target.value)} placeholder="nonce" />
-        <input className="input mono nn" value={bet} onChange={(e) => setBet(e.target.value)} placeholder="ставка" />
-        <button type="button" className="btn" onClick={verifyRound}>Пересчитать</button>
+        <input className="input mono nn" value={c.nonce}
+          onChange={(e) => c.setNonce(e.target.value)} placeholder="nonce" />
+        <input className="input mono nn" value={c.bet}
+          onChange={(e) => c.setBet(e.target.value)} placeholder="ставка" />
+        <button type="button" className="btn" onClick={() => onError(c.verify())}>
+          Пересчитать
+        </button>
       </div>
 
       {/* Свій перемикач, а не <input type="checkbox">: системний малює
@@ -173,8 +115,8 @@ function SeriesCheck({ series, onError }: {
         type="button"
         className="toggle"
         role="switch"
-        aria-checked={pity}
-        onClick={() => setPity((v) => !v)}
+        aria-checked={c.pity}
+        onClick={() => c.setPity(!c.pity)}
       >
         <span className="toggle-track" />
         <span>
@@ -183,13 +125,17 @@ function SeriesCheck({ series, onError }: {
         </span>
       </button>
 
-      {check && (
-        <div className={'check ' + (check.commitOk ? 'ok' : 'bad')}>
-          <div>{check.commitOk ? '✓ serverSeed соответствует опубликованному хешу' : '✕ ХЕШ НЕ СОВПАЛ'}</div>
-          <div className="mono small">сид: {check.seed}</div>
-          <div className="mono small">прокруты: {check.spins}{check.pity ? ' (гарантия)' : ''}</div>
-          <div className="mono small">кирки: {check.tiers}</div>
-          <div className="payout">выплата: {check.payout}</div>
+      {c.result && (
+        <div className={'check ' + (c.result.commitOk ? 'ok' : 'bad')}>
+          <div>{c.result.commitOk
+            ? '✓ serverSeed соответствует опубликованному хешу'
+            : '✕ ХЕШ НЕ СОВПАЛ'}</div>
+          <div className="mono small">сид: {c.result.seed}</div>
+          <div className="mono small">
+            прокруты: {c.result.spins}{c.result.pity ? ' (гарантия)' : ''}
+          </div>
+          <div className="mono small">кирки: {c.result.tiers}</div>
+          <div className="payout">выплата: {c.result.payout}</div>
         </div>
       )}
     </div>

@@ -11,7 +11,12 @@
    ============================================================ */
 
 import assert from 'node:assert/strict';
-import { PaymentsService, type IncomingTx } from '../src/payments/payments.service';
+import { PaymentStoreRef } from '../src/payments/payment-store.ref';
+import { DepositAddressPool } from '../src/payments/deposit-addresses.service';
+import { PaymentRequests } from '../src/payments/payment-requests.service';
+import { UnmatchedRegistry } from '../src/payments/unmatched.service';
+import { TransferMatcher } from '../src/payments/transfer-matcher.service';
+import type { IncomingTx } from '../src/payments/payment.types';
 import type { DepositSettings, DepositMode } from '../src/settings/settings.types';
 
 const RATE = 100;                 // ₽ за 1 USDT — рівне число, щоб рахувалось усно
@@ -27,28 +32,69 @@ const settings: DepositSettings = {
   tokens: ['usdt', 'usdc'],
 };
 
-function make(mode: DepositMode = 'auto'): PaymentsService {
+/* Стенд збирає рівно те, що в продакшні збирає Nest: чотири сервіси й
+   спільне сховище. Делегати нижче потрібні, щоб тести лишились про
+   ПОВЕДІНКУ («переказ зіставився»), а не про те, який саме сервіс тепер
+   відповідає за метод. Порядок onModuleInit той самий, що в Nest:
+   сховище -> адреси -> заявки -> неопізнані. */
+function make(mode: DepositMode = 'auto') {
   settings.mode = mode;
   balances = new Map([[1, 0], [2, 0]]);
 
-  const svc = new PaymentsService(
-    { usdtTrc20Address: '' } as never,
-    { ready: async () => null } as never,
-    { snapshot: () => ({ rubPerUsdt: RATE }), isApproximate: () => false } as never,
-    {
-      topUp: (id: number, amount: number) => {
-        if (!balances.has(id)) return null;
-        const v = balances.get(id)! + amount;
-        balances.set(id, v);
-        return v;
-      },
-    } as never,
-    { getDeposits: () => settings } as never,
-  );
-  return svc;
+  const rates = { snapshot: () => ({ rubPerUsdt: RATE }), isApproximate: () => false } as never;
+  const players = {
+    topUp: (id: number, amount: number) => {
+      if (!balances.has(id)) return null;
+      const v = balances.get(id)! + amount;
+      balances.set(id, v);
+      return v;
+    },
+  } as never;
+  const cfg = { getDeposits: () => settings } as never;
+
+  const store = new PaymentStoreRef({ ready: async () => null } as never);
+  const addresses = new DepositAddressPool({ usdtTrc20Address: '' } as never, store, cfg);
+  const requests = new PaymentRequests(store, rates, players, cfg, addresses);
+  const unmatched = new UnmatchedRegistry(store, rates, players);
+  const matcher = new TransferMatcher(requests, unmatched, cfg);
+
+  return {
+    addresses, requests, unmatched, matcher,
+
+    async onModuleInit() {
+      await store.onModuleInit();
+      await addresses.onModuleInit();
+      await requests.onModuleInit();
+      await unmatched.onModuleInit();
+    },
+    onModuleDestroy: () => requests.onModuleDestroy(),
+
+    // ---- делегати ----
+    addAddress: addresses.add.bind(addresses),
+    addrList: addresses.list.bind(addresses),
+    updateAddress: addresses.update.bind(addresses),
+    watchTargets: addresses.watchTargets.bind(addresses),
+    noteScan: addresses.noteScan.bind(addresses),
+
+    create: requests.create.bind(requests),
+    activeFor: requests.activeFor.bind(requests),
+    listForPlayer: requests.listForPlayer.bind(requests),
+    listAll: requests.listAll.bind(requests),
+    approve: requests.approve.bind(requests),
+    cancelByPlayer: requests.cancelByPlayer.bind(requests),
+
+    ingest: matcher.ingest.bind(matcher),
+    settleReady: matcher.settleReady.bind(matcher),
+    settle: matcher.settle.bind(matcher),
+
+    unmatchedList: unmatched.list.bind(unmatched),
+    creditUnmatched: unmatched.credit.bind(unmatched),
+  };
 }
 
-async function init(svc: PaymentsService): Promise<void> {
+type Stand = ReturnType<typeof make>;
+
+async function init(svc: Stand): Promise<void> {
   await svc.onModuleInit();
   svc.addAddress('evm', EVM, 'test-evm');
   svc.addAddress('ton', TON, 'test-ton');

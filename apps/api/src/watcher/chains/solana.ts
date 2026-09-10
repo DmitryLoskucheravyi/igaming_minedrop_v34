@@ -14,7 +14,7 @@
 
 import { NETWORKS, tokenByContract } from '../../payments/networks';
 import type { NetworkId } from '../../payments/networks';
-import type { IncomingTx } from '../../payments/payments.service';
+import type { IncomingTx } from '../../payments/payment.types';
 import {
   httpJson, rpc,
   type ChainReader, type ScanContext, type ScanResult, type Verdict,

@@ -54,99 +54,16 @@ export interface RevealedSeries {
   rounds: number;
 }
 
-/* processing — перевод найден в сети и «отлёживается» до окончательного
-   подтверждения. Заявка в этом состоянии НЕ истекает: деньги уже
-   отправлены, и таймер к ним отношения не имеет. */
-export type PaymentStatus =
-  'pending' | 'processing' | 'approved' | 'rejected' | 'expired' | 'canceled';
+/* Форма всього, що їде по дроту, описана в @minedrop/contracts —
+   одним джерелом на сервер, гру й CRM. Тут лише перевипуск, щоб решта
+   клієнта імпортувала типи звідти ж, звідки й функції запитів. */
+export type {
+  Family, NetworkId, TokenId,
+  Payment, PaymentMethod, PaymentStatus, PaymentsInfo, DepositNetwork, ResolvedBy,
+  Withdraw, WithdrawInfo, WithdrawMethod, WithdrawStatus,
+} from '@minedrop/contracts';
+import type { NetworkId, TokenId, Payment, PaymentsInfo, Withdraw, WithdrawInfo } from '@minedrop/contracts';
 
-/* Мережі й токени описані на сервері (payments/networks.ts). Клієнт їх
-   не перелічує: список увімкнених міняється в CRM на ходу й приходить
-   у PaymentsInfo. Тут лишаються тільки рядкові типи. */
-export type NetworkId = string;
-export type TokenId = 'usdt' | 'usdc';
-
-/** Мережа, доступна для поповнення просто зараз. */
-export interface DepositNetwork {
-  id: NetworkId;
-  name: string;
-  /** приблизна комісія відправника, $ — головний аргумент вибору */
-  feeUsd: number;
-  /** переказ ідентифікується коментарем, а не сумою */
-  memo: boolean;
-  tokens: TokenId[];
-}
-
-export interface Payment {
-  id: string;
-  telegramId: number;
-  method: string;
-  /** у якій мережі й яким токеном платить гравець */
-  network: NetworkId;
-  token: TokenId;
-  amount: number;        // ₽ на баланс
-  usdtAmount: number;    // скільки переказати
-  /** код у коментар переказу — тільки в мережах, які їх підтримують */
-  memo?: string;
-  rate: number;
-  /** курс на момент створення був приблизний (біржа не відповідала) —
-      сума USDT може не збігатися з ринковою, це треба показати */
-  rateApprox?: boolean;
-  address: string;
-  status: PaymentStatus;
-  createdAt: number;
-  expiresAt: number;
-  /** сколько на самом деле пришло, в токене */
-  paidAmount?: number;
-  /** раньше этого момента перевод ещё не считается окончательным */
-  confirmAt?: number;
-  /** сеть признала перевод окончательным */
-  confirmedAt?: number;
-  resolvedAt?: number;
-  adminNote?: string;
-}
-
-export interface PaymentsInfo {
-  active: Payment | null;
-  history: Payment[];
-  minRub: number;
-  maxRub: number;
-  /** курс ₽/USDT просто зараз — для оцінки суми ДО створення заявки */
-  rate: number;
-  /** курс приблизний (біржа не відповіла) */
-  rateApprox: boolean;
-  /** час сервера на момент відповіді — поправка до годинника телефону */
-  now: number;
-  /** що зараз увімкнено адміном — саме це показуємо у виборі */
-  networks: DepositNetwork[];
-}
-
-/* ---- виведення коштів ----
-   Дзеркало депозиту, але баланс списується В МОМЕНТ ЗАЯВКИ, а не при
-   погодженні. Тому кожна операція тут міняє баланс просто зараз. */
-export type WithdrawStatus = 'pending' | 'approved' | 'rejected' | 'canceled';
-
-export interface Withdraw {
-  id: string;
-  telegramId: number;
-  method: 'usdt_trc20';
-  amount: number;        // ₽ списано з балансу
-  usdtAmount: number;    // скільки відправлять
-  rate: number;
-  rateApprox?: boolean;
-  address: string;       // адреса ГРАВЦЯ, куди слати
-  status: WithdrawStatus;
-  createdAt: number;
-  resolvedAt?: number;
-  adminNote?: string;
-}
-
-export interface WithdrawInfo {
-  active: Withdraw | null;
-  history: Withdraw[];
-  minRub: number;
-  maxRub: number;
-}
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {

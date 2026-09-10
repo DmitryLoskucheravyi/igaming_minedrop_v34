@@ -10,7 +10,7 @@
    ============================================================ */
 
 import { NETWORKS, tokenByContract, type NetworkId } from '../../payments/networks';
-import type { IncomingTx } from '../../payments/payments.service';
+import type { IncomingTx } from '../../payments/payment.types';
 import {
   fromRaw, httpJson,
   type ChainReader, type ScanContext, type ScanResult, type Verdict,

@@ -11,7 +11,7 @@
    ============================================================ */
 
 import type { Family, NetworkId, TokenId } from '../payments/networks';
-import type { IncomingTx } from '../payments/payments.service';
+import type { IncomingTx } from '../payments/payment.types';
 
 export interface ScanContext {
   /** ключ до провайдера цієї родини */

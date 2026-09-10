@@ -3,50 +3,34 @@
 /* Історія платежів гравця — окреме вікно з бургер-меню.
    Уся історія заявок на депозит зі статусами. */
 
-import { useEffect, useState } from 'react';
-import { Api, type Payment } from '../lib/api';
+import { Api, type PaymentsInfo } from '../lib/api';
 import { Modal } from './Modal';
-
-const rub = (n: number) => Math.round(n).toLocaleString('ru-RU');
-const STATUS_RU: Record<Payment['status'], string> = {
-  pending: 'ожидает',
-  processing: 'перевод найден',
-  approved: 'зачислено',
-  rejected: 'отклонено',
-  expired: 'истёк срок',
-  canceled: 'отменено',
-};
-const when = (ms: number) =>
-  new Date(ms).toLocaleString('ru-RU',
-    { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+import { useResource } from '../hooks/useResource';
+import { PAYMENT_STATUS_RU, rub, whenFull } from '../lib/format';
 
 export function PaymentsPanel({ onClose }: { onClose: () => void }) {
-  const [rows, setRows] = useState<Payment[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    Api.payments()
-      .then((r) => setRows(r.history))
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
-  }, []);
+  /* Вікно тільки читає — жодного стану, крім самого запиту, тут немає:
+     завантаження, помилка й гонка відповідей живуть у useResource. */
+  const { data, error, loading } = useResource<PaymentsInfo>(() => Api.payments());
+  const rows = data?.history ?? [];
 
   return (
     <Modal title="История платежей" onClose={onClose}>
-      {err && <p className="err">{err}</p>}
-      {!rows && !err && <p className="hint">Загрузка…</p>}
-      {rows && rows.length === 0 && <p className="hint">Платежей ещё не было.</p>}
+      {error && <p className="err">{error}</p>}
+      {loading && !error && <p className="hint">Загрузка…</p>}
+      {!loading && !error && rows.length === 0 && <p className="hint">Платежей ещё не было.</p>}
 
-      {rows && rows.length > 0 && (
+      {rows.length > 0 && (
         <div className="pay-list">
           {rows.map((p) => (
             <div key={p.id} className={'pay-item st-' + p.status}>
               <div className="pay-item-top">
                 <span className="pay-amt">+{rub(p.amount)} ₽</span>
-                <span className="pay-status">{STATUS_RU[p.status]}</span>
+                <span className="pay-status">{PAYMENT_STATUS_RU[p.status]}</span>
               </div>
               <div className="pay-item-sub">
                 <span>{p.usdtAmount} USDT · TRC20</span>
-                <span>{when(p.createdAt)}</span>
+                <span>{whenFull(p.createdAt)}</span>
               </div>
               {p.adminNote && <div className="pay-note">{p.adminNote}</div>}
             </div>

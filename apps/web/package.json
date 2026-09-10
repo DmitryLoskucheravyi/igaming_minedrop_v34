@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@minedrop/contracts": "1.0.0",
     "@minedrop/engine": "1.0.0",
     "next": "^15.1.6",
     "react": "^19.0.0",

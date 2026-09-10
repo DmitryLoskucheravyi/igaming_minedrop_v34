@@ -16,7 +16,7 @@
 
 import { NETWORKS } from '../../payments/networks';
 import type { NetworkId, TokenId } from '../../payments/networks';
-import type { IncomingTx } from '../../payments/payments.service';
+import type { IncomingTx } from '../../payments/payment.types';
 import {
   fromRaw, httpJson,
   type ChainReader, type ScanContext, type ScanResult, type Verdict,
