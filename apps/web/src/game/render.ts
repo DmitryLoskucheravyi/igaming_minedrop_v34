@@ -66,8 +66,19 @@ export const Render = {
     for (const [px, py] of nails) ctx.fillRect(px, py, n, n);
   },
 
-  /* Піксельне сердечко */
+  /* Сердечко в підписі HP. Картинка (ui/heart.png) замість колишнього
+     масиву пікселів; s — ШИРИНА, висота йде за пропорціями файлу, щоб
+     серце не сплющувалось. Немає картинки — лишається намальоване
+     сердечко, щоб підпис HP не поїхав. */
   heart(ctx: Ctx, x: number, y: number, s: number) {
+    const img = Assets.get('heart');
+    if (img) {
+      const nw = img.naturalWidth || img.width;
+      const nh = img.naturalHeight || img.height;
+      const h = nw ? s * (nh / nw) : s;
+      ctx.drawImage(img, x - s / 2, y - h / 2, s, h);
+      return;
+    }
     const P = [
       [0, 1, 1, 0, 1, 1, 0],
       [1, 1, 1, 1, 1, 1, 1],
@@ -79,17 +90,10 @@ export const Render = {
     const u = s / 7;
     const x0 = x - (7 * u) / 2;
     const y0 = y - (6 * u) / 2;
-    ctx.fillStyle = '#0d0f13';
-    for (let r = 0; r < P.length; r++)
-      for (let c = 0; c < P[r].length; c++)
-        if (P[r][c]) ctx.fillRect(x0 + c * u - u * 0.35, y0 + r * u - u * 0.35, u * 1.7, u * 1.7);
     ctx.fillStyle = '#d64b3f';
     for (let r = 0; r < P.length; r++)
       for (let c = 0; c < P[r].length; c++)
         if (P[r][c]) ctx.fillRect(x0 + c * u, y0 + r * u, u + 0.5, u + 0.5);
-    ctx.fillStyle = '#f08a80';                       // блік
-    ctx.fillRect(x0 + u, y0 + u, u, u);
-    ctx.fillRect(x0 + u, y0 + 2 * u, u, u);
   },
 
   /* Блок-множник: пише свій ікс просто на собі */
@@ -150,7 +154,9 @@ export const Render = {
     ctx.fill();
   },
 
-  /* Гумовий блок — трамплін: посилений відскок і швидке падіння. */
+  /* Гумовий блок — трамплін: посилений відскок і швидке падіння.
+     Картинка є (BLOCKS.rubber.skin), намальована «пружина» нижче —
+     запасний варіант на випадок, якщо файл не доїхав. */
   rubberBlock(ctx: Ctx, x: number, y: number, s: number) {
     const img = Assets.get('block.rubber');
     if (img) { ctx.drawImage(img, x, y, s + 1, s + 1); return; }
@@ -168,11 +174,11 @@ export const Render = {
     }
   },
 
-  /* Скаттер: три за забіг -> безкоштовна бонуска. Малюється кодом, доки
-     немає картинки (з'явиться — досить прописати skin у BLOCKS).
+  /* Скаттер: три за забіг -> безкоштовна бонуска. Картинка є
+     (BLOCKS.scatter.skin), намальована зірка нижче — запасний варіант.
 
-     Зірка, і навмисно не схожа на решту блоків: гравець мусить упізнати
-     її з першого погляду серед руди, бо саме за нею й полює. */
+     Він навмисно не схожий на решту блоків: гравець мусить упізнати
+     його з першого погляду серед руди, бо саме за ним і полює. */
   scatterBlock(ctx: Ctx, x: number, y: number, s: number) {
     const img = Assets.get('block.scatter');
     if (img) { ctx.drawImage(img, x, y, s + 1, s + 1); return; }
@@ -192,6 +198,12 @@ export const Render = {
     ctx.fill();
   },
 
+  /* Руда, яка малюється НАКЛАДКОЮ на булижник, а не власною картинкою:
+     художник дав саме накладки (чорний малюнок руди на прозорому), а
+     не готові блоки. Тому база в BLOCKS[*].skin у них — той самий
+     cobble, а різницю дає ця мапа. */
+  ORE_OVERLAY: { iron: 'ore.iron', gold: 'ore.gold' } as Partial<Record<Cell['id'], string>>,
+
   /* Блок. cell = { id, dmg, seed, m }, row — номер ряду (для скінів,
      що залежать від глибини) */
   block(ctx: Ctx, x: number, y: number, s: number, cell: Cell, row = 0) {
@@ -210,33 +222,36 @@ export const Render = {
       ctx.fillStyle = 'rgba(255,255,255,.08)';
       ctx.fillRect(x, y, s, 3);
     }
-    if (cell.dmg > 0) this.cracks(ctx, x, y, s, cell.dmg / def.tough, cell.seed || 0);
+    const ore = this.ORE_OVERLAY[cell.id];
+    if (ore) {
+      const oi = Assets.get(ore);
+      if (oi) ctx.drawImage(oi, x, y, s + 1, s + 1);
+    }
+    if (cell.dmg > 0) this.cracks(ctx, x, y, s, cell.dmg / def.tough);
   },
 
-  /* Тріщини як у майні: чим більше ударів — тим більше вибитих пікселів.
-     Малюнок детермінований від seed, тому тріщини наростають, а не стрибають. */
-  cracks(ctx: Ctx, x: number, y: number, s: number, p: number, seed: number) {
-    if (p <= 0) return;
-    const n = Math.round(Math.min(1, p) * 22);
-    /* Math.imul, а не звичайне множення: seed доходить до 2^31, і
-       seed * 2654435761 давало ~5.7e18 — далеко за межами точного
-       діапазону double (2^53). Молодші біти там уже втрачені, тобто
-       «випадковість» малюнка тріщин була вироджена. imul рахує саме
-       32-бітний добуток, як і задумано. */
-    let st = (Math.abs(Math.imul(seed | 0, 2654435761)) % 2147483647) || 12345;
-    const rnd = () => (st = (st * 48271) % 2147483647) / 2147483647;
-    const u = s / 16;
+  /* Тріщини — чотири намальовані стадії (fx/crack-1..4.png), чорний
+     малюнок на прозорому, поверх скіну блоку.
 
-    for (let i = 0; i < n; i++) {
-      const px = Math.floor(rnd() * 14) * u + u;
-      const py = Math.floor(rnd() * 14) * u + u;
-      const w = u * (1 + Math.floor(rnd() * 2));
-      const h = u * (1 + Math.floor(rnd() * 2));
-      ctx.fillStyle = 'rgba(0,0,0,.62)';
-      ctx.fillRect(x + px, y + py, w, h);
-      ctx.fillStyle = 'rgba(255,255,255,.10)';
-      ctx.fillRect(x + px, y + py, w, Math.max(1, u * 0.4));
-    }
+     Раніше вибиті пікселі малювались кодом від cell.seed. Малюнок
+     тепер один на всі блоки однієї стадії — і це нормально: стадій
+     чотири, вони наростають, і саме наростання читається краще за
+     випадковий шум, який раніше на око майже не відрізнявся між
+     сусідніми ударами.
+
+     p — частка знятої міцності (cell.dmg / def.tough). Стадія
+     ceil(p * 4): будь-який ненульовий урон уже дає першу тріщину, а
+     повна міцність — четверту. */
+  cracks(ctx: Ctx, x: number, y: number, s: number, p: number) {
+    if (p <= 0) return;
+    const stage = Math.max(1, Math.min(4, Math.ceil(Math.min(1, p) * 4)));
+    const img = Assets.get('crack' + stage);
+    if (!img) return;
+    ctx.save();
+    // не в нуль: тріщина має лежати НА блоці, а не замінювати його
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(img, x, y, s + 1, s + 1);
+    ctx.restore();
   },
 
   /* Затемнення клітинок, далеких від кірки. Зона навколо неї лишається
@@ -257,20 +272,23 @@ export const Render = {
     ctx.fillRect(x, y, s + 1, s + 1);
   },
 
-  /* Кірка. x,y — центр у пікселях, size — в пікселях, rot — радіани */
-  pickaxe(ctx: Ctx, x: number, y: number, size: number, tier: Tier, rot: number, enchanted: boolean) {
-    const img = Assets.pick(tier, enchanted);
+  /* Кірка. x,y — центр у пікселях, rot — радіани.
+
+     size — ВИДИМИЙ розмір малюнка, а не розмір полотна. Полотно
+     більше рівно настільки, наскільки в скіні є прозорі поля:
+     draw = size / Assets.pickFill(tier). Без цього переходу нові
+     скіни (малюнок впритул до країв, fill 1.00) вийшли б на 23%
+     більшими за старі (fill 0.8125) при тому самому size — а разом із
+     ними розійшлись би картинка й радіус зіткнення у фізиці. */
+  pickaxe(ctx: Ctx, x: number, y: number, size: number, tier: Tier, rot: number) {
+    const img = Assets.pick(tier);
+    const draw = size / Assets.pickFill(tier);
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rot || 0);
 
-    if (enchanted) {
-      ctx.shadowColor = '#c46bff';
-      ctx.shadowBlur = size * 0.28;
-    }
-
     if (img) {
-      ctx.drawImage(img, -size / 2, -size / 2, size, size);
+      ctx.drawImage(img, -draw / 2, -draw / 2, draw, draw);
       ctx.restore();
       return;
     }
@@ -290,8 +308,22 @@ export const Render = {
     ctx.restore();
   },
 
-  /* «Пусто» — поки просто Х. Дай іконку — заміню на неї. */
+  /* «Пусто» на стрічці — намальований червоний хрест
+     (ui/reel-nothing.png). Пропорції беремо з файлу: він не квадратний
+     (488x482), і вписувати його в квадрат означало б трохи сплющити.
+     Немає картинки — лишається старий процедурний Х. */
   cross(ctx: Ctx, x: number, y: number, size: number, alpha = 1) {
+    const img = Assets.get('reelNothing');
+    if (img) {
+      const nw = img.naturalWidth || img.width;
+      const nh = img.naturalHeight || img.height;
+      const w = size, h = nw ? size * (nh / nw) : size;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(img, x - w / 2, y - h / 2, w, h);
+      ctx.restore();
+      return;
+    }
     const t = Math.max(4, size * 0.16);
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -309,14 +341,19 @@ export const Render = {
     ctx.restore();
   },
 
-  /* Квадратна комірка-символ рулетки — як у класичному 777-слоті:
-     сам символ великий і по центру, назва — тонким підписом знизу
-     (пусто підпису не має, там і так усе зрозуміло з хреста). */
-  /* Символ стрічки. БЕЗ власної підкладки: раніше тут був inset() —
-     квадрат кольору тіру з фаскою. Під прямокутною рамкою він читався
-     як комірка автомата, але всередині круглого вінка квадрат у колі
-     виглядає чужорідно. Тепер кірка лежить просто на фоні екрана, а
-     роль вікна виконує сама рамка.
+  /* Символ стрічки — САМ СКІН, і більше нічого.
+
+     БЕЗ власної підкладки: раніше тут був inset() — квадрат кольору
+     тіру з фаскою. Під прямокутною рамкою він читався як комірка
+     автомата, але всередині круглого вирізу квадрат у колі виглядає
+     чужорідно. Тепер кірка лежить просто на фоні слота, а роль вікна
+     виконує саме кільце.
+
+     БЕЗ ПІДПИСУ НАЗВОЮ. Раніше під кіркою стояло «STONE», «IRON» і
+     т. д. Скіни тірів і так відрізняються між собою з першого погляду,
+     а підпис у круглому вікні тіснив сам символ і змушував малювати
+     його дрібнішим, ніж треба. Тому назви немає, а символ малюється у
+     повний розмір вікна — той самий, що й у «пусто».
 
      Підсвітка виграшної комірки лишається, але кружком, а не заливкою
      прямокутника — інакше квадрат повернувся б у момент зупинки. */
@@ -335,24 +372,15 @@ export const Render = {
     }
 
     /* Верстка йде не по всій комірці, а по ВПИСАНОМУ в неї квадрату
-       (0.7 — сторона квадрата у колі того ж діаметра). Комірка тепер
-       завбільшки з круглий виріз рамки, тож підпис, поставлений за
-       нижнім краєм комірки, поїхав би під вінок. */
+       (0.7 — сторона квадрата у колі того ж діаметра): комірка
+       завбільшки з круглий виріз, і кути в неї не влазять. */
     const cx = x + w / 2;
     const cy = y + h / 2;
     const box = Math.min(w, h) * 0.7;
-    const label = !!item;
-    const iconCy = label ? cy - box * 0.08 : cy;
-    const s = box * (label ? 0.62 : 0.74);
+    const s = box * 0.74;
 
-    if (!item) this.cross(ctx, cx, iconCy, s * 0.58, 0.95);
-    else this.pickaxe(ctx, cx, iconCy, s, item, -0.5, false);
-
-    if (label) {
-      const small = Math.round(box * 0.15);
-      this.text(ctx, item!.name.toUpperCase(), cx, cy + box * 0.36,
-        '700 ' + small + 'px ui-monospace, monospace', '#fff');
-    }
+    if (!item) this.cross(ctx, cx, cy, s * 0.58, 0.95);
+    else this.pickaxe(ctx, cx, cy, s, item, -0.5);
   },
 
   /* HP над кіркою: сердечко + «40/100» */
@@ -369,6 +397,111 @@ export const Render = {
     const p = hp / hpMax;
     this.text(ctx, txt, x - total / 2 + hs + s * 0.35, y + s * 0.36, font,
       p > 0.5 ? '#dfe8f0' : p > 0.22 ? '#ffd34d' : '#ff7a6e', 'left');
+  },
+
+  /* ---- РАСТРОВИЙ ШРИФТ ЦИФР (ui/popup-font.png) ----
+
+     Жовті цифри з коричневою обводкою — той самий стиль, що й решта
+     нового арту, замість системного ui-monospace у попапах виграшу.
+
+     Прямокутники гліфів ЗАМІРЯНО з файлу (пошук зв'язних плям по
+     альфа-каналу), а не поділом на рівну сітку: сітка в листі рівна
+     лише приблизно — '8' стоїть на 3 px вище за сусідів свого ряду, а
+     '°' узагалі втиснуте в кут. Порядок у листі теж не абетковий
+     (0 1 2 3 ° / 4 6 X 9 / 5 7 8 /), тому мапа явна.
+
+     Усі цифри — 18 px заввишки, це й є смуга рядка (FONT_BAND):
+     вирівнюємо по НИЗУ смуги, тобто y — базова лінія, як у text(). */
+  FONT_BAND: 18,
+  FONT_GAP: 2,                    // проміжок між гліфами, у px файлу
+  FONT_FILL: '#ffe429',           // обидва кольори взято з самого листа
+  FONT_OUTLINE: '#782f00',
+  FONT_GLYPHS: {
+    '0': { x: 1, y: 1, w: 11, h: 18, dy: 0 },
+    '1': { x: 15, y: 1, w: 7, h: 18, dy: 0 },
+    '2': { x: 25, y: 1, w: 11, h: 18, dy: 0 },
+    '3': { x: 39, y: 1, w: 11, h: 18, dy: 0 },
+    '4': { x: 1, y: 22, w: 11, h: 18, dy: 0 },
+    '5': { x: 1, y: 43, w: 11, h: 18, dy: 0 },
+    '6': { x: 15, y: 22, w: 11, h: 18, dy: 0 },
+    '7': { x: 15, y: 43, w: 11, h: 18, dy: 0 },
+    '8': { x: 29, y: 40, w: 11, h: 18, dy: 0 },
+    '9': { x: 44, y: 22, w: 11, h: 18, dy: 0 },
+    '/': { x: 44, y: 43, w: 9, h: 18, dy: 0 },
+    // «ікс» множника; у листі він на 3 px нижчий за цифри — ставимо по центру
+    'x': { x: 29, y: 22, w: 12, h: 15, dy: 2 },
+    'X': { x: 29, y: 22, w: 12, h: 15, dy: 2 },
+    // градус — крихітний, тримається верху смуги
+    '°': { x: 53, y: 1, w: 5, h: 6, dy: 0 },
+  } as Record<string, { x: number; y: number; w: number; h: number; dy: number }>,
+
+  /* Гліфів, яких у листі НЕМАЄ, але без яких не обійтись: кома/крапка
+     в сумі та '+' перед нею. Домальовуємо їх тими самими двома
+     кольорами — це чесніше, ніж рвати один рядок між двома шрифтами.
+     Числа — ширини в px смуги. */
+  FONT_DRAWN: { '.': 4, ',': 4, '+': 11, '-': 9, ' ': 6 } as Record<string, number>,
+
+  /** Ширина рядка растровим шрифтом при висоті цифри h. -1 — не всі
+      символи підтримані, викликач має взяти системний шрифт. */
+  pixelWidth(s: string, h: number): number {
+    if (!s.length) return 0;
+    if (!Assets.get('popupFont')) return -1;
+    const k = h / this.FONT_BAND;
+    let w = 0;
+    for (const ch of s) {
+      const g = this.FONT_GLYPHS[ch];
+      if (g) { w += (g.w + this.FONT_GAP) * k; continue; }
+      const d = this.FONT_DRAWN[ch];
+      if (d == null) return -1;
+      w += (d + this.FONT_GAP) * k;
+    }
+    return w - this.FONT_GAP * k;   // хвостовий проміжок не рахуємо
+  },
+
+  /* Малює рядок растровим шрифтом. y — базова лінія (низ цифри),
+     h — висота цифри в пікселях екрана. Повертає ширину або -1, якщо
+     шрифт не годиться для цього рядка (нічого не намальовано). */
+  pixelText(ctx: Ctx, s: string, x: number, y: number, h: number, align: CanvasTextAlign = 'center'): number {
+    const total = this.pixelWidth(s, h);
+    if (total < 0) return -1;
+    const img = Assets.get('popupFont');
+    if (!img) return -1;
+
+    const k = h / this.FONT_BAND;
+    let px = x;
+    if (align === 'center') px = x - total / 2;
+    else if (align === 'right' || align === 'end') px = x - total;
+    const top = y - h;
+
+    for (const ch of s) {
+      const g = this.FONT_GLYPHS[ch];
+      if (g) {
+        ctx.drawImage(img, g.x, g.y, g.w, g.h, px, top + g.dy * k, g.w * k, g.h * k);
+        px += (g.w + this.FONT_GAP) * k;
+        continue;
+      }
+      const d = this.FONT_DRAWN[ch];
+      if (d == null) continue;      // pixelWidth уже гарантував, що сюди не зайдемо
+      this.pixelDrawn(ctx, ch, px, top, k);
+      px += (d + this.FONT_GAP) * k;
+    }
+    return total;
+  },
+
+  /* Домальовані гліфи ('.', ',', '+', '-'). Спершу темний прямокутник
+     на піксель більший з кожного боку — це та сама обводка, що є в
+     самому листі, — потім жовта заливка. */
+  pixelDrawn(ctx: Ctx, ch: string, px: number, top: number, k: number) {
+    const bar = (bx: number, by: number, bw: number, bh: number) => {
+      ctx.fillStyle = this.FONT_OUTLINE;
+      ctx.fillRect(px + (bx - 1) * k, top + (by - 1) * k, (bw + 2) * k, (bh + 2) * k);
+      ctx.fillStyle = this.FONT_FILL;
+      ctx.fillRect(px + bx * k, top + by * k, bw * k, bh * k);
+    };
+    if (ch === '.') bar(1, 14, 4, 4);
+    else if (ch === ',') { bar(1, 14, 4, 4); bar(1, 18, 3, 3); }
+    else if (ch === '+') { bar(1, 7, 9, 4); bar(3, 4, 4, 10); }
+    else if (ch === '-') bar(1, 8, 7, 4);
   },
 
   text(ctx: Ctx, s: string, x: number, y: number, font: string, color: string, align: CanvasTextAlign = 'center') {
@@ -412,5 +545,52 @@ export const Render = {
     this.text(ctx, s, left, y, font, color, 'left');
     // значок трохи «сідає» на базову лінію тексту, вирівнюємо по центру великих літер
     if (img && iw) ctx.drawImage(img, left + tw + gap, y - ih * 0.82, iw, ih);
+  },
+
+  /* Значок валюти для растрового рядка: сама картинка й розміри, які
+     вона займе при висоті цифри h. Окремо від малювання, бо викликачу
+     часто треба ЗАМІРЯТИ рядок разом зі значком, перш ніж вирішити,
+     де його ставити (див. панель результату в hud-canvas). */
+  pixelCurIcon(h: number, cur: string, mono: boolean, color: string) {
+    const key = 'cur.' + cur;
+    const img = (mono ? Assets.tint(key, color) : Assets.get(key)) as
+      | HTMLImageElement | HTMLCanvasElement | null;
+    if (!img) return { img: null, w: 0, h: 0, gap: 0 };
+    const nw = img instanceof HTMLImageElement ? img.naturalWidth : img.width;
+    const nh = img instanceof HTMLImageElement ? img.naturalHeight : img.height;
+    const ih = h * 1.15;
+    return { img, w: nh ? ih * (nw / nh) : 0, h: ih, gap: h * 0.18 };
+  },
+
+  /** Ширина «сума + значок валюти» растровим шрифтом. -1 — не набирається. */
+  pixelMoneyWidth(s: string, h: number, cur: string, mono: boolean, color: string): number {
+    const tw = this.pixelWidth(s, h);
+    if (tw < 0) return -1;
+    const ic = this.pixelCurIcon(h, cur, mono, color);
+    return tw + ic.gap + ic.w;
+  },
+
+  /* Те саме, що money(), але растровим шрифтом (див. pixelText).
+     Повертає намальовану ширину або -1, якщо рядок цим шрифтом не
+     набирається — тоді викликач малює звичайним money().
+
+     Значок валюти лишається картинкою й тонується як завжди: він і
+     раніше був окремим спрайтом, а не символом шрифту. */
+  pixelMoney(
+    ctx: Ctx, s: string, x: number, y: number, h: number, color: string,
+    cur: string, mono: boolean, align: CanvasTextAlign = 'center',
+  ): number {
+    const tw = this.pixelWidth(s, h);
+    if (tw < 0) return -1;
+
+    const ic = this.pixelCurIcon(h, cur, mono, color);
+    const total = tw + ic.gap + ic.w;
+    let left = x;
+    if (align === 'center') left = x - total / 2;
+    else if (align === 'right' || align === 'end') left = x - total;
+
+    this.pixelText(ctx, s, left, y, h, 'left');
+    if (ic.img && ic.w) ctx.drawImage(ic.img, left + tw + ic.gap, y - ic.h * 0.92, ic.w, ic.h);
+    return total;
   },
 };

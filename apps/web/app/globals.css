@@ -146,6 +146,40 @@ html, body {
   background: var(--text2);
 }
 
+/* Кнопка звуку в шапці. Габарити й поведінка — як у бургера поруч
+   (та сама тач-ціль 44px, та сама фаска й натиск), щоб шапка лишалась
+   однією смугою, а не набором різних кнопок. */
+.mutebtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  margin-left: -4px;
+  color: var(--text2);
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  cursor: pointer;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              color var(--t) var(--ease), transform var(--t-press) var(--ease);
+}
+.mutebtn:hover { border-color: var(--border2); }
+.mutebtn:active { transform: scale(.94); background: var(--surface2); }
+/* Вимкнено — глушимо саму кнопку, а не лише міняємо іконку: інакше
+   стан видно тільки якщо придивитись до хвильок біля динаміка. */
+.mutebtn.off { color: var(--muted2); }
+.mutebtn svg { width: 22px; height: 22px; }
+.mutebtn .ic-fill { fill: currentColor; }
+.mutebtn .ic-wave,
+.mutebtn .ic-slash {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
 .balance-chip {
   display: flex;
   align-items: center;

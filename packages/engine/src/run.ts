@@ -101,7 +101,8 @@ export function tntChainBonus(chain: number): number {
    час (звичайні удари + вибухи TNT), множиться на активний множник.
    Новий множник під час відкритого вікна: беремо БІЛЬШИЙ із двох
    (не перемножуємо), таймер скидається на повні MULT_WINDOW_SEC.
-   Стіл зачарування (p.enchantMult) — окремий механізм, вікна не чіпає. */
+   Це ЄДИНИЙ множник виграшу в грі: другим був стіл зачарування
+   (p.enchantMult), його прибрано разом із самим блоком. */
 export const MULT_WINDOW_SEC = 15;
 
 /* ---- ЗРИВ ІЗ ВЕРТИКАЛІ ----
@@ -125,15 +126,6 @@ export class Pick {
   tier: Tier;
   hpMax: number;
   hp: number;
-  /* Магічний («зачарований») скін кірки. Ставить ЛИШЕ стіл зачарування.
-     Верстак (апгрейд тіру) його НЕ вмикає — після верстака кірка носить
-     звичайний скін свого нового тіру. */
-  enchanted = false;
-  /* Стіл зачарування — 3 фіксовані рівні (CONFIG.enchant.steps):
-     I → ×1.25, II → ×1.5, III → ×2.0. Далі дотики без ефекту.
-     Множник діє на ВЕСЬ подальший виграш цієї кірки. */
-  enchantLvl = 0;
-  enchantMult = 1;
   /* Алмазна кірка (топ-тір): перший верстак лікує ПОВНІСТЮ, кожен
      наступний — лише +CONFIG.workbench.topHeal HP (не понад hpMax). */
   topHealUsed = false;
@@ -445,8 +437,7 @@ export class Run {
          до максимуму. На топ-тірі (Diamond) 1-й верстак дає повний хіл,
          кожен наступний — лише +CONFIG.workbench.topHeal HP (не понад
          hpMax). Довжину забігу тримає HP кірки, а не таймер.
-         Вибух TNT сюди не заходить (ламає як звичайний блок).
-         p.enchanted верстак НЕ чіпає — магічний скін ставить лише стіл. */
+         Вибух TNT сюди не заходить (ламає як звичайний блок). */
       if (p.level < TIERS.length - 1) {
         p.level++;
         p.tier = TIERS[p.level];
@@ -463,28 +454,6 @@ export class Run {
         this.events.push({ t: 'upgrade', r, c, tier: p.tier.id as TierId,
                            healOnly: true, topUp, pick: idx });
       }
-      this.bounce(p, dx, sideways, 0.7 * this.hitBounce(p, dx, dy));
-      this.checkDead(p, idx);
-      return;
-    }
-
-    if (def.kind === 'magic') {
-      this.mine.clear(r, c);
-      // дотик коштує HP і рахується як удар — див. коментар у гілці 'upgrade'
-      p.hp -= def.cost;
-      p.hits++; this.hits++;
-      /* Стіл зачарування: 3 фіксовані рівні множника цієї кірки
-         (CONFIG.enchant.steps: ×1.25 → ×1.5 → ×2.0). Множник діє на
-         виграш кірки з цього моменту й ДАЛІ (не заднім числом). Далі
-         дотики без ефекту. */
-      const steps = CONFIG.enchant.steps;
-      if (p.enchantLvl < steps.length) {
-        p.enchantLvl++;
-        p.enchantMult = steps[p.enchantLvl - 1];
-      }
-      p.enchanted = true;
-      this.upgrades++;
-      this.events.push({ t: 'magic', r, c, mult: p.enchantMult, lvl: p.enchantLvl, pick: idx });
       this.bounce(p, dx, sideways, 0.7 * this.hitBounce(p, dx, dy));
       this.checkDead(p, idx);
       return;
@@ -667,7 +636,7 @@ export class Run {
             const b = this.mine.get(rr, cc);
             if (!b || isWall(b)) continue;
             const k = BLOCKS[b.id].kind;
-            if (k !== 'solid' && k !== 'magic' && k !== 'upgrade' && k !== 'tnt') continue;
+            if (k !== 'solid' && k !== 'upgrade' && k !== 'tnt') continue;
             hitMap.set(key, { r: rr, c: cc, id: b.id });
           }
         }
@@ -710,7 +679,7 @@ export class Run {
           this.blocks++; p.blocks++;
           if (BLOCKS[b.id].kind === 'tnt') queue.push([b.r, b.c]);
           // верстак: value 0, просто ламається. multActive=1 поза вікном.
-          else got += BLOCKS[b.id].value * p.enchantMult * this.multActive;
+          else got += BLOCKS[b.id].value * this.multActive;
         }
         blastGot += got;
 
@@ -758,9 +727,10 @@ export class Run {
     p.hits++; this.hits++;
     cell.dmg += p.tier.dmg;
 
-    if (cell.dmg >= def.tough) {
+    const broke = cell.dmg >= def.tough;
+    if (broke) {
       this.mine.clear(r, c);
-      const got = def.value * p.enchantMult * this.multActive;
+      const got = def.value * this.multActive;
       this.collected += got;
       this.blocks++; p.blocks++;
       this.events.push({ t: 'break', r, c, id: def.id, got, pick: idx });
@@ -768,7 +738,10 @@ export class Run {
       this.events.push({ t: 'crack', r, c, id: def.id, stage: cell.dmg, of: def.tough, pick: idx });
     }
 
-    this.bounce(p, dx, sideways, this.hitBounce(p, dx, dy));
+    /* Блок вистояв — кірка майже не відскакує (P.crackBounce), тобто
+       прогризає жилу, а не стрибає від неї. Розбитий блок відкидає як
+       і раніше. Див. коментар до crackBounce у config.ts. */
+    this.bounce(p, dx, sideways, this.hitBounce(p, dx, dy) * (broke ? 1 : P.crackBounce));
     this.checkDead(p, idx);
   }
 

@@ -1,28 +1,50 @@
 /* ============================================================
    ASSETS — вантажить картинки, шляхи до яких прописані
-   в конфізі рушія (BLOCKS[*].skin, TIERS[*].skin/skinMagic).
+   в конфізі рушія (BLOCKS[*].skin, TIERS[*].skin).
 
-   Хочеш замінити скін — міняєш шлях у packages/engine/src/config.ts,
-   більше ніде. Файл не знайшовся — малюється заглушка, гра не падає.
+   Хочеш замінити скін кірки чи блоку — міняєш шлях у
+   packages/engine/src/config.ts, більше ніде. Файл не знайшовся —
+   малюється заглушка, гра не падає.
+
+   Решта (фон, хмари, кільце рулетки, тріщини, ефекти) — не блоки й не
+   кірки, у рушії їм не місце: їхні шляхи живуть тут, у corePaths() і
+   loadExtras().
 
    ЧОМУ ЗАВАНТАЖЕННЯ РОЗДІЛЕНЕ НАДВОЄ
-   Зачаровані скіни (`_magic`) важать разом ~14 МБ — від 1.5 до 6.3 МБ
-   кожен. На десктопі це непомітно, у телеграмі на мобільному
-   інтернеті це 14 МБ ДО першого кадру: гравець піде раніше, ніж
-   побачить рулетку.
+   Поділ за ПОТРІБНІСТЮ ДО ПЕРШОГО КАДРУ, а не просто за вагою:
 
-   Тому:
-     - блокуючий етап — тільки блоки й звичайні кірки (~40 КБ);
-     - зачаровані вантажаться у фоні одразу після старту, а якщо
-       верстак трапився раніше, ніж вони доїхали, малюється
-       звичайний скін — гра від цього не ламається.
+     - блокуючий етап — усе, що видно на екрані рулетки одразу: фон,
+       хмари, кільце з підкладкою, символи стрічки, блоки декоративної
+       шахти, кірки, тріщини (~2 МБ реального піксель-арту);
+     - фоновий — те, чого в першому кадрі немає фізично: іконки валют
+       (з'являються з першим розбитим блоком) і важкі спрайти ефектів
+       (вибух TNT, шлейфи кірки — разом ~320 КБ). Поки вони їдуть,
+       ефект просто не малюється, а гра від цього не ламається.
 
-   Це прибирає затримку старту, але не трафік. Файли все одно
-   варто перетиснути: 6.3 МБ на одну анімацію кірки — це
-   повнорозмірний оригінал там, де треба ~256px.
+   Раніше причина поділу була інша — зачаровані скіни кірок важили
+   разом ~14 МБ і тягнулись ДО першого кадру. Зачарування прибрано як
+   механіку, скіни видалено, і ділити «за вагою» більше нема чого;
+   поділ лишився, але тепер він саме про потрібність до першого кадру.
    ============================================================ */
 
 import { BLOCKS, TIERS, type Tier } from '@minedrop/engine';
+
+/* Яку частку СВОГО ПОЛОТНА займає малюнок кірки — заміряно по
+   альфа-каналу кожного файлу.
+
+   Навіщо це взагалі: Render.pickaxe отримує ВИДИМИЙ розмір кірки, а
+   не розмір полотна. Полотно = видимий розмір / fill. Без цього кожна
+   заміна скіну з іншими полями мовчки міняла б масштаб кірки на полі —
+   рівно те, що сталося при переході на нові 256x256 (малюнок впритул
+   до країв, 1.00 полотна) з попередніх 160x160 (bbox 130x130 = 0.8125).
+
+   Зараз ВСІ скіни намальовані від краю до краю, тож у мапі порожньо і
+   всі беруть 1.0. Мапу лишено навмисно: щойно з'явиться скін із
+   полями, його частка вписується сюди одним рядком — і масштаб кірки
+   на полі не поїде. Так, наприклад, тут жила золота кірка зі старого
+   комплекту 160x160 (bbox 130x130 = 0.8125), поки її не прибрали. */
+const PICK_FILL_DEFAULT = 1;
+const PICK_FILL: Partial<Record<string, number>> = {};
 
 class AssetStore {
   images: Record<string, HTMLImageElement | null> = {};
@@ -39,32 +61,68 @@ class AssetStore {
       const skin = BLOCKS[key].skin;
       if (skin) p['block.' + key] = skin;
     }
-    // вінок з рубінами; на ньому ж горить прогрес до гарантованої кірки
-    p['reelFrame'] = '/ui/reel-frame.png';
-    // фон екрана рулетки — розтягується на весь кадр
-    p['slotBg'] = '/ui/slot-bg.png';
-    // зелений рубін — ним перекриваються червоні, коли кірка гарантована
-    p['gemGreen'] = '/ui/gem-green.png';
+
+    /* Фон екрана — намальована картинка 320x320 замість колишнього
+       процедурного неба. Саме БЛОКУЮЧИЙ етап: без неї перший кадр
+       порожній (див. backdrop.ts). */
+    p['bg'] = '/background.png';
+    /* Хмари, що пливуть поверх фону. Дві з трьох намальовані
+       вертикально — повертає їх rotCCW() нижче. */
+    p['cloud1'] = '/sky/cloud-1.png';
+    p['cloud2'] = '/sky/cloud-2.png';
+    p['cloud3'] = '/sky/cloud-3.png';
+
+    // кільце слот-машини; на ньому ж горить прогрес до гарантованої кірки
+    p['reelRing'] = '/ui/reel-ring.png';
+    // темний диск ПІД стрічкою, малюється всередині вирізу кільця
+    p['reelBacking'] = '/ui/reel-backing.png';
+    // палички прогресу pity: червона — набрана пуста ставка, зелена — гарантія
+    p['pipGreen'] = '/ui/reel-pip-green.png';
+    p['pipRed'] = '/ui/reel-pip-red.png';
+    // «пусто» на стрічці
+    p['reelNothing'] = '/ui/reel-nothing.png';
+    // сердечко в підписі HP над кіркою
+    p['heart'] = '/ui/heart.png';
+    // растровий шрифт цифр для попапів виграшу
+    p['popupFont'] = '/ui/popup-font.png';
+    // табличка виграшу й слово WIN (обидві намальовані вертикально)
+    p['winBanner'] = '/ui/win-banner.png';
+    p['winWord'] = '/ui/win-word.png';
+
     /* Другий скін каменю. Це НЕ окремий блок: та сама клітинка stone,
        просто з глибиною вона частіше малюється булижником (див.
        Render.block). Тому шляху немає в BLOCKS — він тільки тут. */
-    p['block.stone2'] = '/blocks/stone2.png';
+    p['block.stone2'] = '/blocks/cobble.png';
     /* Огорожа поля. Теж не блок у сітці: межа шахти й так існує у
        фізиці (Mine.get повертає WALL за краєм), огорожа лише робить
        її видимою. */
-    p['fence'] = '/ui/fence.jpg';
+    p['fence'] = '/blocks/wall.png';
+
+    /* Руда залізо/золото — НАКЛАДКИ на булижник, а не самостійні
+       картинки блоку: спершу малюється cobble, зверху накладка (див.
+       Render.block). Тому вони й не в BLOCKS[*].skin. */
+    p['ore.iron'] = '/blocks/ore-iron-overlay.png';
+    p['ore.gold'] = '/blocks/ore-gold-overlay.png';
+
+    // чотири стадії тріщин; потрібні з першого ж удару по руді
+    for (let i = 1; i <= 4; i++) p['crack' + i] = '/fx/crack-' + i + '.png';
+
     return p;
   }
 
-  /* Іконки валют для попапів/тостів. Не потрібні для першого кадру
-     (екран завантаження), тому вантажаться у фоні — до першого
-     розбитого блоку встигають, а Render.money їх відсутність
-     переживає (малює лише текст). */
-  private loadCurrencies(): Promise<void[]> {
+  /* Другорядне: іконки валют для попапів/тостів і важкі спрайти
+     ефектів. Для першого кадру не потрібні жодні — до першого
+     розбитого блоку встигають, а їхню відсутність усі викликачі
+     переживають (Render.money малює лише текст, ефект не малюється). */
+  private loadExtras(): Promise<unknown> {
     return Promise.all([
       this.one('cur.RUB', '/coins/rub.png'),
       this.one('cur.USDT', '/coins/usdt.png'),
       this.one('cur.XTR', '/coins/xtr.png'),
+      this.one('fx.tntBlast', '/fx/tnt-blast.png'),
+      this.one('fx.pickGrow', '/fx/pick-grow.png'),
+      this.one('fx.pickTnt', '/fx/pick-tnt.png'),
+      this.one('fx.pickWorkbench', '/fx/pick-workbench.png'),
     ]);
   }
 
@@ -92,6 +150,38 @@ class AssetStore {
     g.fillStyle = color;
     g.fillRect(0, 0, w, h);
     this.tints.set(ck, c);
+    return c;
+  }
+
+  /* Частина картинок намальована ВЕРТИКАЛЬНО й має лежати боком
+     (хмари 2-3, табличка виграшу, слово WIN). Повертаємо їх РІВНО ОДИН
+     раз — у офскрін-canvas, при першому ж використанні, — і кешуємо.
+     Альтернатива (save/rotate/drawImage/restore щокадру на кожну
+     хмару) коштує тих самих пікселів помножених на 60 кадрів/с.
+
+     Згладжування вимкнене: поворот рівно на 90° точний, але браузер
+     усе одно проганяє його через ресемплінг, якщо дозволити. */
+  private rotated = new Map<string, HTMLCanvasElement>();
+
+  rotCCW(key: string): HTMLCanvasElement | null {
+    const hit = this.rotated.get(key);
+    if (hit) return hit;
+    const img = this.get(key);
+    if (!img) return null;
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return null;
+
+    const c = document.createElement('canvas');
+    c.width = h;                       // 90° — сторони міняються місцями
+    c.height = w;
+    const g = c.getContext('2d');
+    if (!g) return null;
+    g.imageSmoothingEnabled = false;
+    g.translate(0, c.height);
+    g.rotate(-Math.PI / 2);            // проти годинникової = «вліво»
+    g.drawImage(img, 0, 0);
+    this.rotated.set(key, c);
     return c;
   }
 
@@ -127,27 +217,21 @@ class AssetStore {
     this.ready = true;
     if (this.missing.length) console.warn('Не знайдено скінів:', this.missing);
 
-    // важке й другорядне — у фон, не чекаючи
-    void this.loadMagic();
-    void this.loadCurrencies();
-  }
-
-  /** Зачаровані скіни. Помилка тут не критична — є запасний варіант. */
-  private loadMagic(): Promise<void[]> {
-    return Promise.all(TIERS.map((t) => this.one('pickm.' + t.id, t.skinMagic)));
+    // другорядне — у фон, не чекаючи
+    void this.loadExtras();
   }
 
   get(key: string): HTMLImageElement | null {
     return this.images[key] ?? null;
   }
 
-  /* Кірка: зачарована версія після верстака, звичайна — до нього
-     або поки зачарована ще не доїхала. */
-  pick(tier: Tier, enchanted: boolean): HTMLImageElement | null {
-    if (!enchanted) return this.get('pick.' + tier.id);
-    const key = 'pickm.' + tier.id;
-    if (!(key in this.images)) void this.one(key, tier.skinMagic);   // ще не починали
-    return this.get(key) ?? this.get('pick.' + tier.id);
+  pick(tier: Tier): HTMLImageElement | null {
+    return this.get('pick.' + tier.id);
+  }
+
+  /** Частка полотна, яку займає сам малюнок кірки — див. PICK_FILL. */
+  pickFill(tier: Tier): number {
+    return PICK_FILL[tier.id] ?? PICK_FILL_DEFAULT;
   }
 }
 

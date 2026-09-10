@@ -20,19 +20,22 @@ import {
   buildSetup, createRun, streamRoot,
   type RoundResult, type RoundSetup, type Tier, type TierId,
 } from '@minedrop/engine';
-import { Api, ApiError, type PlayerState } from '../lib/api';
+import type { PlayerState } from '../lib/api';
 import {
   CURRENCY_META, FALLBACK_RATES, fmtAmount, fmtWhole,
   type CurrencyCode, type Rates,
 } from '../lib/currency';
 import { haptic, setupMiniApp } from '../lib/telegram';
 import { Assets } from './assets';
+import { Music } from './audio';
 import { drawBackdrop } from './backdrop';
 import { FRAME_ASPECT, FRAME_INNER_BOTTOM, FRAME_INNER_LEFT, FRAME_INNER_RIGHT, FRAME_INNER_TOP, Reel } from './reel';
 import { Render, type ReelItem } from './render';
-
-const roundKey = () =>
-  globalThis.crypto?.randomUUID?.() ?? String(Date.now()) + Math.random().toString(36).slice(2);
+import { Effects, TOAST_LIFE } from './effects';
+import { RoundGateway } from './gateway';
+import { Camera } from './camera';
+import * as Hud from './hud-canvas';
+import { BONUS_INTRO_SEC, type HistoryEntry } from './hud-canvas';
 
 type State = 'LOADING' | 'IDLE' | 'SPIN' | 'RISE' | 'RUNNING' | 'DROPDONE' | 'RESULT' | 'ERROR';
 
@@ -67,6 +70,8 @@ export interface HudState {
   speed: number;
   /** автоплей: раунди йдуть один за одним, поки вистачає балансу */
   autoplay: boolean;
+  /** фонова музика вимкнена (стан живе в localStorage) */
+  muted: boolean;
   /** множник ціни бонус баю на кожну кірку (ціна = ставка * множник).
       Приходить із сервера — клієнт лише показує. */
   buyPrices: Record<string, number>;
@@ -77,18 +82,7 @@ export interface HudState {
   profile: { name: string; handle: string } | null;
 }
 
-interface HistoryEntry {
-  item: ReelItem;
-  win: number;
-  cost: number;
-  x: number;
-}
 
-interface Particle { x: number; y: number; vx: number; vy: number; size: number; life: number; color: string }
-/* money — сума в рублях: рядок будується на льоту під поточну валюту й
-   малюється Render.money зі значком. prefix — текст перед сумою ('+', 'БУМ! +').
-   Якщо money не задано — показуємо просто text. */
-interface Popup { x: number; y: number; life: number; text: string; color: string; size: number; money?: number; prefix?: string }
 
 const MAX_TICKS_PER_FRAME = 8;   // щоб просадка кадрів не перетворилась на спіраль
 const RESULT_GRACE = 0.4;        // мін. затримка перед тим, як клік/пробіл по RESULT щось робить
@@ -101,8 +95,6 @@ const RESULT_GRACE = 0.4;        // мін. затримка перед тим, 
    фіксований SIM_DT, просто за кадр їх більше. */
 const SPEEDS = [1, 2, 3, 4, 10, 25];
 const AUTOPLAY_HOLD = 0.9;       // скільки показувати результат перед авто-наступним раундом
-const TOAST_LIFE = 1.6;          // скільки секунд живе один push-тост живого логу
-const TOAST_MAX = 3;             // скільки тостів одночасно на екрані (старіші зникають)
 /* Огорожа — рівно ОДИН шар блоків за кожним краєм поля. Далі нічого:
    фон углиб, який уже намалював drawSky() (backdrop.ts). Огорожа суто
    декоративна — у фізиці межа шахти є завжди, незалежно від того, що
@@ -146,35 +138,63 @@ const PAN_LIMIT = PRUNE_MARGIN - 20;
    (sim:final): x5 ≈ верхні 5% раундів, x15 ≈ 1%, x40 ≈ 0.1%. Тобто
    «BIG WIN» справді рідкісний, а не з'являється через раз — інакше
    плашка нічого не означає. Береться найвищий досягнутий поріг. */
-const WIN_TIERS: readonly { at: number; text: string; color: string }[] = [
-  { at: 5, text: 'BIG WIN', color: '#5ce08a' },
-  { at: 15, text: 'MEGA WIN', color: '#ffd34d' },
-  { at: 40, text: 'EPIC WIN', color: '#ff9a3c' },
-  { at: 100, text: 'JACKPOT', color: '#ff6ad5' },
-];
 
-/* Скільки тримати заставку «БОНУС ГЕЙМ» перед безкоштовним раундом.
-   Достатньо, щоб прочитати, і мало, щоб не заважати другому підряд
-   (ретригер трапляється). */
-const BONUS_INTRO_SEC = 1.9;
 
 /* Наскільки зменшено рамку рулетки проти розміру, який дає доступний
    простір. Символ усередині масштабується разом із нею — він похідна
    від розмірів рамки, а не самостійна величина. */
 const FRAME_SCALE = 0.8;
 
-function winTier(x: number): { text: string; color: string } | null {
-  let hit: { text: string; color: string } | null = null;
-  for (const t of WIN_TIERS) if (x >= t.at) hit = t;
-  return hit;
-}
+/* ---- розмір кірки на полі ----
+   ВИДИМИЙ розмір спрайту в клітинках (Render.pickaxe сам добере
+   полотно під поля конкретного скіну — див. Assets.pickFill).
+
+   Було 1.5 полотна старого скіну, у якому малюнок займав 0.8125 —
+   тобто видимих 1.5 * 0.8125 = 1.22 клітинки. Нові скіни намальовані
+   впритул до країв, і якби множник лишився 1.5, кірка на полі
+   виросла б у 1.23 раза. Беремо 1.22 — картинка на екрані лишається
+   рівно такою ж, як була.
+
+   ЧОМУ НЕ ЧІПАЄМО bodyR (0.55 клітинки, packages/engine/config.ts):
+   видимий розмір не змінився, отже й узгодженість «bodyR ≈ половина
+   спрайту» лишилась на місці. bodyR читає СЕРВЕР, і його зміна
+   переписала б кожну траєкторію, RTP і всі збережені реплеї — платити
+   цим за те, щоб картинка лишилась тією самою, немає за що. */
+const PICK_VIS = 1.22;
+
+/* ---- спалахи-картинки ----
+   Розміри в клітинках і тривалості в секундах для fx-спрайтів
+   (див. Effects.sprite). Вибух TNT більший за клітинку — він і
+   рознесло більше за одну; силуети кірки трохи більші за саму кірку,
+   бо це «слід», який має її обганяти. */
+const FX_TNT_SIZE = 3.2;
+const FX_TNT_LIFE = 0.3;
+const FX_TRAIL_SIZE = 2.0;
+const FX_TRAIL_LIFE = 0.2;
+/* На скільки клітинок відсунути слід НАЗАД по напрямку руху — щоб він
+   читався як шлейф позаду кірки, а не як друга кірка поверх неї. */
+const FX_TRAIL_BACK = 0.45;
+
+/* Мінімальна висота цифри растрового шрифту, у пікселях екрана.
+   У листі цифра 18 px заввишки; nearest-neighbour стискає її без
+   згладжування, і нижче ~14 px штрихи починають рватись — тоді це вже
+   не «піксельний шрифт», а каша. Тому на дрібній клітинці попап
+   лишається трохи більшим, ніж був системним шрифтом, замість того
+   щоб стати нечитабельним. */
+const POPUP_PIXEL_MIN = 14;
+
 
 export class Presenter {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private reel = new Reel();
+  /* Розмова з сервером — окремо (game/gateway): повтор при обриві й
+     ключ ідемпотентності не мають лежати посеред анімації. */
+  private readonly net = new RoundGateway();
   private raf = 0;
   private disposed = false;
+  /** музику вже почали вантажити (після першого кадру) */
+  private musicArmed = false;
   private resizeObserver: ResizeObserver | null = null;
 
   private state: State = 'LOADING';
@@ -221,22 +241,14 @@ export class Presenter {
      camX/camY — координата лівого верхнього кута видимої області в
      клітинках. camXIdle/camMin — де стоїть камера, поки забігу немає
      (крутиться рулетка): поле по центру, поверхня внизу екрана. */
-  private camX = 0;
-  private camXIdle = 0;
-  /* Масштаб від жесту двома пальцями. 1 — як у конфізі (viewCols),
-     більше — ближче, менше — далі. */
+  /* Камера — окремим об'єктом (game/camera): координата кадру, пауза
+     після гортання й ведення за кіркою. */
+  private readonly cam = new Camera();
+  /* Масштаб лишається ТУТ, а не в камері: від нього залежить cell, а
+     отже вся розкладка (geometry) — розміри рамки рулетки, символів,
+     шрифтів. Камера ж масштабу не знає взагалі: вона віддає координати
+     в клітинках, а в пікселі їх переводить той, хто малює. */
   private zoom = 1;
-  /* Скільки ще секунд камера НЕ тягнеться за кіркою: гравець щойно
-     гортав поле сам. Тікає реальним часом (див. PAN_HOLD) і ЛИШЕ після
-     того, як усі пальці відпущено (панель нижче, panning). */
-  private panT = 0;
-  /** палець(і) досі на екрані й активно гортають поле — доки так,
-      лічильник panT не йде взагалі, інакше пауза застигання пальця
-      посеред гортання (без відриву від екрана) сама запускала б
-      відлік, і камера почала б їхати назад РАНІШЕ, ніж палець зникне. */
-  private panning = false;
-  private camY = 0;
-  private camMin = 0;
   private shake = 0;
   private flash = 0;
   private flashColor = '#fff';
@@ -244,28 +256,23 @@ export class Presenter {
   private timer = 0;
   private timerFn: (() => void) | null = null;
   private acc = 0;
-  private particles: Particle[] = [];
-  private popups: Popup[] = [];
-  /* Живий лог виграшу — push-тости знизу екрана, без фону: рядок
-     виїжджає знизу вгору, тримається і зникає таким самим свайпом
-     угору. Кожен тост незалежний, life рахується від TOAST_LIFE вниз. */
-  private toasts: { text: string; color: string; life: number; money?: number }[] = [];
-  /* Поточний множник зачарування — для постійного напису зверху праворуч.
-     Оновлюється подіями 'magic'; скидається на новий забіг. */
-  private enchantMult = 1;
+  /* Іскри, спливаючі числа й живий лог — окремим шаром (game/effects).
+     На виплату вони не впливають, тому й тримати їх разом зі станом
+     раунду не було чого. */
+  private readonly fx = new Effects();
 
   /* геометрія */
   private w = 0; private h = 0; private cell = 0; private dpr = 1;
   private itemW = 0; private itemH = 0;
-  /* Годинник для анімацій, що живуть незалежно від раунду (пульс
-     каменів на вінку). Реальний час, без множення на speed: підсвітка
-     прогресу не має розганятись разом із фізикою. */
+  /* Годинник для анімацій, що живуть незалежно від раунду (спалахи
+     паличок на кільці). Реальний час, без множення на speed:
+     підсвітка прогресу не має розганятись разом із фізикою. */
   private clock = 0;
-  /* Камінь, що загорівся щойно: індекс і скільки ще триває спалах.
-     Без цього новий стан просто з'являвся б — видно було б результат,
-     але не подію. */
-  private gemLit = -1;
-  private gemLitT = 0;
+  /* Сегмент кільця, що загорівся щойно: індекс і скільки ще триває
+     спалах. Без цього новий стан просто з'являвся б — видно було б
+     результат, але не подію. */
+  private pipLit = -1;
+  private pipLitT = 0;
   private prevStreak = -1;
   private frameW = 0; private frameH = 0;
 
@@ -350,7 +357,7 @@ export class Presenter {
          сам щипок, камера не повернулась би до кірки взагалі, хоча
          zoom сам собою на це не мав впливати (див. коментар нижче біля
          setZoom). Явно віддаємо контроль назад стеженню. */
-      this.panning = false;
+      this.cam.panning = false;
     }
   };
 
@@ -379,19 +386,17 @@ export class Presenter {
     if (this.dragged < PAN_MIN_PX) return;   // це ще тап, а не жест
 
     this.pinched = true;                     // клік після гортання не рахуємо
-    this.panning = true;                     // камера чекає, доки палець не зникне з екрана
-    this.camY -= dy / this.cell;
+    this.cam.grab();                         // камера чекає, доки палець не зникне з екрана
 
     /* Не даємо загубитись: далі PAN_LIMIT рядів від кірки відходити
        нема сенсу, а рендер там уперся б у ряди, давно викинуті
        прунингом (їх довелось би перегенеровувати щокадру). */
     const p = this.run?.picks[0];
-    if (p) {
-      const lo = p.y - PAN_LIMIT;
-      const hi = p.y + PAN_LIMIT;
-      if (this.camY < lo) this.camY = lo;
-      else if (this.camY > hi) this.camY = hi;
-    }
+    this.cam.panBy(
+      dy / this.cell,
+      p ? p.y - PAN_LIMIT : -Infinity,
+      p ? p.y + PAN_LIMIT : Infinity,
+    );
   };
 
   private onPointerUp = (e: PointerEvent) => {
@@ -403,7 +408,7 @@ export class Presenter {
          кожному русі, тож завмер пальця без відриву від екрана вже
          запускав відлік — камера могла почати їхати назад до кірки,
          поки гравець ще притискає поле. */
-      if (this.panning) { this.panning = false; this.panT = PAN_HOLD; }
+      this.cam.release(PAN_HOLD);
       /* Прапорець тримаємо до повного відпускання: браузер шле click уже
          після того, як пальці зникли, і без цього щипок чи гортання
          гасили б екран результату. */
@@ -422,12 +427,10 @@ export class Presenter {
        світ від краю екрана, і при віддаленні поле повзе вбік. Тому
        запам'ятовуємо світову точку, що зараз у центрі, і після зміни
        масштабу повертаємо її рівно туди ж. */
-    const cx = this.camX + this.w / this.cell / 2;
-    const cy = this.camY + this.h / this.cell / 2;
+    const before = this.cam.centerNow(this.w, this.h, this.cell);
     this.zoom = next;
     this.geometry();
-    this.camX = cx - this.w / this.cell / 2;
-    this.camY = cy - this.h / this.cell / 2;
+    this.cam.centerAfterZoom(before, this.w, this.h, this.cell);
   }
 
   constructor(canvas: HTMLCanvasElement, onHud: (h: HudState) => void) {
@@ -443,6 +446,9 @@ export class Presenter {
   async init(): Promise<void> {
     setupMiniApp();          // ready/expand + вимкнути свайп-закриття
     this.layout();
+    /* Фонова музика. arm() лише чіпляє одноразовий слухач першого
+       дотику по канвасу — сам файл ще не вантажиться. */
+    Music.arm(this.canvas);
     window.addEventListener('resize', this.onResize);
     document.addEventListener('keydown', this.onKey);
     this.canvas.addEventListener('click', this.onClick);
@@ -471,7 +477,7 @@ export class Presenter {
 
     try {
       await Assets.load();
-      const p = await Api.me();
+      const p = await this.net.me();
       this.applyPlayer(p);
       this.state = 'IDLE';
       this.message = 'Сделай ставку и крути';
@@ -495,6 +501,7 @@ export class Presenter {
     this.canvas.removeEventListener('pointercancel', this.onPointerUp);
     this.canvas.removeEventListener('pointerleave', this.onPointerUp);
     this.resizeObserver?.disconnect();
+    Music.dispose();
   }
 
   private loop = (): void => {
@@ -524,6 +531,10 @@ export class Presenter {
         this.message = this.error;
         try { this.emit(); } catch { /* не даємо другому збою заглушити відновлення */ }
       }
+      /* Музику (1.6 МБ) вантажимо ПІСЛЯ першого намальованого кадру, а
+         не разом із ним — див. шапку audio.ts. Заграє вона все одно
+         лише з першого дотику, автоплей заборонений. */
+      if (!this.musicArmed) { this.musicArmed = true; Music.prefetch(); }
       this.raf = requestAnimationFrame(frame);
     };
     this.raf = requestAnimationFrame(frame);
@@ -560,6 +571,13 @@ export class Presenter {
     this.emit();
   }
 
+  /* Звук. Прискорення раунду (x2/x3/x10) на музику НЕ впливає: трек
+     живе в реальному часі, а не в часі симуляції. */
+  toggleMute(): void {
+    Music.toggle();
+    this.emit();
+  }
+
   /** Автоплей: після результату сам закриває його й запускає новий
       раунд, доки увімкнено і вистачає балансу. */
   toggleAutoplay(): void {
@@ -574,16 +592,37 @@ export class Presenter {
   /* Малює суму (в рублях) поточною валютою зі значком.
      whole=true — велика сума (виплата, ставка): у рублях ціле;
      whole=false — дрібна (виграш за блок): показуємо дріб. */
+  /* Спільне для всіх написів HUD: розмір полотна, зсув під стрічку
+     історії й форматування грошей у валюті гравця. */
+  private hudCtx(ctx: CanvasRenderingContext2D): Hud.HudCtx {
+    return {
+      ctx,
+      w: this.w,
+      h: this.h,
+      topInset: this.topInset,
+      money: (rub, x, y, font, color, align, prefix, whole) =>
+        this.drawMoney(ctx, rub, x, y, font, color, align, prefix, whole),
+      moneyStr: (rub, whole) => this.moneyStr(rub, whole),
+      currency: this.currency,
+      monoCurrency: CURRENCY_META[this.currency].mono,
+    };
+  }
+
+  /** Сума в поточній валюті рядком, без значка (його малюють окремо). */
+  private moneyStr(rub: number, whole = false): string {
+    return whole
+      ? fmtWhole(rub, this.currency, this.rates)
+      : fmtAmount(rub, this.currency, this.rates);
+  }
+
   private drawMoney(
     ctx: CanvasRenderingContext2D, rub: number, x: number, y: number,
     font: string, color: string, align: CanvasTextAlign = 'center', prefix = '+',
     whole = false,
   ): void {
     const meta = CURRENCY_META[this.currency];
-    const s = whole
-      ? fmtWhole(rub, this.currency, this.rates)
-      : fmtAmount(rub, this.currency, this.rates);
-    Render.money(ctx, prefix + s, x, y, font, color, this.currency, meta.mono, align);
+    Render.money(ctx, prefix + this.moneyStr(rub, whole), x, y, font, color,
+      this.currency, meta.mono, align);
   }
 
   /** ЛИШЕ кнопка «ГРАТИ»: завжди одразу новий раунд — навіть одразу після
@@ -642,7 +681,7 @@ export class Presenter {
   async refreshPlayer(): Promise<void> {
     let p: PlayerState;
     try {
-      p = await Api.me();
+      p = await this.net.me();
     } catch {
       return;   // фонове оновлення: не шумимо, спробуємо наступного разу
     }
@@ -697,35 +736,16 @@ export class Presenter {
     this.message = 'запрос на сервер…';
     this.emit();
 
-    /* Ключ ідемпотентності живе на всю спробу, включно з ретраєм:
-       у вебв'ю телеграма запит може дійти до сервера й обірватись
-       на відповіді. З тим самим ключем сервер поверне вже зіграний
-       раунд, а не спише ставку вдруге. */
-    const key = roundKey();
-    let res;
-    try {
-      res = await Api.play(this.bet, key, buy);
-    } catch (e) {
-      if (e instanceof ApiError) {
-        // сервер відповів і відмовив — ретраїти нема сенсу
-        this.busy = false;
-        this.autoplay = false;   // не молотимо запитами по колу
-        this.error = e.message;
-        this.message = e.message;
-        this.emit();
-        return;
-      }
-      // мережа впала: одна повторна спроба тим самим ключем
-      try {
-        res = await Api.play(this.bet, key, buy);
-      } catch (e2) {
-        this.busy = false;
-        this.autoplay = false;
-        this.error = e2 instanceof ApiError ? e2.message : 'Сервер не ответил';
-        this.message = this.error;
-        this.emit();
-        return;
-      }
+    /* Повтор при обриві й ключ ідемпотентності — у шлюзі. Сюди
+       повертається або раунд, або готовий текст для гравця. */
+    const res = await this.net.play(this.bet, buy);
+    if (!res.ok) {
+      this.busy = false;
+      this.autoplay = false;    // не молотимо запитами по колу
+      this.error = res.message;
+      this.message = res.message;
+      this.emit();
+      return;
     }
 
     const { round, player } = res;
@@ -879,8 +899,7 @@ export class Presenter {
   private closeResult(): void {
     // ручне гортання належало тому забігу — на головному екрані камера
     // має стояти там, де стоїть, без залишкової паузи
-    this.panT = 0;
-    this.panning = false;
+    this.cam.reset();
     this.round = null;
     this.setup = null;
     this.run = null;
@@ -905,22 +924,16 @@ export class Presenter {
   private newMine(seed: string, bonus = false): void {
     this.mine = new Mine(CONFIG.cols, streamRoot(seed, 'mine'), bonus);
     this.run = null;
-    this.particles = [];
-    this.popups = [];
-    this.toasts = [];
-    this.enchantMult = 1;
-    this.camY = this.camMin;
-    this.camX = this.camXIdle;
+    this.fx.clearAll();
+    this.cam.toIdle();
   }
 
   /* Фон під рулеткою. Ні на що не впливає, тому сид довільний. */
   private decorativeMine(): void {
     this.mine = new Mine(CONFIG.cols, (Math.random() * 0x7fffffff) | 0);
     this.run = null;
-    this.particles = [];
-    this.popups = [];
-    this.camY = this.camMin;
-    this.camX = this.camXIdle;
+    this.fx.clearField();
+    this.cam.toIdle();
   }
 
   /* ---------------- HUD ---------------- */
@@ -950,6 +963,7 @@ export class Presenter {
       verified: this.verified,
       speed: this.speed,
       autoplay: this.autoplay,
+      muted: Music.isMuted,
       buyPrices: p?.config?.buyPrices ?? CONFIG.buy.price,
       fair: this.round?.fair ?? (p ? { serverSeedHash: p.serverSeedHash, clientSeed: p.clientSeed, nonce: p.nonce } : null),
       error: this.error,
@@ -969,44 +983,66 @@ export class Presenter {
 
   /* ---------------- ПОДІЇ ФІЗИКИ ---------------- */
 
+  /* Силует кірки як СЛІД руху (fx/pick-*.png). Орієнтуємо за
+     напрямком швидкості: на спрайті кірка дивиться вгору-праворуч,
+     тобто її власна вісь — -45°, тому до кута швидкості додаємо PI/4.
+     Сам слід зсуваємо НАЗАД по руху, щоб він читався як шлейф позаду
+     кірки, а не як друга кірка поверх неї.
+
+     Кірка майже стоїть (одразу після удару таке буває) — напрямку
+     немає, беремо її власний кут і не зсуваємо. */
+  private trail(key: string, idx: number): void {
+    const p = this.run?.picks[idx];
+    if (!p) return;
+    const len = Math.hypot(p.vx, p.vy);
+    const moving = len > 0.3;
+    const rot = moving ? Math.atan2(p.vy, p.vx) + Math.PI / 4 : p.rot;
+    const bx = moving ? (-p.vx / len) * FX_TRAIL_BACK : 0;
+    const by = moving ? (-p.vy / len) * FX_TRAIL_BACK : 0;
+    this.fx.sprite(key, p.x + bx, p.y + by, FX_TRAIL_SIZE * p.scale, FX_TRAIL_LIFE, rot);
+  }
+
   private drainEvents(): void {
     const r = this.run;
     if (!r) return;
     for (const e of r.events) {
       if (e.t === 'crack') {
-        this.burst(e.c + 0.5, e.r + 0.5, BLOCKS[e.id].color, 4, 0.7);
+        this.fx.burst(e.c + 0.5, e.r + 0.5, BLOCKS[e.id].color, 4, 0.7);
         this.shake = Math.min(10, this.shake + 1.6);
       } else if (e.t === 'break') {
-        this.burst(e.c + 0.5, e.r + 0.5, BLOCKS[e.id].color, 12);
+        this.fx.burst(e.c + 0.5, e.r + 0.5, BLOCKS[e.id].color, 12);
         // живий попап показує РЕАЛЬНУ суму (після ставки й payoutK), дробову
         // за потреби — щоб цифри на екрані не брехали і не тонули в нулі
         const cash = e.got * this.runBet / CONFIG.payoutK;
         if (cash > 0) {
-          this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.0,
+          this.fx.popup({ x: e.c + 0.5, y: e.r + 0.5, life: 1.0,
             text: '', color: BLOCKS[e.id].color, size: 0.2, money: cash });
-          this.pushLog(BLOCKS[e.id].name, BLOCKS[e.id].color, cash);
+          this.fx.log(BLOCKS[e.id].name, BLOCKS[e.id].color, cash);
         }
         this.shake = Math.min(14, this.shake + 3);
       } else if (e.t === 'mult') {
         // блок-множник більше не іксує зібране — відкриває вікно на e.secs
         // секунд, поки воно активне, усе зібране множиться на e.active
-        this.burst(e.c + 0.5, e.r + 0.5, '#ffd34d', 44, 2.4);
+        this.fx.burst(e.c + 0.5, e.r + 0.5, '#ffd34d', 44, 2.4);
         this.shake = 22;
         this.flash = 0.45; this.flashColor = '#ffd34d';
         // secs 0 — бонуска: множник стакнутий до кінця забігу, таймера нема
         const mtext = e.secs > 0
           ? 'X' + e.active + ' · ' + e.secs + 'с'
           : 'X' + Math.round(e.active);
-        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.8,
+        this.fx.popup({ x: e.c + 0.5, y: e.r + 0.5, life: 1.8,
           text: mtext, color: '#ffe98a', size: 0.34 });
-        this.pushLog(
+        this.fx.log(
           e.secs > 0 ? 'Множитель X' + e.active + ' на ' + e.secs + 'с'
                      : 'Множитель X' + e.m + ' -> X' + Math.round(e.active),
           '#ffe98a');
         haptic('hit');
       } else if (e.t === 'tnt') {
-        this.burst(e.c + 0.5, e.r + 0.5, '#ff8a2b', 46, 3);
-        for (const h of e.hit) this.burst(h.c + 0.5, h.r + 0.5, BLOCKS[h.id].color, 8);
+        // намальований вибух поверх іскор — короткий, із загасанням і ростом
+        this.fx.sprite('fx.tntBlast', e.c + 0.5, e.r + 0.5, FX_TNT_SIZE, FX_TNT_LIFE, 0, 1.25);
+        this.trail('fx.pickTnt', e.pick);
+        this.fx.burst(e.c + 0.5, e.r + 0.5, '#ff8a2b', 46, 3);
+        for (const h of e.hit) this.fx.burst(h.c + 0.5, h.r + 0.5, BLOCKS[h.id].color, 8);
         // e.got — реальна сума (вже з урахуванням зачарування), не
         // перераховуємо з e.hit клієнтом, бо множник зачарування —
         // рантайм-стан кірки, його нема в статичній таблиці BLOCKS
@@ -1014,106 +1050,80 @@ export class Presenter {
         this.shake = Math.min(34, 22 + e.chain * 3);
         this.flash = 0.35; this.flashColor = '#ff7a2b';
         const boom = e.chain > 1 ? 'БУМ X' + e.chain : 'БУМ!';
-        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.3,
+        this.fx.popup({ x: e.c + 0.5, y: e.r + 0.5, life: 1.3,
           text: boom, color: '#ff8a2b', size: 0.26,
           money: cash > 0 ? cash : undefined, prefix: boom + ' +' });
-        if (cash > 0) this.pushLog(boom, '#ff8a2b', cash);
+        if (cash > 0) this.fx.log(boom, '#ff8a2b', cash);
       } else if (e.t === 'scatter') {
         /* Останній скаттер — це вже подія рівня великого виграшу, тому
            й реакція інша: не той самий попап, що на перших двох. */
         const done = e.n >= e.need;
         this.scatters = e.n;
-        this.burst(e.c + 0.5, e.r + 0.5, '#ff9a3c', done ? 48 : 24, done ? 2.6 : 1.4);
+        this.fx.burst(e.c + 0.5, e.r + 0.5, '#ff9a3c', done ? 48 : 24, done ? 2.6 : 1.4);
         this.shake = done ? 26 : 12;
         if (done) { this.flash = 0.5; this.flashColor = '#ff9a3c'; }
-        this.popups.push({
+        this.fx.popup({
           x: e.c + 0.5, y: e.r + 0.5, life: done ? 2 : 1.3,
           text: done ? 'БОНУС ГЕЙМ!' : `СКАТТЕР ${e.n}/${e.need}`,
           color: '#ffc27a', size: done ? 0.3 : 0.22,
         });
-        this.pushLog(
+        this.fx.log(
           done ? 'ТРИ СКАТТЕРА — БОНУСКА!' : `Скаттер ${e.n}/${e.need}`,
           '#ffc27a');
         haptic(done ? 'win' : 'hit');
-      } else if (e.t === 'magic') {
-        // СТІЛ ЗАЧАРУВАННЯ: 3 фіксовані рівні множника кірки (не підвищує тір)
-        this.burst(e.c + 0.5, e.r + 0.5, '#c46bff', 40, 2.2);
-        this.shake = 16;
-        this.flash = 0.4; this.flashColor = '#c46bff';
-        const roman = ['I', 'II', 'III'][e.lvl - 1] ?? String(e.lvl);
-        const mtxt = 'X' + e.mult.toFixed(2).replace(/\.?0+$/, '');
-        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
-          text: 'ЗАЧАРОВАНИЕ ' + roman + '  ' + mtxt, color: '#d9a3ff', size: 0.22 });
-        this.pushLog('Зачарование ' + roman + ' · ' + mtxt, '#d9a3ff');
-        this.enchantMult = e.mult;
       } else if (e.t === 'tntchain') {
         // бонус за довгий ланцюг детонацій — на весь виграш вибуху
         this.shake = 24;
         this.flash = 0.5; this.flashColor = '#ff9a3c';
         const cash = e.extra * this.runBet / CONFIG.payoutK;
-        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.8,
+        this.fx.popup({ x: e.c + 0.5, y: e.r + 0.5, life: 1.8,
           text: 'TNT CHAIN X' + e.chain, color: '#ffb15a', size: 0.3,
           money: cash > 0 ? cash : undefined,
           prefix: 'TNT CHAIN X' + e.chain + '  +' + Math.round((e.mult - 1) * 100) + '%  +' });
-        this.pushLog('TNT CHAIN X' + e.chain + ' · +' + Math.round((e.mult - 1) * 100) + '%',
+        this.fx.log('TNT CHAIN X' + e.chain + ' · +' + Math.round((e.mult - 1) * 100) + '%',
           '#ffb15a', cash > 0 ? cash : undefined);
         haptic('win');
       } else if (e.t === 'upgrade') {
         /* ВЕРСТАК: підвищення тіру / повний хіл / дохіл на topUp HP
            (Diamond, кожен верстак після першого). */
-        this.burst(e.c + 0.5, e.r + 0.5, '#ffb347', 40, 2.2);
+        this.fx.burst(e.c + 0.5, e.r + 0.5, '#ffb347', 40, 2.2);
         this.shake = 16;
         this.flash = 0.4; this.flashColor = '#ffb347';
+        this.trail('fx.pickWorkbench', e.pick);
         const tierName = (TIER_BY_ID[e.tier]?.name ?? e.tier).toUpperCase();
         const label = e.topUp > 0 ? '+' + e.topUp + ' HP'
           : e.healOnly ? 'ПОЛНЫЙ ХИЛ!'
           : 'ПОВЫШЕНИЕ! ' + tierName;
-        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
+        this.fx.popup({ x: e.c + 0.5, y: e.r + 0.5, life: 1.6,
           text: label, color: '#ffe0b3', size: 0.22 });
-        this.pushLog(label, '#ffe0b3');
+        this.fx.log(label, '#ffe0b3');
       } else if (e.t === 'grow') {
         // СТРІЛКА ВГОРУ: кірка більшає (разом із радіусом зіткнення й HP)
-        this.burst(e.c + 0.5, e.r + 0.5, '#3ad1a0', 46, 2.6);
+        this.trail('fx.pickGrow', e.pick);
+        this.fx.burst(e.c + 0.5, e.r + 0.5, '#3ad1a0', 46, 2.6);
         this.shake = 20;
         this.flash = 0.45; this.flashColor = '#3ad1a0';
-        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.7,
+        this.fx.popup({ x: e.c + 0.5, y: e.r + 0.5, life: 1.7,
           text: 'X' + e.scale + '  ' + e.secs + 'с', color: '#8ff5d5', size: 0.3 });
-        this.pushLog(
+        this.fx.log(
           e.stacks > 1 ? 'Рост X' + e.scale + ' (' + e.stacks + ' подряд)' : 'Рост X' + e.scale,
           '#8ff5d5');
         haptic('win');
       } else if (e.t === 'rubber') {
         // ГУМА: трамплін — сильний відскок і швидке падіння після нього
-        this.burst(e.c + 0.5, e.r + 0.5, '#ff7ec4', 30, 2.2);
+        this.fx.burst(e.c + 0.5, e.r + 0.5, '#ff7ec4', 30, 2.2);
         this.shake = Math.max(this.shake, 14);
-        this.popups.push({ x: e.c + 0.5, y: e.r + 0.5, life: 1.1,
+        this.fx.popup({ x: e.c + 0.5, y: e.r + 0.5, life: 1.1,
           text: 'ОТСКОК!', color: '#ffb8de', size: 0.24 });
         haptic('hit');
       } else if (e.t === 'pickdead') {
-        this.burst(e.x, e.y, '#8a939f', 22, 1.4);
+        this.fx.burst(e.x, e.y, '#8a939f', 22, 1.4);
         this.shake = Math.max(this.shake, 12);
       }
     }
     r.events.length = 0;
   }
 
-  private pushLog(text: string, color: string, money?: number): void {
-    this.toasts.push({ text, color, life: TOAST_LIFE, money });
-    if (this.toasts.length > TOAST_MAX) this.toasts.shift();
-  }
-
-  private burst(x: number, y: number, color: string, n: number, power = 1): void {
-    if (this.particles.length > 900) return;
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const s = (0.6 + Math.random() * 3.2) * power;
-      this.particles.push({
-        x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1.5,
-        size: 0.05 + Math.random() * 0.09,
-        life: 0.4 + Math.random() * 0.6, color,
-      });
-    }
-  }
 
   /* ---------------- UPDATE ---------------- */
 
@@ -1159,15 +1169,15 @@ export class Presenter {
        серверною. Накопичуємо реальний час і витрачаємо його порціями. */
     /* dtReal, а не dt: пульс каменів не має прискорюватись кнопкою x2. */
     this.clock += dtReal;
-    if (this.gemLitT > 0) this.gemLitT = Math.max(0, this.gemLitT - dtReal);
+    if (this.pipLitT > 0) this.pipLitT = Math.max(0, this.pipLitT - dtReal);
 
     /* Серія росте тільки між раундами, тож ловимо зміну тут, а не в
        обробці подій забігу. */
     const streakNow = this.player?.dryStreaks?.[this.bet] ?? 0;
     if (streakNow !== this.prevStreak) {
       if (this.prevStreak >= 0 && streakNow > this.prevStreak) {
-        this.gemLit = streakNow - 1;
-        this.gemLitT = 0.45;
+        this.pipLit = streakNow - 1;
+        this.pipLitT = 0.45;
       }
       this.prevStreak = streakNow;
     }
@@ -1187,46 +1197,13 @@ export class Presenter {
       if (this.run.over) this.onRunOver();
     }
 
-    /* Камера тримає кірку по центру екрана й ходить за нею по обох осях.
-
-       Раніше вона їхала ТІЛЬКИ вниз (`if (target > camY)`) і тільки по
-       вертикалі — по суті стеля, що повзе за найглибшою кіркою. Тепер
-       кірка відскакує вгору й ходить по всій ширині поля, тому камера
-       має за нею встигати в будь-який бік. Обмеження знизу (camMin)
-       лишається лише для стану БЕЗ забігу — щоб під рулеткою поверхня
-       стояла там само, де й стояла. */
-    /* Гравець гортає поле сам — камера не забирає в нього керування,
-       доки палець на екрані (panning), і ще PAN_HOLD секунд після
-       того, як він зник. Час тут РЕАЛЬНИЙ (dtReal), а не прискорений:
-       на швидкості ×4 пауза інакше стискалась би до чвертки секунди.
-       Коли час вийшов, звичайний лерп нижче сам плавно приведе кадр
-       назад до кірки — окремої анімації не треба. */
-    if (this.panning) {
-      // палець ще на екрані — відлік навіть не починається
-    } else if (this.panT > 0) {
-      this.panT = Math.max(0, this.panT - dtReal);
-    } else {
-      const view = this.w / this.cell;          // скільки колонок у кадрі
-      let tx = this.camXIdle;
-      let ty = this.camMin;
-      if (this.run) {
-        const alive = this.run.alive;
-        const p = alive.length ? alive[0] : this.run.picks[0];
-        if (p) {
-          /* Поле влазить у кадр цілком (гравець відвів камеру далеко) —
-             тримаємо по центру САМЕ ПОЛЕ. Інакше камера й далі центрувала б
-             кірку, і шахта з'їжджала б ліворуч або праворуч залежно від
-             того, де кірка зараз. Поки поле ширше за кадр, центруємо
-             кірку, як і було. */
-          tx = view >= CONFIG.cols ? (CONFIG.cols - view) / 2 : p.x - view / 2;
-          ty = p.y - (this.h * CONFIG.camLead) / this.cell;
-        }
-      }
-      const k = Math.min(1, dt * CONFIG.camLerp);
-      this.camX += (tx - this.camX) * k;
-      this.camY += (ty - this.camY) * k;
-      if (!this.run && this.camY < this.camMin) this.camY = this.camMin;
-    }
+    /* Камера веде кірку сама (game/camera): і правило ведення, і пауза
+       після гортання описані там. Звідси приходить тільки ціль — та
+       кірка, за якою стежити, — і два різні кроки часу: прискорений
+       для лерпу й реальний для паузи. */
+    const alive = this.run?.alive ?? [];
+    const lead = this.run ? (alive.length ? alive[0] : this.run.picks[0]) ?? null : null;
+    this.cam.follow(dt, dtReal, this.w / this.cell, lead, !!this.run, this.h, this.cell);
 
     /* Останній рубіж: кадр не має підійматись вище за межу прунингу,
        хоч би звідки прийшов рух — гортання, зум чи лерп камери. Вище
@@ -1237,30 +1214,10 @@ export class Presenter {
     if (this.run) {
       let top = Infinity;
       for (const p of this.run.picks) if (p.y < top) top = p.y;
-      if (Number.isFinite(top)) {
-        const limit = top - (PRUNE_MARGIN - 8);
-        if (this.camY < limit) this.camY = limit;
-      }
+      if (Number.isFinite(top)) this.cam.clampToPrune(top);
     }
 
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.vy += 22 * dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.life -= dt;
-      if (p.life <= 0) this.particles.splice(i, 1);
-    }
-    for (let i = this.popups.length - 1; i >= 0; i--) {
-      const p = this.popups[i];
-      p.y -= 0.9 * dt;
-      p.life -= dt;
-      if (p.life <= 0) this.popups.splice(i, 1);
-    }
-    for (let i = this.toasts.length - 1; i >= 0; i--) {
-      this.toasts[i].life -= dt;
-      if (this.toasts[i].life <= 0) this.toasts.splice(i, 1);
-    }
+    this.fx.step(dt);
   }
 
   /* ---------------- РОЗКЛАДКА ---------------- */
@@ -1293,7 +1250,7 @@ export class Presenter {
     const view = CONFIG.viewCols / this.zoom;
     this.cell = Math.max(CONFIG.minCell, Math.min(CONFIG.maxCell, this.w / view));
     // поле по центру, поки забігу немає
-    this.camXIdle = (CONFIG.cols - this.w / this.cell) / 2;
+    this.cam.idleX = (CONFIG.cols - this.w / this.cell) / 2;
 
     /* Рамка вікна рулетки — растрове зображення (ui/reel-frame.png) з фіксованим
        співвідношенням сторін, тому розмір комірки-символу тепер похідна
@@ -1316,15 +1273,15 @@ export class Presenter {
     this.itemH = (frameH * (FRAME_INNER_BOTTOM - FRAME_INNER_TOP)) / R.visible;
 
     // найвища точка камери: поки крутиться рулетка, поверхня стоїть низько
-    this.camMin = -(this.h * CONFIG.camIdle) / this.cell;
+    this.cam.minY = -(this.h * CONFIG.camIdle) / this.cell;
     // під час забігу камера вільна (стежить за кіркою) — підтягуємо її
     // до межі лише в стані спокою, інакше зміна розміру екрана смикала б
     // кадр посеред польоту
-    if (!this.run && this.camY < this.camMin) this.camY = this.camMin;
+    if (!this.run) this.cam.clampIdle();
   }
 
-  private sx(x: number): number { return (x - this.camX) * this.cell; }
-  private sy(y: number): number { return (y - this.camY) * this.cell; }
+  private sx(x: number): number { return (x - this.cam.x) * this.cell; }
+  private sy(y: number): number { return (y - this.cam.y) * this.cell; }
 
   /* ---------------- DRAW ---------------- */
 
@@ -1337,6 +1294,7 @@ export class Presenter {
     if (this.shake > 0) ctx.translate((Math.random() - 0.5) * this.shake, (Math.random() - 0.5) * this.shake);
     this.drawMine(ctx);
     this.drawParticles(ctx);
+    this.drawSprites(ctx);
     this.drawPicks(ctx);
     this.drawPopups(ctx);
     ctx.restore();
@@ -1363,32 +1321,36 @@ export class Presenter {
       const fa = Math.min(1, a * 1.7);
       this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, fa);
 
-      /* Прогрес до гарантованої кірки — на самій рамці. Малюється ПІСЛЯ
-         неї: вінок непрозорий, і під ним світіння не було б видно.
-         Гасне разом із рамкою (fa), щоб не висіти в повітрі під час
-         переходу до поля. */
+      /* Прогрес до гарантованої кірки — на самому кільці. Малюється
+         ПІСЛЯ нього: заглиблена панель непрозора, під кільцем паличок
+         не було б видно взагалі. Гасне разом із кільцем (fa), щоб не
+         висіти в повітрі під час переходу до поля. */
       ctx.save();
       ctx.globalAlpha = fa;
-      this.reel.drawGems(
+      this.reel.drawPips(
         ctx, this.w / 2, cy, this.frameW, this.frameH,
         this.player?.dryStreaks?.[this.bet] ?? 0,
         this.player?.pityAt ?? CONFIG.pity,
         this.clock,
-        this.gemLitT > 0 ? this.gemLit : -1,
+        this.pipLitT > 0 ? this.pipLit : -1,
       );
       ctx.restore();
     }
 
-    this.drawHistory(ctx);
-    this.drawLiveLog(ctx);
-    this.drawRunningTotal(ctx);
-    this.drawMultWindow(ctx);
-    this.drawEnchantMult(ctx);
-    this.drawScatters(ctx);
-    if (this.state === 'RESULT' && !this.resultEmpty) this.drawResult(ctx);
+    /* HUD поверх поля — окремим шаром (game/hud-canvas). Кожен напис
+       отримує рівно те, що йому потрібно, і змінити стан гри жоден із
+       них уже не може. */
+    const hud = this.hudCtx(ctx);
+    const running = this.state === 'RUNNING';
+    Hud.drawHistory(hud, this.history);
+    Hud.drawLiveLog(hud, this.fx.toasts, this.playing);
+    Hud.drawRunningTotal(hud, this.run, this.runBet, running);
+    Hud.drawMultWindow(hud, this.run, running);
+    Hud.drawScatters(hud, this.scatters, running);
+    if (this.state === 'RESULT' && !this.resultEmpty) Hud.drawResult(hud, this.round, this.resultT);
     /* Заставка малюється ОСТАННЬОЮ і поверх усього: вона й має
        перекрити поле, поки бонуска ще не почалась. */
-    if (this.bonusIntro > 0) this.drawBonusIntro(ctx);
+    if (this.bonusIntro > 0) Hud.drawBonusIntro(hud, this.bonusIntro);
   }
 
   /* Небо й хмари — усе в backdrop.ts. Екранний шар: не залежить від
@@ -1401,10 +1363,10 @@ export class Presenter {
   private drawMine(ctx: CanvasRenderingContext2D): void {
     if (!this.mine) return;
     const cell = this.cell;
-    const r0 = Math.max(0, Math.floor(this.camY) - 1);
-    const r1 = Math.ceil(this.camY + this.h / cell) + 1;
-    const c0 = Math.floor(this.camX) - 1;
-    const c1 = Math.ceil(this.camX + this.w / cell) + 1;
+    const r0 = Math.max(0, Math.floor(this.cam.y) - 1);
+    const r1 = Math.ceil(this.cam.y + this.h / cell) + 1;
+    const c0 = Math.floor(this.cam.x) - 1;
+    const c1 = Math.ceil(this.cam.x + this.w / cell) + 1;
 
     /* Джерела світла — живі кірки. Беремо їх один раз на кадр, а не на
        кожну клітинку. Немає забігу — немає й затемнення: під рулеткою
@@ -1462,7 +1424,7 @@ export class Presenter {
   }
 
   private drawParticles(ctx: CanvasRenderingContext2D): void {
-    for (const p of this.particles) {
+    for (const p of this.fx.particles) {
       ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 2.2));
       ctx.fillStyle = p.color;
       const s = p.size * this.cell;
@@ -1477,58 +1439,69 @@ export class Presenter {
       const x = this.sx(p.x);
       const y = this.sy(p.y);
       // розмір спрайту йде за p.scale — тим самим, що й радіус зіткнення
-      const size = this.cell * 1.5 * p.scale;
+      const size = this.cell * PICK_VIS * p.scale;
       if (p.dead) ctx.globalAlpha = 0.25;
-      Render.pickaxe(ctx, x, y, size, p.tier, p.rot, p.enchanted);
+      Render.pickaxe(ctx, x, y, size, p.tier, p.rot);
       ctx.globalAlpha = 1;
       if (!p.dead && this.state === 'RUNNING') {
-        // підпис HP тримається над спрайтом, тож теж їде за розміром
-        Render.hpLabel(ctx, x, y - size * 0.62, p.hp, p.hpMax, this.cell);
+        /* Підпис HP тримається над спрайтом. Множник 0.76 (а не
+           колишні 0.62) — щоб АБСОЛЮТНИЙ просвіт лишився таким самим:
+           size тепер видимий розмір, а не полотно, і воно на 19%
+           менше. Кірка йде по діагоналі, тож її півдіагональ —
+           size * 0.707; 0.76 лишає над нею той самий запас, що й
+           раніше, і підпис не наїжджає на вістря, під яким би кутом
+           кірка не крутилась. */
+        Render.hpLabel(ctx, x, y - size * 0.76, p.hp, p.hpMax, this.cell);
       }
     }
   }
 
+  /* Спалахи-картинки (вибух TNT, силуети кірки). Малюються ПІСЛЯ
+     шахти й іскор, але ПЕРЕД самою кіркою: слід має лишатись позаду
+     неї, а не накривати її собою. */
+  private drawSprites(ctx: CanvasRenderingContext2D): void {
+    for (const s of this.fx.sprites) {
+      const img = Assets.get(s.key);
+      if (!img) continue;                       // ще не довантажився — просто без ефекту
+      const k = 1 - s.life / s.max;             // 0 на старті, 1 наприкінці
+      const nw = img.naturalWidth || img.width;
+      const nh = img.naturalHeight || img.height;
+      if (!nw || !nh) continue;
+      const w = s.size * this.cell * (1 + (s.grow - 1) * k);
+      const h = w * (nh / nw);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - k);     // рівне згасання за життя
+      ctx.translate(this.sx(s.x), this.sy(s.y));
+      if (s.rot) ctx.rotate(s.rot);
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
   private drawPopups(ctx: CanvasRenderingContext2D): void {
-    for (const p of this.popups) {
+    for (const p of this.fx.popups) {
       ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.4));
       const font = '800 ' + Math.round(this.cell * p.size) + 'px ui-monospace, monospace';
       if (p.money != null) {
-        this.drawMoney(ctx, p.money, this.sx(p.x), this.sy(p.y), font, p.color, 'center', p.prefix ?? '+');
+        const meta = CURRENCY_META[this.currency];
+        const str = (p.prefix ?? '+') + this.moneyStr(p.money);
+        /* Растровий шрифт бере на себе ЛИШЕ те, що з нього можна
+           набрати: цифри, '+', кому, 'x', '/'. Попап із кирилицею
+           ('БУМ! +12') він не потягне — pixelMoney чесно скаже false,
+           і рядок піде системним шрифтом, як і раніше. */
+        const done = Render.pixelMoney(
+          ctx, str, this.sx(p.x), this.sy(p.y),
+          Math.max(POPUP_PIXEL_MIN, Math.round(this.cell * p.size * 1.35)),
+          p.color, this.currency, meta.mono);
+        if (!done) {
+          this.drawMoney(ctx, p.money, this.sx(p.x), this.sy(p.y), font, p.color, 'center', p.prefix ?? '+');
+        }
       } else {
         Render.text(ctx, p.text, this.sx(p.x), this.sy(p.y), font, p.color);
       }
     }
     ctx.globalAlpha = 1;
-  }
-
-  /* Історія ставок. На широкому екрані — колонка зліва; на телефоні
-     вона б з'їла пів поля, тому там компактна стрічка зверху зліва.
-     Раніше на вузькому екрані історії не було ВЗАГАЛІ — тобто на
-     основній платформі гри цей код просто ніколи не виконувався. */
-  private drawHistory(ctx: CanvasRenderingContext2D): void {
-    if (!this.history.length) return;
-    if (this.w < 720) { this.drawHistoryStrip(ctx); return; }
-
-    const w = 156, rh = 34, x = 14, y = 86;
-    const n = Math.min(this.history.length, Math.max(2, Math.floor((this.h - y - 30) / rh) - 1));
-
-    Render.panel(ctx, x, y, w, 26 + n * rh, '#2c323b', 4);
-    Render.text(ctx, 'ПОСЛЕДНИЕ', x + w / 2, y + 18, '700 12px ui-monospace, monospace', '#b9c2ce');
-
-    for (let i = 0; i < n; i++) {
-      const e = this.history[i];
-      const ry = y + 26 + i * rh;
-      const won = e.win >= e.cost;
-      Render.inset(ctx, x + 6, ry + 2, w - 12, rh - 5,
-        i === 0 ? '#1f2a22' : '#1b1f26', 3);
-
-      if (!e.item) Render.cross(ctx, x + 24, ry + rh / 2, 13, 0.85);
-      else Render.pickaxe(ctx, x + 24, ry + rh / 2, 27, e.item, -0.5, false);
-
-      Render.text(ctx, 'x' + e.x.toFixed(2), x + w - 12, ry + rh / 2 + 5,
-        '700 14px ui-monospace, monospace',
-        e.win === 0 ? '#7a8595' : (won ? '#5ce08a' : '#e0925c'), 'right');
-    }
   }
 
   /* Раунд розігрується на полі. Ті самі стани, за якими GameClient
@@ -1540,233 +1513,9 @@ export class Presenter {
   }
 
   /* Наскільки вниз посунути верхній HUD (сумарний виграш, вікно
-     множника, зачарування): на телефоні верхню смугу займає стрічка
-     історії, і без цього зсуву написи лягали б один на одного. */
+     множника): на телефоні верхню смугу займає стрічка історії, і без
+     цього зсуву написи лягали б один на одного. */
   private get topInset(): number {
     return this.w < 720 && this.history.length ? 42 : 0;
-  }
-
-  /* Мобільна історія: горизонтальна стрічка останніх ставок у лівому
-     верхньому куті. Найновіша — ліворуч. */
-  private drawHistoryStrip(ctx: CanvasRenderingContext2D): void {
-    const cellW = 30, gap = 4, y = 8, h = 30;
-    const room = Math.floor((this.w * 0.62 + gap) / (cellW + gap));
-    const n = Math.max(0, Math.min(this.history.length, room, 6));
-
-    for (let i = 0; i < n; i++) {
-      const e = this.history[i];
-      const x = 10 + i * (cellW + gap);
-      const won = e.win >= e.cost;
-
-      ctx.globalAlpha = i === 0 ? 1 : 0.72;
-      Render.inset(ctx, x, y, cellW, h, i === 0 ? '#1f2a22' : '#1b1f26', 3);
-      if (!e.item) Render.cross(ctx, x + cellW / 2, y + h * 0.4, 11, 0.85);
-      else Render.pickaxe(ctx, x + cellW / 2, y + h * 0.4, 22, e.item, -0.5, false);
-
-      Render.text(ctx, 'x' + e.x.toFixed(1), x + cellW / 2, y + h - 4,
-        '700 9px ui-monospace, monospace',
-        e.win === 0 ? '#7a8595' : (won ? '#5ce08a' : '#e0925c'));
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  /* Живий лог виграшу — push-тости знизу екрана, без фону: рядок
-     з'являється легким свайпом угору знизу, тримається і так само
-     зникає свайпом угору й розчиненням (не миготить, не займає місце
-     постійною табличкою). Новіші — ближче до самого низу. */
-  private drawLiveLog(ctx: CanvasRenderingContext2D): void {
-    const n = this.toasts.length;
-    if (!n) return;
-    const rowH = 24;
-    /* Поки триває розіграш, нижня панель кнопок з'їжджає вниз (клас
-       .controls.playing у globals.css) — заради цього логу її й ховають,
-       тож використовуємо звільнене місце й опускаємось ближче до краю.
-       Поза розіграшем панель на місці, і лог тримається вище за неї. */
-    const baseY = this.h - (this.playing ? 44 : 86);
-
-    for (let i = 0; i < n; i++) {
-      const t = this.toasts[i];
-      const rowFromBottom = n - 1 - i;
-      const progress = 1 - t.life / TOAST_LIFE;
-
-      let alpha: number, slide: number;
-      if (progress < 0.15) {                       // виїзд знизу вгору
-        const k = progress / 0.15;
-        alpha = k; slide = (1 - k) * 18;
-      } else if (progress < 0.7) {                  // тримається на місці
-        alpha = 1; slide = 0;
-      } else {                                      // зникає тим самим свайпом угору
-        const k = (progress - 0.7) / 0.3;
-        alpha = 1 - k; slide = -k * 22;
-      }
-
-      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
-      const y = baseY - rowFromBottom * rowH + slide;
-      const font = '800 13px ui-monospace, monospace';
-      if (t.money != null) {
-        this.drawMoney(ctx, t.money, this.w / 2, y, font, t.color, 'center', t.text + ' +');
-      } else {
-        Render.text(ctx, t.text, this.w / 2, y, font, t.color);
-      }
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  /* Сумарний виграш поточного забігу — постійний напис зверху по
-     центру, просто текстом (без фону). Живе, доки триває копання. */
-  private drawRunningTotal(ctx: CanvasRenderingContext2D): void {
-    if (!this.run || this.state !== 'RUNNING') return;
-    const cash = this.run.collected * this.runBet / CONFIG.payoutK;
-    if (cash <= 0) return;   // "+0" на весь екран нічого не каже — просто мовчимо, доки нема чого показати
-    this.drawMoney(ctx, cash, this.w / 2, 46 + this.topInset,
-      '800 20px ui-monospace, monospace', '#ffd34d');
-  }
-
-  /* Скаттери поточного забігу — три зірки в ряд під сумою.
-
-     Порожні кружки показуємо з ПЕРШОГО ж зібраного, а не завжди: доки
-     жодного немає, рядок був би постійним шумом на екрані. А от щойно
-     один упав — гравцю треба бачити, скільки лишилось. */
-  private drawScatters(ctx: CanvasRenderingContext2D): void {
-    if (this.state !== 'RUNNING' || this.scatters <= 0) return;
-    const need = CONFIG.scatter.need;
-    const got = Math.min(this.scatters, need);
-    const y = 106 + this.topInset;
-    const star = '★'.repeat(got) + '☆'.repeat(Math.max(0, need - got));
-    Render.text(ctx, star + '  ' + got + '/' + need, this.w / 2, y,
-      '800 16px ui-monospace, monospace', got >= need ? '#ff9a3c' : '#ffc27a');
-  }
-
-  /* Заставка перед безкоштовною бонускою.
-
-     Не косметика: раунд списав нуль, кірка взялась нізвідки й шахта
-     інша — без пояснення це читається як збій. Тому вона й затемнює
-     поле, а не висить збоку. */
-  private drawBonusIntro(ctx: CanvasRenderingContext2D): void {
-    const t = this.bonusIntro;
-    // згасання на останній третині секунди — щоб перехід не був різкий
-    const a = Math.min(1, t * 3);
-    ctx.save();
-    ctx.globalAlpha = a;
-    ctx.fillStyle = 'rgba(4,6,9,.78)';
-    ctx.fillRect(0, 0, this.w, this.h);
-
-    const cy = this.h / 2;
-    const pop = Math.max(1, 1.5 - (BONUS_INTRO_SEC - t) * 3);
-    const size = Math.round(Math.min(this.w * 0.13, 52) * pop);
-    Render.text(ctx, 'БОНУС ГЕЙМ', this.w / 2, cy - 6,
-      '900 ' + size + 'px ui-monospace, monospace', '#ff9a3c');
-    Render.text(ctx, '★ ★ ★', this.w / 2, cy - 58,
-      '800 22px ui-monospace, monospace', '#ffc27a');
-    Render.text(ctx, 'три скаттера — раунд за счёт заведения',
-      this.w / 2, cy + 34, '700 13px ui-monospace, monospace', '#c8d0da');
-    ctx.restore();
-  }
-
-  /* Вікно множника: поки воно активне (run.multWindowT > 0), усе зібране
-     множиться на run.multActive. Показуємо великий "X{n}" і смужку часу,
-     що спадає, — під сумарним виграшем. Пульсує, коли лишається < 4с. */
-  private drawMultWindow(ctx: CanvasRenderingContext2D): void {
-    const run = this.run;
-    if (!run || this.state !== 'RUNNING' || run.multActive <= 1) return;
-    /* У бонусці множники стакаються назавжди — вікна немає, і перевірка
-       multWindowT там завжди хибна. Без цієї гілки індикатор у бонусці
-       не з'являвся б узагалі, хоча множник саме там і найбільший. */
-    if (!run.multPermanent && run.multWindowT <= 0) return;
-
-    const y = 78 + this.topInset;
-
-    if (run.multPermanent) {
-      Render.text(ctx, 'X' + Math.round(run.multActive), this.w / 2, y,
-        '800 24px ui-monospace, monospace', '#ffd34d');
-      Render.text(ctx, 'ДО КОНЦА ЗАБЕГА', this.w / 2, y + 16,
-        '700 10px ui-monospace, monospace', '#b08a2a');
-      return;
-    }
-
-    const frac = Math.max(0, Math.min(1, run.multWindowT / MULT_WINDOW_SEC));
-    const secs = Math.max(1, Math.ceil(run.multWindowT));
-    const urgent = run.multWindowT < 4;
-    const blink = urgent && Math.floor(run.time * 6) % 2 === 0;
-    const color = blink ? '#fff2b0' : '#ffd34d';
-
-    Render.text(ctx, 'X' + run.multActive + '   ' + secs + ' с', this.w / 2, y,
-      '800 22px ui-monospace, monospace', color);
-
-    // смужка часу, що спадає
-    const bw = Math.min(220, this.w - 80);
-    const bx = (this.w - bw) / 2;
-    const by = y + 8;
-    ctx.fillStyle = 'rgba(0,0,0,.5)';
-    ctx.fillRect(bx - 2, by - 2, bw + 4, 8);
-    ctx.fillStyle = color;
-    ctx.fillRect(bx, by, bw * frac, 4);
-  }
-
-  /* Поточний множник зачарування кірки — постійний напис зверху праворуч. */
-  private drawEnchantMult(ctx: CanvasRenderingContext2D): void {
-    if (!this.run || this.state !== 'RUNNING' || this.enchantMult <= 1) return;
-    Render.text(ctx, 'ЗАЧАР. X' + this.enchantMult.toFixed(2).replace(/\.?0+$/, ''),
-      this.w - 14, 46 + this.topInset,
-      '800 15px ui-monospace, monospace', '#d9a3ff', 'right');
-  }
-
-  private drawResult(ctx: CanvasRenderingContext2D): void {
-    const round = this.round;
-    if (!round) return;
-    const a = Math.min(1, this.resultT * 3);
-    const bw = Math.min(420, this.w - 40), bh = 176;
-    const bx = (this.w - bw) / 2, by = this.h / 2 - bh / 2;
-    ctx.globalAlpha = a;
-
-    /* Плашка великого виграшу — НАД панеллю, щоб не тіснити цифри
-       всередині неї. З'являється з коротким «наїздом» (масштаб від 1.6
-       до 1) і легким пульсом: без руху великий напис читається як
-       статичний ярлик, а не як подія. */
-    const tier = winTier(round.cost > 0 ? round.payout / round.cost : 0);
-    if (tier) {
-      const pop = Math.max(1, 1.6 - this.resultT * 4);
-      const pulse = 1 + Math.sin(this.resultT * 6) * 0.03;
-      const size = Math.round(Math.min(this.w * 0.11, 44) * pop * pulse);
-      ctx.save();
-      ctx.globalAlpha = a;
-      Render.text(ctx, tier.text, this.w / 2, by - 26,
-        '900 ' + size + 'px ui-monospace, monospace', tier.color);
-      ctx.restore();
-    }
-
-    Render.panel(ctx, bx, by, bw, bh, '#2c323b', 5);
-    const mid = bx + bw / 2;
-    const spent = round.cost || round.bet;
-    const net = round.payout - round.cost;
-
-    this.drawMoney(ctx, round.bet, mid, by + 30,
-      '700 13px ui-monospace, monospace', '#c8b4e0', 'center', 'СТАВКА ', true);
-
-    this.drawMoney(ctx, round.payout, mid, by + 84,
-      '800 46px ui-monospace, monospace', net >= 0 ? '#5ce08a' : '#e05c5c', 'center', '+', true);
-
-    const first = round.tiers.length ? TIER_BY_ID[round.tiers[0]] : null;
-    if (round.capped) {
-      Render.text(ctx, 'ПОТОЛОК ВЫИГРЫША x' + CONFIG.maxWinX, mid, by + 116,
-        '800 15px ui-monospace, monospace', '#ffd34d');
-    } else {
-      Render.text(ctx,
-        first ? `${first.name}  ·  x${(round.payout / spent).toFixed(2)}`
-              : 'кирка не выпала — ставка сгорела',
-        mid, by + 116, '700 13px ui-monospace, monospace', '#9aa4b2');
-    }
-
-    /* Виграна бонуска важливіша за підказку «клик — далее»: це головне,
-       що сталося в раунді, і сказати про це треба в самій панелі, а не
-       лише плашкою, яку легко проґавити. */
-    if (round.bonusWon) {
-      Render.text(ctx, '★ ★ ★  СЛЕДУЮЩИЙ РАУНД — БЕСПЛАТНАЯ БОНУСКА',
-        mid, by + 152, '800 12px ui-monospace, monospace', '#ff9a3c');
-    } else {
-      Render.text(ctx, 'клик или пробел — далее',
-        mid, by + 152, '700 12px ui-monospace, monospace', '#7a8595');
-    }
-    ctx.globalAlpha = 1;
   }
 }

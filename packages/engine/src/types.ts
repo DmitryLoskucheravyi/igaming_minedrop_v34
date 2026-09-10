@@ -3,12 +3,17 @@
    Все, що їздить по HTTP, описано тут.
    ============================================================ */
 
-export type TierId = 'lvl2' | 'lvl3' | 'lvl4' | 'gold' | 'diamond';
+/* УВАГА: 'gold' у BlockId нижче — це РУДА ЗОЛОТА, а не кірка. Золотої
+   КІРКИ в грі немає: тірів чотири. */
+export type TierId = 'lvl2' | 'lvl3' | 'lvl4' | 'diamond';
 export type BlockId =
   | 'grass' | 'dirt' | 'stone' | 'coal' | 'redstone' | 'iron' | 'lapis' | 'gold' | 'diamond' | 'emerald'
-  | 'tnt' | 'magic' | 'enchant' | 'mult' | 'grow' | 'rubber' | 'scatter';
+  | 'tnt' | 'magic' | 'mult' | 'grow' | 'rubber' | 'scatter';
+/* 'magic' у BlockId — це ВЕРСТАК (kind 'upgrade'), а не зачарування:
+   ім'я історичне, див. коментар до BLOCKS у config.ts. Kind 'magic'
+   (стіл зачарування) прибрано разом із самою механікою. */
 export type BlockKind =
-  | 'solid' | 'tnt' | 'magic' | 'mult' | 'upgrade' | 'grow' | 'rubber' | 'scatter';
+  | 'solid' | 'tnt' | 'mult' | 'upgrade' | 'grow' | 'rubber' | 'scatter';
 
 export interface Tier {
   id: TierId;
@@ -19,7 +24,6 @@ export interface Tier {
   color: string;
   color2: string;
   skin: string;
-  skinMagic: string;
 }
 
 export interface BlockDef {
@@ -42,7 +46,6 @@ export type RunEvent =
   | { t: 'crack'; r: number; c: number; id: BlockId; stage: number; of: number; pick: number }
   | { t: 'tnt'; r: number; c: number; hit: { r: number; c: number; id: BlockId }[]; got: number; chain: number; pick: number }
   | { t: 'tntchain'; r: number; c: number; chain: number; mult: number; extra: number; pick: number }
-  | { t: 'magic'; r: number; c: number; mult: number; lvl: number; pick: number }
   /* healOnly=false -> підвищення тіру. healOnly=true, topUp=0 -> повний
      хіл (1-й верстак на топ-тірі). topUp>0 -> дохіл на topUp HP. */
   | { t: 'upgrade'; r: number; c: number; tier: TierId; healOnly: boolean; topUp: number; pick: number }

@@ -59,7 +59,7 @@ for (let i = 0; i < N; i++) {
     // тіку — тому стан клітинки після 'crack' звіряємо лише як TNT не було.
     const tntThisTick = run.events.some((ev) => ev.t === 'tnt');
     for (const e of run.events) {
-      if (e.t === 'break' || e.t === 'magic' || e.t === 'tnt' || e.t === 'mult')
+      if (e.t === 'break' || e.t === 'tnt' || e.t === 'mult')
         t(mine.get(e.r, e.c) === null, 'блок не прибрався з сітки після ' + e.t);
 
       if (e.t === 'crack') {
@@ -90,13 +90,7 @@ for (let i = 0; i < N; i++) {
         t(run.multActive === e.active && run.multWindowT > 0,
           'стан вікна не збігається з подією');
       }
-      // стіл зачарування — ЄДИНЕ джерело магічного скіну; 3 рівні
-      if (e.t === 'magic') {
-        t(run.picks.some((q) => q.enchanted), 'стіл зачарування не зачарував жодної кірки');
-        t(e.lvl >= 1 && e.lvl <= CONFIG.enchant.steps.length, 'рівень зачарування поза межами: ' + e.lvl);
-        t(e.mult === CONFIG.enchant.steps[e.lvl - 1], 'множник не відповідає рівню');
-      }
-      // верстак підвищує тір або лікує, але enchanted НЕ чіпає
+      // верстак: або підвищує тір, або лікує (на топ-тірі)
       if (e.t === 'upgrade') {
         const q = run.picks[e.pick];
         t(!!q, 'подія верстака посилається на неіснуючу кірку');
@@ -108,7 +102,7 @@ for (let i = 0; i < N; i++) {
         t(e.chain >= 1, 'chain лічильник TNT некоректний: ' + e.chain);
         for (const h of e.hit) {
           const k = BLOCKS[h.id].kind;
-          t(k === 'solid' || k === 'magic' || k === 'upgrade' || k === 'tnt', 'вибух зачепив не той блок');
+          t(k === 'solid' || k === 'upgrade' || k === 'tnt', 'вибух зачепив не той блок');
         }
       }
       if (e.t === 'tntchain') t(e.chain >= 3 && e.mult > 1, 'бонус ланцюга TNT при chain < 3');

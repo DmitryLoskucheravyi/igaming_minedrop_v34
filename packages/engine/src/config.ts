@@ -63,7 +63,8 @@ export const CONFIG = {
   /* Стеля виграшу за раунд, у ставках. Реальний максимум на поточній
      математиці ≈ x26 на 50k ставок (p99.9 ≈ x15), тому стеля майже
      ніколи не спрацьовує — це чесний запобіжник, а не маркетингове
-     число. Розширювати хвіст — Стадія 2 (enchant, крива руди). */
+     число. Розширювати хвіст — це вже нова математика (крива руди,
+     нові множники), а не підняття стелі. */
   maxWinX: 500,
 
   /* ---- рулетка ----
@@ -166,13 +167,6 @@ export const CONFIG = {
     fromRow: 5,
   },
 
-  /* ---- СТІЛ ЗАЧАРУВАННЯ ----
-     3 фіксовані рівні множника кірки. I → ×1.25, II → ×1.5, III → ×2.0,
-     далі дотики без ефекту. Діє на весь подальший виграш ЦІЄЇ кірки. */
-  enchant: {
-    steps: [1.25, 1.5, 2.0],
-  },
-
   /* ---- СТРІЛКА ВГОРУ (блок grow) ----
      Кірка ТИМЧАСОВО більшає: росте і спрайт, і РАДІУС ЗІТКНЕННЯ.
 
@@ -252,15 +246,19 @@ export const CONFIG = {
      ставкою. Міняєш HP/урон кірок, ваги блоків чи payoutK — переганяй
      sim/buy.ts і онови ці числа.
 
-     multBoost / enchantBoost — наскільки щедріша бонусна шахта. */
+     multBoost — наскільки щедріша бонусна шахта. Раніше важелів було
+     два (другим був enchantBoost, частота столів зачарування), але
+     зачарування прибрано як механіку, тож лишився один: ЄДИНЕ, чим
+     бонусна шахта тепер відрізняється від звичайної, — частота
+     блоків-множників. Це окремий ризик: перевірити симуляцією, що
+     бонуска й далі відчувається щедрішою. */
   buy: {
     /* Наскільки щедріша бонусна шахта проти звичайної. Тут і тільки
        тут живуть усі підняття: у звичайній грі ваги лишаються базовими. */
-    /* Зрізано на ~25% (4 -> 3, 2.6 -> 2.0, хвіст нижче теж): бонуска
-       мала віддавати менше — і куплена, і виграна скаттерами. Оскільки
+    /* Зрізано на ~25% (4 -> 3, хвіст нижче теж): бонуска мала
+       віддавати менше — і куплена, і виграна скаттерами. Оскільки
        обидві беруть ту саму шахту, важіль тут один на дві фічі. */
     multBoost: 3,        // частота блоків-множників: 1.6 -> 3
-    enchantBoost: 2.0,   // частота столів зачарування: 1.6 -> 2.0
     /* Стеля стакнутого множника бонуски. Номінали складаються, тож
        росте він лінійно і в цю стелю практично не впирається — вона
        тут як запобіжник на випадок аномально довгого забігу, а не як
@@ -278,7 +276,7 @@ export const CONFIG = {
 
        Ціль ~70% проти 78% базової гри. Числа = середня виплата / 0.70,
        заміряно sim/buy.ts на 20k забігів при payoutK 215 і зрізаній
-       щедрості шахти (multBoost 3, enchantBoost 2.0).
+       щедрості шахти (multBoost 3).
 
        ВАЖЛИВО: лишити старі ціни було НЕ МОЖНА. Виплати впали на ~39%,
        а ціни ні — куплена бонуска віддавала б 52-59%. Це вже не
@@ -296,7 +294,6 @@ export const CONFIG = {
       lvl2: 9.3,     // середня виплата x6.48
       lvl3: 27.5,    // x19.31
       lvl4: 58,      // x40.91
-      gold: 93,      // x65.31
       diamond: 94,   // x64.03
     } as Record<string, number>,
   },
@@ -393,6 +390,27 @@ export const CONFIG = {
                           // польоту, і візуально кірка (разом з ручкою) вже
                           // торкалась блоку, а гра ще ні. Тепер зачіпає
                           // майже всю площу спрайту — колізія й на ручці.
+    /* ВІДСКОК ВІД БЛОКУ, ЩО ВИЖИВ.
+       Удар, який блок ПЕРЕЖИВ (накопиченого урону ще менше за tough —
+       гілка 'crack' у Run.hit), відкидає кірку рівно в стільки разів
+       слабше. Блок, що розлетівся, відкидає як і раніше, без множника.
+
+       Сенс простий: кірка не має відскакувати від руди, яку вона ще
+       довбає. Раніше будь-який дотик по міцному блоку жбурляв її геть,
+       і замість «прогризла жилу» виходило «постукала й відлетіла».
+
+       Множник б'є по ОБИДВОХ складових імпульсу в bounce() — і по
+       пружині (|v| * restitution), і по фіксованому поштовху
+       (bounceKick / sideKick). Це навмисно: гасити треба саме поштовх,
+       бо він не залежить від швидкості удару й на слабких дотиках
+       якраз і давав те безпричинне підкидання.
+
+       Кірка від цього не застрягає: позиційного виштовхування в
+       колізії немає взагалі (collide() працює по швидкості), тяжіння
+       далі тягне її вниз, а кожен наступний дотик через hitCooldown
+       додає урон — вона просто ПРОГРИЗАЄ блок замість того щоб від
+       нього стрибати. */
+    crackBounce: 0.2,
     substep: 0.22,        // максимальний крок інтегрування в клітинках
     hitCooldown: 0.05,    // мінімум часу між ударами по одному блоку
     /* Сила відкиду від вибуху TNT. Було 6.0 — при гравітації 29 це
@@ -435,21 +453,29 @@ export const CONFIG = {
             (ударів по блоку = ceil(BLOCKS[*].tough / dmg))
    weight — шанс випасти на прокруті, ВІДНОСНО nothingWeight (див. нижче)
 */
-/* weight: сума ваг кірок = 20 (9+5+3+2+1) проти nothingWeight = 100,
-   разом 120 -> кірка випадає в 20/120 = 16.7% ставок. Розклад за ставку:
-   Wooden 7.5% / Stone 4.2% / Iron 2.5% / Golden 1.7% / Diamond 0.83%.
-   Міняєш будь-яку вагу — перераховуй payoutK через sim/final.ts. */
+/* ТІРІВ ЧОТИРИ. Золота кірка (weight 2, hp 300, dmg 5) була п'ятою,
+   між Iron і Diamond, — її прибрано з проєкту разом зі скіном і ціною
+   в бонус баї. Ваги решти НЕ перерозподіляли: сума ваг кірок впала з
+   20 до 18 проти nothingWeight = 109, тобто кірка тепер випадає в
+   18/127 = 14.2% ставок замість 15.5%. Це рухає RTP — переганяй
+   sim/final.ts і підбирай payoutK. */
+/* СКІНИ. Нові кірки намальовані ВПРИТУЛ до країв полотна 256x256
+   (по діагоналі з кута в кут), старі були 160x160 з полями (малюнок
+   займав 0.8125 полотна). Клієнт це знає й рахує екранний розмір від
+   ЧАСТКИ полотна, а не від полотна — див. PICK_FILL в
+   apps/web/src/game/assets.ts. Тому міняти bodyR не довелось.
+
+   У золотої кірки нової картинки поки немає — вона лишається зі
+   старого комплекту (160x160). */
 export const TIERS: readonly Tier[] = [
   { id: 'lvl2', name: 'Wooden', weight: 9, hp: 100, dmg: 2, color: '#a9803f', color2: '#6b4a20',
-    skin: '/pickaxes/lvl2.webp', skinMagic: '/pickaxes/lvl2-magic.webp' },
+    skin: '/pickaxes/pickaxe_0.png' },
   { id: 'lvl3', name: 'Stone', weight: 5, hp: 150, dmg: 3, color: '#a8a8a8', color2: '#6e6e6e',
-    skin: '/pickaxes/lvl3.png', skinMagic: '/pickaxes/lvl3-magic.webp' },
+    skin: '/pickaxes/pickaxe_1.png' },
   { id: 'lvl4', name: 'Iron', weight: 3, hp: 200, dmg: 4, color: '#e2e2e2', color2: '#9d9d9d',
-    skin: '/pickaxes/lvl4.png', skinMagic: '/pickaxes/lvl4-magic.gif' },
-  { id: 'gold', name: 'Golden', weight: 2, hp: 300, dmg: 5, color: '#f7d13a', color2: '#c79a10',
-    skin: '/pickaxes/gold.png', skinMagic: '/pickaxes/gold-magic.webp' },
+    skin: '/pickaxes/pickaxe_2.png' },
   { id: 'diamond', name: 'Diamond', weight: 1, hp: 400, dmg: 7, color: '#57eede', color2: '#22b7a8',
-    skin: '/pickaxes/diamond.png', skinMagic: '/pickaxes/diamond-magic.webp' },
+    skin: '/pickaxes/diamond_pickaxe.png' },
 ];
 
 export const TIER_BY_ID: Record<string, Tier> =
@@ -479,17 +505,23 @@ export const NOTHING = { id: 'none', name: 'Пусто', color: '#39424f', color
            Спред ×130 — щоб глибокий забіг з ізумрудом відчувався як
            jackpot. payoutK підганяється симуляцією під RTP 95%.
 
-   ВЕРСТАК проти СТОЛУ ЗАЧАРУВАННЯ — два РІЗНІ ефекти:
-     - верстак (id magic, kind 'upgrade') — прямий дотик підвищує тір
-       (поки є куди рости) і лікує до максимуму; на топ-тірі (Diamond)
-       щоразу дає повний хіл (довжину забігу тримають timeout + maxHits).
-       Вибух TNT просто ламає його, без ефекту.
-     - стіл зачарування (id enchant, kind 'magic') — НЕ підвищує тір і
-       не лікує; 3 фіксовані рівні множника кірки (×1.25 / ×1.5 / ×2.0).
+   ВЕРСТАК (id magic, kind 'upgrade') — прямий дотик підвищує тір
+   (поки є куди рости) і лікує до максимуму; на топ-тірі (Diamond)
+   щоразу дає повний хіл (довжину забігу тримають timeout + maxHits).
+   Вибух TNT просто ламає його, без ефекту.
+
+   Ім'я id 'magic' історичне й невдале: колись поруч жив ДРУГИЙ блок —
+   стіл зачарування (id 'enchant', kind 'magic'), який множив виграш
+   кірки. Його прибрано як механіку цілком, лишився тільки верстак.
+   Перейменовувати id не стали: він їздить у збережених раундах.
 */
+/* РУДА ЗАЛІЗА Й ЗОЛОТА малюється двома шарами: булижник (skin нижче)
+   + накладка з рудою поверх нього. Художник дав саме накладки, а не
+   готові блоки, тому skin у них — cobble, а накладку підмішує
+   Render.block (мапа ORE_OVERLAY). */
 export const BLOCKS: Record<BlockId, BlockDef> = {
-  grass:    { id: 'grass',    name: 'Дёрн',     kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#5f8a3f', skin: '/blocks/grass.jpg' },
-  dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/blocks/dirt.webp' },
+  grass:    { id: 'grass',    name: 'Дёрн',     kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#5f8a3f', skin: '/blocks/grass.png' },
+  dirt:     { id: 'dirt',     name: 'Земля',    kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8a5f38', skin: '/blocks/dirt.png' },
   stone:    { id: 'stone',    name: 'Камень',   kind: 'solid', tough: 1, cost: 1, value: 0,  color: '#8f8f8f', skin: '/blocks/stone.png' },
   /* Вартості зрізано рівно на 15% (× 0.85) від попередніх цілих:
      1 / 5 / 10 / 15 / 20 / 45 / 130. Дроби лишені навмисно — округлення
@@ -498,15 +530,14 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
      замість -15%). value ніде не показується як є: у виплату йде
      value * ставка / payoutK, тож дробове значення нічого не ламає. */
   coal:     { id: 'coal',     name: 'Уголь',    kind: 'solid', tough: 2,  cost: 1, value: 0.85,  color: '#5f5f5f', skin: '/blocks/coal.webp' },
-  iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 4.25,  color: '#b98b6c', skin: '/blocks/iron.png' },
+  iron:     { id: 'iron',     name: 'Железо',   kind: 'solid', tough: 4,  cost: 1, value: 4.25,  color: '#b98b6c', skin: '/blocks/cobble.png' },
   lapis:    { id: 'lapis',    name: 'Лазурит',  kind: 'solid', tough: 5,  cost: 1, value: 8.5,   color: '#1f4fa8', skin: '/blocks/lapis.jpg' },
   redstone: { id: 'redstone', name: 'Редстоун', kind: 'solid', tough: 5,  cost: 1, value: 12.75, color: '#b3241f', skin: '/blocks/redstone.jpg' },
-  gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 17,    color: '#e8c33a', skin: '/blocks/gold.png' },
-  diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 38.25, color: '#4fe6e0', skin: '/blocks/diamond.jpg' },
-  emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 110.5, color: '#16c96a', skin: '/blocks/emerald.jpg' },
-  tnt:      { id: 'tnt',      name: 'TNT',      kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/blocks/tnt.jpg' },
+  gold:     { id: 'gold',     name: 'Золото',   kind: 'solid', tough: 6,  cost: 1, value: 17,    color: '#e8c33a', skin: '/blocks/cobble.png' },
+  diamond:  { id: 'diamond',  name: 'Алмаз',    kind: 'solid', tough: 9,  cost: 1, value: 38.25, color: '#4fe6e0', skin: '/blocks/diamond.png' },
+  emerald:  { id: 'emerald',  name: 'Изумруд',  kind: 'solid', tough: 10, cost: 1, value: 110.5, color: '#16c96a', skin: '/blocks/emerald.png' },
+  tnt:      { id: 'tnt',      name: 'TNT',      kind: 'tnt',   tough: 1, cost: 0, value: 0,  color: '#d63b1f', skin: '/blocks/tnt.png' },
   magic:    { id: 'magic',    name: 'Верстак',           kind: 'upgrade', tough: 1, cost: 1, value: 0, color: '#c8a165', skin: '/blocks/magic.png' },
-  enchant:  { id: 'enchant',  name: 'Стол зачарования',  kind: 'magic', tough: 1, cost: 1, value: 0, color: '#6c3ec9', skin: '/blocks/enchant.jpg' },
   // блок-множник. Множник (x2, x3...) лежить у самій клітинці
   mult:     { id: 'mult',     name: 'Множитель', kind: 'mult',  tough: 1, cost: 1, value: 0,  color: '#c9a227' },
   /* Стрілка вгору — кірка більшає втричі (CONFIG.grow.scale) разом із
@@ -517,13 +548,17 @@ export const BLOCKS: Record<BlockId, BlockDef> = {
      Через це ж дотик не коштує HP (cost 0, як у TNT): інакше застрягти
      біля слайму означало б безкоштовно втрачати запас ходу, а сам блок
      нічого не дає натомість. tough тут ні на що не впливає — блок ніколи
-     не чистять. */
-  rubber:   { id: 'rubber',   name: 'Слайм',     kind: 'rubber', tough: 1, cost: 0, value: 0,  color: '#d8489b' },
+     не чистять.
+
+     color — колір ІСКОР і рядка в лозі, не блоку: сам блок малюється
+     картинкою. Був рожевий під намальований кодом слайм; новий
+     скін зелений, тож і бризки тепер зелені. */
+  rubber:   { id: 'rubber',   name: 'Слайм',     kind: 'rubber', tough: 1, cost: 0, value: 0,  color: '#5fbe3a', skin: '/blocks/rubber.png' },
   /* Скаттер. Грошей не дає взагалі (value 0) — уся його цінність у
      тому, що три штуки за забіг відкривають безкоштовну бонуску.
      Ламається з першого удару: полювання за ним має впиратись у те,
      чи долетить кірка, а не в те, чи проб'є. */
-  scatter:  { id: 'scatter',  name: 'Скаттер',   kind: 'scatter', tough: 1, cost: 1, value: 0,  color: '#ff7a1a' },
+  scatter:  { id: 'scatter',  name: 'Скаттер',   kind: 'scatter', tough: 1, cost: 1, value: 0,  color: '#ff7a1a', skin: '/blocks/scatter.png' },
 };
 
 /* ---------- ГЕНЕРАЦІЯ ГЛИБИНИ ----------
@@ -538,11 +573,13 @@ export function ramp(r: number, a: number, b: number): number {
    gold/diamond) сюди більше НЕ входить: вона лягає покладами, а не
    випадковими цятками — див. ORE_VEINS і world.ts. */
 export function depthWeights(r: number, bonus = false): Record<string, number> {
-  /* Бонусна шахта (куплена кірка) — щедріша: частіші блоки-множники й
-     столи зачарування. Це ЄДИНА різниця в генерації; руда, TNT і решта
-     лишаються такими самими, щоб бонуска не перетворювалась на іншу гру. */
+  /* Бонусна шахта (куплена кірка) — щедріша: частіші блоки-множники.
+     Це ЄДИНА різниця в генерації; руда, TNT і решта лишаються такими
+     самими, щоб бонуска не перетворювалась на іншу гру. Другим
+     підняттям тут була частота столів зачарування — механіку
+     прибрано, і разом із нею звільнилась її вага (0.15, а в бонусній
+     шахті 0.30): тепер вона перерозподіляється на решту блоків. */
   const multW = CONFIG.mult.weight * (bonus ? CONFIG.buy.multBoost : 1);
-  const enchantW = 0.15 * (bonus ? CONFIG.buy.enchantBoost : 1);
   return {
     // шахта суцільна — порожніх клітинок при генерації немає (дірки
     // лишаються тільки там, де кірка пробила або рвонув TNT).
@@ -554,7 +591,6 @@ export function depthWeights(r: number, bonus = false): Record<string, number> {
     stone: r === 0 ? 0 : 30 + 45 * ramp(r, 0, 6),
     tnt:     r < 3 ? 0 : 1.25,   // −50%: динаміту було 2.5
     magic:   r < 3 ? 0 : 0.38,   // верстак. Підвищує тір. 0.40 -> 0.36 -> 0.38 (+6%)
-    enchant: r < 10 ? 0 : enchantW,  // стіл зачарування — 3 рівні множника кірки
     mult:    r < 2 ? 0 : multW,
     // гума — трамплін, зустрічається помірно часто
     rubber:  r < 4 ? 0 : 0.39,   // слайм-трамплін. 0.35 -> 0.39 (+11%)
