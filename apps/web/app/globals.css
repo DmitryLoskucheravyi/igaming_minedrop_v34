@@ -1621,7 +1621,12 @@ canvas {
 
 .wheel-stage {
   position: relative;
-  width: min(78vw, 296px);
+  /* Відсоток, а НЕ vw: обідник вилазить за сцену приблизно на 6%
+     (див. RIM_SIZE), а в .modalbox стоїть overflow: auto — від vw на
+     вузькому телефоні модалка поїхала б горизонтально. Відсоток
+     рахується від ширини самої модалки вже за відняттям її полів, тож
+     зовнішній кант колеса влазить у неї за побудовою. */
+  width: min(92%, 300px);
   margin: 2px auto 16px;
   aspect-ratio: 1;
   display: grid;
@@ -1663,6 +1668,10 @@ canvas {
   position: relative;
   width: 100%; height: 100%;
   display: block;
+  /* Обідник намальований більшим за viewBox (див. RIM_SIZE), інакше
+     кільце з'їдало верхівки секторів. Без цього svg обрізав би йому
+     зовнішній золотий кант рівно по кадру. */
+  overflow: visible;
   transform-origin: 50% 50%;   /* інакше колесо «тікає» по дузі */
   filter: drop-shadow(0 10px 26px rgba(0, 0, 0, .55));
 }
@@ -1674,30 +1683,18 @@ canvas {
   50%      { filter: drop-shadow(0 10px 30px rgba(255, 211, 77, .28)); }
 }
 
+/* Обідник — картинка з прозорим центром, лежить поверх секторів.
+   Піксельний арт не згладжуємо. */
 .wheel-rim {
-  fill: none;
-  stroke: url(#wd-rim);
-  stroke-width: 9;
-}
-.sector-face { stroke: rgba(6, 10, 16, .55); stroke-width: .8; }
-
-.wheel-label {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: .2px;
-  fill: var(--text);
-  paint-order: stroke;
-  stroke: rgba(0, 0, 0, .45);
-  stroke-width: 2.4px;
-  stroke-linejoin: round;
+  image-rendering: pixelated;
   pointer-events: none;
 }
-/* Джекпот-сектор золотий, тому напис на ньому — темний. */
-.wheel-label.jack {
-  font-size: 10.5px;
-  fill: #2a1d05;
-  stroke: rgba(255, 240, 200, .5);
-}
+/* Сектор — картинка. Піксельний арт не згладжуємо, інакше на краях
+   з'явиться сіра кайма, яка читається як щілина між секторами. */
+.sector-face { image-rendering: pixelated; }
+
+
+
 
 /* Виграний сектор підсвічується вже ПІСЛЯ зупинки: під час обертання
    така пульсація не читалась би взагалі. */
@@ -1709,57 +1706,69 @@ canvas {
   50%      { filter: brightness(1.45); }
 }
 
-.wheel-bulb {
-  fill: #43536a;
-  opacity: .55;
+/* ЛАМПИ НАМАЛЬОВАНІ В САМОМУ ОБІДНИКУ, тож окремих кіл у коді немає.
+   Живим його робить не миготіння кожної лампи, а світіння всього
+   кільця: у спокої повільне дихання, під час обертання — швидший
+   пульс, на зупинці — спалах. Так само помітно, але не залежить від
+   того, скільки саме ламп намалював художник і де. */
+.wheel-stage.idle .wheel-rim { animation: rim-idle 3.4s ease-in-out infinite; }
+.wheel-stage.spinning .wheel-rim { animation: rim-run .7s ease-in-out infinite; }
+.wheel-stage.landed .wheel-rim { animation: rim-win .5s ease-out 4; }
+@keyframes rim-idle {
+  0%, 100% { filter: none; }
+  50%      { filter: drop-shadow(0 0 10px rgba(255, 211, 77, .35)); }
 }
-/* Три різні режими вогнів: очікування — рідке мерехтіння; обертання —
-   швидка біжуча хвиля; посадка — усі разом спалахують золотим. */
-.wheel-stage.idle .wheel-bulb {
-  animation: bulb-idle 2.4s ease-in-out infinite;
+@keyframes rim-run {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.25) drop-shadow(0 0 12px rgba(255, 211, 77, .5)); }
 }
-.wheel-stage.spinning .wheel-bulb {
-  animation: bulb-run .6s linear infinite;
-}
-.wheel-stage.landed .wheel-bulb {
-  fill: var(--gold);
-  opacity: 1;
-  animation: bulb-win .5s ease-out 4;
-}
-@keyframes bulb-idle {
-  0%, 100% { fill: #43536a; opacity: .5; }
-  50%      { fill: #8c98ad; opacity: .95; }
-}
-@keyframes bulb-run {
-  0%, 100% { fill: #43536a; opacity: .45; }
-  30%      { fill: var(--gold); opacity: 1; }
-}
-@keyframes bulb-win {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: .35; }
+@keyframes rim-win {
+  0%, 100% { filter: brightness(1.35) drop-shadow(0 0 18px rgba(255, 211, 77, .75)); }
+  50%      { filter: brightness(1); }
 }
 
-.wheel-hub { stroke: #4a5a6d; stroke-width: 2; }
-.wheel-hub-dot { fill: var(--gold); opacity: .9; }
+/* Втулка тепер картинка, а не два кола: обведення й заливка їй не
+   потрібні, а от піксельний арт без цього браузер розмиє. */
+.wheel-hub {
+  image-rendering: pixelated;
+  pointer-events: none;
+}
 
 /* Стрілка нерухома — рухається колесо під нею. Під час обертання вона
    дрібно сіпається, ніби її штовхають зубці: саме це й читається як
    «колесо клацає», хоча жодних зубців у розмітці немає. */
 .wheel-pin {
   position: absolute;
-  top: -10px;
-  width: 26px;
+  /* Стрілка довга (256x601), тому задаємо ВУЗЬКУ ширину — висота
+     порахується сама. Частки, а не пікселі: сцена гумова, і від
+     фіксованих 22px на вузькому телефоні стрілка ставала завеликою й
+     провалювалась вістрям майже до втулки.
+
+     Самі числа зняті з рендера поруч із колесом: при top:-18px над
+     кадром лишався тільки держак, а вістря впиралось у сталеве кільце
+     й не показувало сектор. Тепер видно всю стрілку разом із
+     самоцвітом, а вістря заходить за внутрішній край обідника —
+     тобто прямо на сектор, який випав. */
+  top: -1.9%;
+  width: 7.1%;
   z-index: 3;
-  transform-origin: 50% 92%;
+  /* Клацання крутимо навколо ВЕРХУ: так гойдається вістря, а не
+     держак. Навпаки виглядало б як зламане кріплення. */
+  transform-origin: 50% 8%;
   filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .6));
 }
-.wheel-pin svg { display: block; width: 100%; }
-.pin-body { fill: var(--gold); stroke: #8a6412; stroke-width: 1; }
-.pin-gem { fill: #fff4cf; }
+.wheel-pin img {
+  display: block;
+  width: 100%;
+  /* Піксельний арт: без цього браузер розмиє його при масштабуванні. */
+  image-rendering: pixelated;
+  user-select: none;
+  -webkit-user-drag: none;
+}
 .wheel-stage.spinning .wheel-pin { animation: pin-tick .09s ease-in-out infinite; }
 @keyframes pin-tick {
   0%, 100% { transform: rotate(0deg); }
-  50%      { transform: rotate(-7deg); }
+  50%      { transform: rotate(-3.5deg); }
 }
 
 /* Плашка призу. З'являється ривком (scale-in), бо це кульмінація —
@@ -1771,6 +1780,12 @@ canvas {
   gap: 2px;
   margin: 0 0 12px;
   animation: prize-in .45s cubic-bezier(.2, 1.5, .4, 1) both;
+}
+.wheel-prize-cap {
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 .wheel-prize-label {
   font-size: 24px;
@@ -1813,16 +1828,13 @@ canvas {
    безглузде), решту прибираємо. */
 @media (prefers-reduced-motion: reduce) {
   .wheel-stage.idle .wheel,
-  .wheel-bulb,
+  .wheel-rim,
   .wheel-stage.spinning .wheel-pin,
   .wheel-stage.landed .wheel-rays,
   .wheel-stage.landed .wheel-sector.win .sector-face,
   .wheel-go:not(:disabled)::after,
-  .drawer-item .dot {
-  margin-left: auto;
-}
-.drawer-item .dot,
-.drawer-btn .dot { animation: none; }
+  .drawer-item .dot,
+  .drawer-btn .dot { animation: none; }
 }
 
 /* ---- РЕФЕРАЛЬНИЙ КАБІНЕТ ---- */
