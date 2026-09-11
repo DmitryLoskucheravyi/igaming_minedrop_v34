@@ -108,11 +108,20 @@ export interface ReferralState {
 
 /* КУПЛЕНІ ФРІСПІНИ. Ціни на всі ставки рахує сервер — клієнт їх лише
    показує, тож двох формул не буває. */
+export interface SpinPack {
+  id: string;
+  name: string;
+  spins: number;
+  bet: number;
+  price: number;
+}
+
 export interface SpinsState {
-  pack: number;
   chanceX: number;
-  prices: Record<string, number>;
+  packs: SpinPack[];
+  /** скільки куплених прокрутів лишилось незіграними */
   left: number;
+  /** ставка, за якою вони грають */
   bet: number;
   balance: number;
 }
@@ -232,10 +241,10 @@ export const Api = {
 
   /** Купити пакет на вказану ставку. Ціну списує сервер зі свого
       розрахунку — число з клієнта туди не доходить. */
-  buySpins(bet: number) {
+  buySpins(pack: string) {
     return call<{ left: number; bet: number; balance: number }>('/spins/buy', {
       method: 'POST',
-      body: JSON.stringify({ bet }),
+      body: JSON.stringify({ pack }),
     });
   },
 

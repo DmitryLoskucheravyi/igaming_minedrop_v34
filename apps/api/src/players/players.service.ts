@@ -5,7 +5,7 @@ import type { RoundResult } from '@minedrop/engine';
 import { MongoService } from '../db/mongo.service';
 import { PlayerStore } from './player-store';
 import type { TelegramUser } from '../telegram/init-data';
-import { FS_PACK, spinsPrice } from '../spins/spins.types';
+import { packPrice, type SpinPack } from '../spins/spins.types';
 import { BONUS_DAYS, BONUS_MAX_BET_SHARE, BONUS_MAX_CASHOUT_X } from './bonus.types';
 import { CONTRIBUTION, splitPayout, splitStake, type MoneySplit } from './money';
 
@@ -417,8 +417,8 @@ export class PlayersService implements OnModuleInit {
 
      Ціну рахує сервер зі ставки (spinsPrice), число з клієнта сюди не
      доходить взагалі — інакше пакет можна було б купити за одиницю. */
-  buySpins(rec: PlayerRecord, bet: number): { left: number; bet: number; balance: number } {
-    const price = spinsPrice(bet);
+  buySpins(rec: PlayerRecord, pack: SpinPack): { left: number; bet: number; balance: number } {
+    const price = packPrice(pack);
     /* ПЛАТИТЬ ТІЛЬКИ ГОТІВКА, і це не дрібниця, а закрита дірка.
 
        Виграш куплених прокрутів — готівка (за них заплачено своїм).
@@ -430,17 +430,16 @@ export class PlayersService implements OnModuleInit {
       throw new BadRequestException(`Недостаточно монет: пакет стоит ${price} ₽`);
     }
     rec.cash -= price;
-    const split = { fromBonus: 0, fromCash: price };
-    rec.buySpins = FS_PACK;
-    rec.buySpinBet = bet;
+    rec.buySpins = pack.spins;
+    rec.buySpinBet = pack.bet;
     /* Ціна пакета — ЦЕ СТАВКА, і в оборот вона йде так само, як ставка
        звичайного раунду. Раніше не йшла, і виходило, що гравець витрачає
        гроші на гру, а відіграш бонусу стоїть на місці. */
     this.noteWager(rec, price);
     this.persist(rec);
-    this.log.warn(`куплено ${FS_PACK} фріспінів: ${rec.telegramId} -${price} `
-      + `(ставка ${bet}, з бонусу ${split.fromBonus}) -> ${this.total(rec)}`);
-    return { left: rec.buySpins, bet, balance: this.total(rec) };
+    this.log.warn(`куплено ${pack.spins} фріспінів (${pack.id}): `
+      + `${rec.telegramId} -${price}, ставка ${pack.bet} -> ${this.total(rec)}`);
+    return { left: rec.buySpins, bet: pack.bet, balance: this.total(rec) };
   }
 
   /* Прогрес відіграшу — для смужки в інтерфейсі. */

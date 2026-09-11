@@ -1,21 +1,26 @@
 'use client';
 
 /* ============================================================
-   КУПІВЛЯ ПАКЕТА ФРІСПІНІВ.
+   ПАКЕТИ ФРІСПІНІВ — список, що гортається.
 
-   Гравець платить один раз і отримує пакет прокрутів із подвоєним
-   шансом кірки. Вікно нічого не рахує: ціни, розмір пакета й множник
-   приходять із сервера, покупку теж робить він — тут лише вибір ставки
-   й кнопка.
+   Один пакет = один рядок = намальований банер (public/spins) із
+   порожніми панелями, у які компонент вписує назву, кількість
+   прокрутів, множник шансу й ціну. Права панель — не напис, а САМА
+   КНОПКА покупки: окрема кнопка під банером дублювала б намальоване й
+   ламала б рядок навпіл.
 
-   Виграш із цих прокрутів — ЗВИЧАЙНІ гроші, без замка: пакет куплено
-   за власні, а відіграш вішають на подарунки. Ціна ж іде в оборот, як
-   і будь-яка інша ставка.
+   Вікно нічого не рахує: пакети, ціни й множник приходять із сервера,
+   покупку робить теж він. Тут лише розмітка й натискання.
+
+   Виграш із цих прокрутів — ЗВИЧАЙНІ гроші, без відіграшу: пакет
+   куплено за власні, а відіграш вішають на подарунки (див.
+   spins.types на сервері).
    ============================================================ */
 
 import { useEffect, useState } from 'react';
 import { Api, type SpinsState } from '../lib/api';
 import { Modal } from './Modal';
+import { SPIN_BANNERS, plateStyle } from '../lib/spin-banners';
 import { rub } from '../lib/format';
 
 interface Props {
@@ -26,43 +31,31 @@ interface Props {
 
 export function SpinsModal({ onClose, onBought }: Props) {
   const [state, setState] = useState<SpinsState | null>(null);
-  const [bet, setBet] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     Api.spins()
-      .then((s) => {
-        if (!alive) return;
-        setState(s);
-        /* За замовчуванням — найдешевший пакет, який гравець може собі
-           дозволити; якщо не може жодного, лишаємо найдешевший, щоб
-           було видно ціну входу. */
-        const bets = Object.keys(s.prices).map(Number).sort((a, b) => a - b);
-        setBet(bets.find((b) => s.prices[b] <= s.balance) ?? bets[0] ?? null);
-      })
+      .then((s) => alive && setState(s))
       .catch((e: Error) => alive && setError(e.message));
     return () => { alive = false; };
   }, []);
 
-  const buy = async () => {
-    if (!bet || busy) return;
-    setBusy(true);
+  const buy = async (id: string) => {
+    if (busy) return;
+    setBusy(id);
     setError(null);
     try {
-      const r = await Api.buySpins(bet);
+      const r = await Api.buySpins(id);
       setState((prev) => (prev ? { ...prev, left: r.left, bet: r.bet, balance: r.balance } : prev));
       onBought?.();
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
-
-  const price = state && bet ? state.prices[bet] ?? 0 : 0;
-  const bets = state ? Object.keys(state.prices).map(Number).sort((a, b) => a - b) : [];
 
   return (
     <Modal title="Фриспины" onClose={onClose}>
@@ -79,36 +72,59 @@ export function SpinsModal({ onClose, onBought }: Props) {
       {state && state.left === 0 && (
         <>
           <p className="dep-sub">
-            {state.pack} прокрутов с шансом кирки в <b>x{state.chanceX}</b> выше обычного.
-            Выигрыш — обычные деньги: выводится без отыгрыша.
+            Шанс кирки в этих прокрутах в <b>x{state.chanceX}</b> выше обычного.
+            Выигрыш — обычные деньги, выводится без отыгрыша.
           </p>
 
-          <span className="dep-label">Ставка прокрута</span>
-          <div className="fs-bets">
-            {bets.map((b) => (
-              <button
-                key={b}
-                type="button"
-                className={'fs-bet' + (b === bet ? ' on' : '')}
-                disabled={state.prices[b] > state.balance}
-                onClick={() => setBet(b)}
-              >
-                <span className="fs-bet-v">{rub(b)} ₽</span>
-                <span className="fs-bet-p">{rub(state.prices[b])} ₽</span>
-              </button>
-            ))}
-          </div>
+          <div className="fs-list">
+            {state.packs.map((p) => {
+              const banner = SPIN_BANNERS[p.id];
+              const enough = state.balance >= p.price;
+              /* Банера на пакет може не бути (додали пакет, картинку ще
+                 не намалювали) — тоді показуємо рядок без картинки, а не
+                 ховаємо пакет: інакше він мовчки зникне з продажу. */
+              return (
+                <div key={p.id} className={'fs-row' + (banner ? '' : ' bare')}>
+                  {banner && (
+                    <img className="fs-banner" src={banner.src} alt="" draggable={false} />
+                  )}
 
-          <button
-            type="button"
-            className="btn primary wide"
-            disabled={busy || !bet || price > state.balance}
-            onClick={() => void buy()}
-          >
-            {busy ? 'Покупаю…'
-              : price > state.balance ? 'Недостаточно монет'
-              : `Купить ${state.pack} прокрутов · ${rub(price)} ₽`}
-          </button>
+                  <div
+                    className="fs-plate fs-name"
+                    style={banner ? plateStyle(banner.geom.title) : undefined}
+                  >
+                    {p.name}
+                  </div>
+
+                  <div
+                    className="fs-plate fs-stat"
+                    style={banner ? plateStyle(banner.geom.left) : undefined}
+                  >
+                    <b>{p.spins}</b>
+                    <span>прокрутов</span>
+                  </div>
+
+                  <div
+                    className="fs-plate fs-stat"
+                    style={banner ? plateStyle(banner.geom.right) : undefined}
+                  >
+                    <b>{rub(p.bet)} ₽</b>
+                    <span>ставка</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className={'fs-plate fs-buy' + (enough ? '' : ' off')}
+                    style={banner ? plateStyle(banner.geom.price) : undefined}
+                    disabled={!enough || busy !== null}
+                    onClick={() => void buy(p.id)}
+                  >
+                    {busy === p.id ? '…' : enough ? <>{rub(p.price)} ₽</> : 'мало'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </>
       )}
     </Modal>

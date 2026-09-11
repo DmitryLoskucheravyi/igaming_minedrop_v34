@@ -14,7 +14,7 @@ import assert from 'node:assert/strict';
 import { PlayersService, type PlayerRecord } from '../src/players/players.service';
 import { splitPayout, splitStake } from '../src/players/money';
 import { REF_BONUS_WAGER_X } from '../src/referrals/referrals.service';
-import { FS_PACK, spinsPrice } from '../src/spins/spins.types';
+import { SPIN_PACKS, packPrice } from '../src/spins/spins.types';
 
 let failed = 0;
 function test(name: string, fn: () => void): void {
@@ -168,30 +168,45 @@ function main(): void {
 
   test('купівля пакета: ціна списана, прокрути видані, оборот зарахований', () => {
     const { svc, rec } = make();
-    svc.topUp(1, 10_000);
+    const pack = SPIN_PACKS[1];
+    svc.topUp(1, 100_000);
     /* Великий бонус, щоб вимога не закрилась самою покупкою й було
        видно саме зарахування обороту. */
-    svc.grantBonus(1, 5000, REF_BONUS_WAGER_X, 'тест');
-    const res = svc.buySpins(rec, 100);
-    assert.equal(res.left, FS_PACK);
-    assert.equal(rec.wagerDone, spinsPrice(100), 'ціна пакета — це ставка');
-    assert.equal(rec.bonus, 5000, 'бонусні гроші на покупку не йдуть');
-    assert.equal(rec.cash, 10_000 - spinsPrice(100));
+    svc.grantBonus(1, 50_000, REF_BONUS_WAGER_X, 'тест');
+    const res = svc.buySpins(rec, pack);
+    assert.equal(res.left, pack.spins);
+    assert.equal(res.bet, pack.bet);
+    assert.equal(rec.wagerDone, packPrice(pack), 'ціна пакета — це ставка');
+    assert.equal(rec.bonus, 50_000, 'бонусні гроші на покупку не йдуть');
+    assert.equal(rec.cash, 100_000 - packPrice(pack));
   });
 
   test('пакет не купується за бонусні гроші', () => {
     const { svc, rec } = make();
-    svc.grantBonus(1, 50_000, REF_BONUS_WAGER_X, 'тест');
+    svc.grantBonus(1, 500_000, REF_BONUS_WAGER_X, 'тест');
     /* Бонусу вистачає з надлишком, готівки немає — і саме тому покупка
        має відмовити: інакше бонус перетікав би у виводимий виграш. */
-    assert.throws(() => svc.buySpins(rec, 100), /Недостаточно/);
+    assert.throws(() => svc.buySpins(rec, SPIN_PACKS[0]), /Недостаточно/);
   });
 
   test('пакет не купується без грошей', () => {
     const { svc, rec } = make();
     rec.cash = 10;
-    assert.throws(() => svc.buySpins(rec, 100), /Недостаточно/);
+    assert.throws(() => svc.buySpins(rec, SPIN_PACKS[0]), /Недостаточно/);
     assert.equal(rec.buySpins, 0);
+  });
+
+  test('ціна пакета — кількість прокрутів на ставку й множник', () => {
+    for (const p of SPIN_PACKS) {
+      assert.ok(p.spins > 0 && p.bet > 0, `порожній пакет ${p.id}`);
+      assert.equal(packPrice(p), Math.round(p.spins * p.bet * 1.408));
+    }
+    /* Лінійка має йти вгору: інакше в списку з'явиться рядок, який
+       дорожчий за наступний і нікому не потрібен. */
+    for (let i = 1; i < SPIN_PACKS.length; i++) {
+      assert.ok(packPrice(SPIN_PACKS[i]) > packPrice(SPIN_PACKS[i - 1]),
+        `пакет ${SPIN_PACKS[i].id} не дорожчий за попередній`);
+    }
   });
 
   test('вивід бере лише готівку', () => {

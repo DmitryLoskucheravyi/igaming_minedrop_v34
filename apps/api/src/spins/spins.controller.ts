@@ -1,19 +1,18 @@
 import { BadRequestException, Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { IsInt } from 'class-validator';
-import { CONFIG } from '@minedrop/engine';
+import { IsString } from 'class-validator';
 import { PlayersService } from '../players/players.service';
 import { TelegramAuthGuard, TgUser } from '../telegram/telegram-auth.guard';
 import type { TelegramUser } from '../telegram/init-data';
-import { FS_CHANCE_X, FS_PACK, spinsPrice } from './spins.types';
+import { FS_CHANCE_X, SPIN_PACKS, packById, packPrice } from './spins.types';
 
 class BuyDto {
-  @IsInt()
-  bet!: number;
+  @IsString()
+  pack!: string;
 }
 
-/* Купівля пакета фріспінів. Один роут на стан і один на покупку —
-   логіки тут майже немає, бо все, що коштує грошей, робить
-   PlayersService: списання, нарахування пакета й запис у лог. */
+/* Пакети фріспінів: один роут на список і один на покупку. Логіки тут
+   майже немає — усе, що коштує грошей, робить PlayersService: списання,
+   видачу прокрутів і запис у лог. */
 @Controller('spins')
 @UseGuards(TelegramAuthGuard)
 export class SpinsController {
@@ -23,11 +22,12 @@ export class SpinsController {
   state(@TgUser() user: TelegramUser) {
     const rec = this.players.findOrCreate(user);
     return {
-      pack: FS_PACK,
       chanceX: FS_CHANCE_X,
-      /* Ціни на всі дозволені ставки одразу: клієнт показує їх у
-         вибиралці, а рахує їх сервер — щоб не було двох формул. */
-      prices: Object.fromEntries(CONFIG.bets.map((b) => [b, spinsPrice(b)])),
+      /* Ціни рахує сервер — клієнт їх лише показує, тож двох формул не
+         буває. */
+      packs: SPIN_PACKS.map((p) => ({
+        id: p.id, name: p.name, spins: p.spins, bet: p.bet, price: packPrice(p),
+      })),
       left: rec.buySpins ?? 0,
       bet: rec.buySpinBet ?? 0,
       balance: this.players.total(rec),
@@ -37,15 +37,14 @@ export class SpinsController {
   @Post('buy')
   buy(@TgUser() user: TelegramUser, @Body() dto: BuyDto) {
     const rec = this.players.findOrCreate(user);
-    if (!CONFIG.bets.includes(dto.bet as never)) {
-      throw new BadRequestException(`Ставка должна быть одной из: ${CONFIG.bets.join(', ')}`);
-    }
-    /* Докупити до непрограного пакета не можна: інакше довелось би
+    const pack = packById(dto.pack);
+    if (!pack) throw new BadRequestException('Неизвестный пакет');
+    /* Докупити до незіграного пакета не можна: інакше довелось би
        вирішувати, на якій ставці грають прокрути зі старого й нового
        наборів, а вони можуть бути різні. */
     if ((rec.buySpins ?? 0) > 0) {
       throw new BadRequestException('Купленные прокруты ещё не сыграны');
     }
-    return this.players.buySpins(rec, dto.bet);
+    return this.players.buySpins(rec, pack);
   }
 }
