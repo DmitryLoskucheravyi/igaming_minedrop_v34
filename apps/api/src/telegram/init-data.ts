@@ -34,7 +34,12 @@ export interface TelegramUser {
 }
 
 export type InitDataResult =
-  | { ok: true; user: TelegramUser; authDate: number }
+  /* startParam — те, що телеграм кладе в initData із посилання
+     t.me/<bot>?start=<code> (або /app?startapp=<code>). Беремо його
+     САМЕ ЗВІДСИ, а не з тіла запиту: рядок підписаний ботовим токеном
+     разом з усім іншим, тож приписати собі чужий код підміною запиту
+     не вийде. Реферальна прив'язка тримається на ньому. */
+  | { ok: true; user: TelegramUser; authDate: number; startParam?: string }
   | { ok: false; reason: string };
 
 /* Поля, які не входять у рядок перевірки.
@@ -110,9 +115,12 @@ export function verifyInitData(
   const id = Number(parsed.id);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, reason: 'некоректний user.id' };
 
+  const startParam = params.get('start_param') ?? undefined;
+
   return {
     ok: true,
     authDate,
+    startParam,
     user: {
       id,
       firstName: String(parsed.first_name ?? ''),

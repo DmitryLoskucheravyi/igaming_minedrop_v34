@@ -26,8 +26,10 @@ import type { TelegramUser } from '../telegram/init-data';
    -> тільки Map, стан гине з рестартом (dev без БД).
 
    ГРОШІ ЗВІДКИ БЕРУТЬСЯ: новий гравець отримує CONFIG.startBalance
-   один раз, при заведенні. Далі баланс поповнюється ЛИШЕ через CRM —
-   вручну адміном або підтвердженням заявки на депозит.
+   (зараз 0) один раз, при заведенні. Далі баланс росте лише через
+   депозит (заявка або ручне зарахування в CRM), подарунки колеса та
+   реферальні виплати — тобто через місця, які пишуть у лог і мають
+   свою ознаку «вже оплачено».
 
    Автоматичного «дотягування» балансу до стартового більше немає.
    Воно спрацьовувало на будь-якому зверненні гравця (навіть на
@@ -60,6 +62,36 @@ export interface PlayerRecord {
 
      null — виграної бонуски немає. */
   pendingBonus: { bet: number } | null;
+
+  /* РЕФЕРАЛЬНА ПРИВ'ЯЗКА.
+
+     refBy — хто запросив. Ставиться РІВНО ОДИН РАЗ, у момент
+     створення запису, і більше ніколи: інакше гравець переписував би
+     її на друга щоразу, коли той хоче бонус.
+
+     Дати виплат лежать тут само, а не в запрошувача, і це навмисно:
+     подія належить запрошеному (він прийшов, він зробив депозит), а
+     виплата — лише її наслідок. Так одна подія не може оплатитись
+     двічі, навіть якщо запрошувача колись видалять і заведуть наново. */
+  refBy: number | null;
+  refJoinPaidAt: number | null;
+  refDepositPaidAt: number | null;
+  /* Скільки гравець УСЬОГО вніс депозитами, ₽. Потрібно лише для
+     реферального порогу, тому рахується накопиченням тут, а не
+     перебором заявок: заявки живуть в іншому сервісі, частина
+     зарахувань приходить із неопізнаних переказів, і зшивати це на
+     кожен запит означало б тримати дві різні відповіді на одне
+     питання. */
+  refDeposited: number;
+
+  /* КОЛЕСО ЩОДЕННОГО БОНУСУ.
+     wheelAt — коли крутили востаннє; null (або 0) означає «жодного разу»,
+     і саме за цим упізнається перший, гарантований прокрут.
+     freeSpins — подаровані прокрути, які чекають своєї черги. Грають
+     вони на фіксованій ставці (WHEEL_FREE_BET), а не на поточній —
+     чому саме так, див. коментар до неї. */
+  wheelAt: number | null;
+  freeSpins: number;
 
   clientSeed: string;
   serverSeed: string;        // СЕКРЕТ. Ніколи не віддається до розкриття
@@ -104,7 +136,21 @@ export class PlayersService implements OnModuleInit {
       Пише в БД лише коли справді щось змінилось (створення) — «останній
       вхід» без активності в БД не летить, це надто дрібно. Балансу тут
       не торкаємось: поповнення живе тільки в CRM. */
-  findOrCreate(user: TelegramUser): PlayerRecord {
+  /* Хто хоче знати про НОВОГО гравця. Спостерігач, а не прямий виклик,
+     бо інакше цей сервіс мусив би знати про реферальну систему, а вона
+     вже знає про нього — вийшло б кільце, яке Nest розв'яже хіба
+     forwardRef. Тут же напрямок один: гроші за запрошення нараховує
+     той, хто про них знає, а гравці лише повідомляють про появу. */
+  private readonly created: ((rec: PlayerRecord) => void)[] = [];
+
+  onCreated(fn: (rec: PlayerRecord) => void): void {
+    this.created.push(fn);
+  }
+
+  /* startParam — стартовий параметр посилання з ПІДПИСАНОГО initData
+     (див. TgStart). Потрапляє в запис лише при створенні: далі він уже
+     ні на що не впливає. */
+  findOrCreate(user: TelegramUser, startParam?: string): PlayerRecord {
     const found = this.players.get(user.id);
     if (found) {
       found.seenAt = Date.now();
@@ -121,6 +167,12 @@ export class PlayersService implements OnModuleInit {
       balance: CONFIG.startBalance,
       dryStreaks: {},
       pendingBonus: null,
+      wheelAt: null,
+      freeSpins: 0,
+      refBy: null,
+      refJoinPaidAt: null,
+      refDepositPaidAt: null,
+      refDeposited: 0,
       clientSeed: randomBytes(8).toString('hex'),
       serverSeed,
       serverSeedHash: serverSeedHash(serverSeed),
@@ -130,8 +182,17 @@ export class PlayersService implements OnModuleInit {
       createdAt: Date.now(),
       seenAt: Date.now(),
     };
+    /* Прив'язка до запрошувача — ДО першого persist, щоб вона потрапила
+       в базу разом із рештою запису, а не окремим дописом, який може
+       не дійти. Саму виплату робить підписник нижче. */
+    const by = Number(String(startParam ?? '').replace(/^ref_?/i, ''));
+    if (Number.isInteger(by) && by > 0 && by !== user.id && this.players.has(by)) {
+      rec.refBy = by;
+    }
+
     this.players.set(user.id, rec);
     this.persist(rec);
+    for (const fn of this.created) fn(rec);
     return rec;
   }
 
@@ -146,6 +207,9 @@ export class PlayersService implements OnModuleInit {
       /* Клієнт малює по цьому плашку «БОНУС ГЕЙМ» і блокує зміну
          ставки: наступний раунд усе одно піде на збереженій. */
       pendingBonus: rec.pendingBonus ?? null,
+      /* Подаровані прокрути видно в тому ж зрізі, що й баланс: клієнт
+         малює по них плашку й розуміє, чому наступний спін безкоштовний. */
+      freeSpins: rec.freeSpins ?? 0,
       pityAt: CONFIG.pity,
       clientSeed: rec.clientSeed,
       serverSeedHash: rec.serverSeedHash,

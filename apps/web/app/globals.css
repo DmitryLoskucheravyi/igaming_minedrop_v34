@@ -1459,3 +1459,295 @@ canvas {
   .playbtn-spin { width: 34px; height: 34px; }
   .control-row { gap: 20px; }
 }
+
+/* ============================================================
+   КОЛЕСО ЩОДЕННОГО БОНУСУ.
+
+   Рух робить ТІЛЬКИ css: сама розмітка статична, а стан передається
+   одним класом на .wheel-stage (idle / spinning / landed / waiting).
+   Колесо крутиться чотири секунди підряд на телефоні, і покадровий
+   перерахунок у js тут дав би ривки саме там, де гравець дивиться
+   найуважніше.
+   ============================================================ */
+
+.drawer-btn .dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 8px var(--gold);
+  vertical-align: middle;
+  animation: wheel-dot 1.6s ease-in-out infinite;
+}
+@keyframes wheel-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .4; transform: scale(.8); }
+}
+
+.wheel-stage {
+  position: relative;
+  width: min(78vw, 296px);
+  margin: 2px auto 16px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+}
+
+/* Промені з-під колеса — тільки в момент виграшу. Лежать нижче за
+   саме колесо, тож із-під нього визирають лише кінчики. */
+.wheel-rays {
+  position: absolute;
+  inset: -14%;
+  border-radius: 50%;
+  opacity: 0;
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 211, 77, .55) 0 6deg, transparent 6deg 30deg,
+    rgba(255, 211, 77, .55) 30deg 36deg, transparent 36deg 60deg,
+    rgba(255, 211, 77, .55) 60deg 66deg, transparent 66deg 90deg,
+    rgba(255, 211, 77, .55) 90deg 96deg, transparent 96deg 120deg,
+    rgba(255, 211, 77, .55) 120deg 126deg, transparent 126deg 150deg,
+    rgba(255, 211, 77, .55) 150deg 156deg, transparent 156deg 180deg,
+    rgba(255, 211, 77, .55) 180deg 186deg, transparent 186deg 210deg,
+    rgba(255, 211, 77, .55) 210deg 216deg, transparent 216deg 240deg,
+    rgba(255, 211, 77, .55) 240deg 246deg, transparent 246deg 270deg,
+    rgba(255, 211, 77, .55) 270deg 276deg, transparent 276deg 300deg,
+    rgba(255, 211, 77, .55) 300deg 306deg, transparent 306deg 330deg,
+    rgba(255, 211, 77, .55) 330deg 336deg, transparent 336deg 360deg);
+  mask-image: radial-gradient(circle, transparent 46%, #000 58%, transparent 86%);
+  -webkit-mask-image: radial-gradient(circle, transparent 46%, #000 58%, transparent 86%);
+}
+.wheel-stage.landed .wheel-rays { animation: wheel-rays 1.1s ease-out 1 both; }
+@keyframes wheel-rays {
+  0%   { opacity: 0; transform: rotate(0deg) scale(.7); }
+  35%  { opacity: .9; }
+  100% { opacity: 0; transform: rotate(38deg) scale(1.12); }
+}
+
+.wheel {
+  position: relative;
+  width: 100%; height: 100%;
+  display: block;
+  transform-origin: 50% 50%;   /* інакше колесо «тікає» по дузі */
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, .55));
+}
+/* Поки прокрут доступний — колесо ледь дихає: це запрошення, а не
+   декорація, і воно має ловити око серед статичного меню. */
+.wheel-stage.idle .wheel { animation: wheel-breathe 3.4s ease-in-out infinite; }
+@keyframes wheel-breathe {
+  0%, 100% { filter: drop-shadow(0 10px 26px rgba(0, 0, 0, .55)); }
+  50%      { filter: drop-shadow(0 10px 30px rgba(255, 211, 77, .28)); }
+}
+
+.wheel-rim {
+  fill: none;
+  stroke: url(#wd-rim);
+  stroke-width: 9;
+}
+.sector-face { stroke: rgba(6, 10, 16, .55); stroke-width: .8; }
+
+.wheel-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .2px;
+  fill: var(--text);
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, .45);
+  stroke-width: 2.4px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+/* Джекпот-сектор золотий, тому напис на ньому — темний. */
+.wheel-label.jack {
+  font-size: 10.5px;
+  fill: #2a1d05;
+  stroke: rgba(255, 240, 200, .5);
+}
+
+/* Виграний сектор підсвічується вже ПІСЛЯ зупинки: під час обертання
+   така пульсація не читалась би взагалі. */
+.wheel-stage.landed .wheel-sector.win .sector-face {
+  animation: wheel-win 1.4s ease-in-out 3;
+}
+@keyframes wheel-win {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.45); }
+}
+
+.wheel-bulb {
+  fill: #43536a;
+  opacity: .55;
+}
+/* Три різні режими вогнів: очікування — рідке мерехтіння; обертання —
+   швидка біжуча хвиля; посадка — усі разом спалахують золотим. */
+.wheel-stage.idle .wheel-bulb {
+  animation: bulb-idle 2.4s ease-in-out infinite;
+}
+.wheel-stage.spinning .wheel-bulb {
+  animation: bulb-run .6s linear infinite;
+}
+.wheel-stage.landed .wheel-bulb {
+  fill: var(--gold);
+  opacity: 1;
+  animation: bulb-win .5s ease-out 4;
+}
+@keyframes bulb-idle {
+  0%, 100% { fill: #43536a; opacity: .5; }
+  50%      { fill: #8c98ad; opacity: .95; }
+}
+@keyframes bulb-run {
+  0%, 100% { fill: #43536a; opacity: .45; }
+  30%      { fill: var(--gold); opacity: 1; }
+}
+@keyframes bulb-win {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}
+
+.wheel-hub { stroke: #4a5a6d; stroke-width: 2; }
+.wheel-hub-dot { fill: var(--gold); opacity: .9; }
+
+/* Стрілка нерухома — рухається колесо під нею. Під час обертання вона
+   дрібно сіпається, ніби її штовхають зубці: саме це й читається як
+   «колесо клацає», хоча жодних зубців у розмітці немає. */
+.wheel-pin {
+  position: absolute;
+  top: -10px;
+  width: 26px;
+  z-index: 3;
+  transform-origin: 50% 92%;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .6));
+}
+.wheel-pin svg { display: block; width: 100%; }
+.pin-body { fill: var(--gold); stroke: #8a6412; stroke-width: 1; }
+.pin-gem { fill: #fff4cf; }
+.wheel-stage.spinning .wheel-pin { animation: pin-tick .09s ease-in-out infinite; }
+@keyframes pin-tick {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(-7deg); }
+}
+
+/* Плашка призу. З'являється ривком (scale-in), бо це кульмінація —
+   плавне проявлення тут читалось би як «нічого не сталось». */
+.wheel-prize {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 12px;
+  animation: prize-in .45s cubic-bezier(.2, 1.5, .4, 1) both;
+}
+.wheel-prize-label {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--gold);
+  text-shadow: 0 0 18px rgba(255, 211, 77, .45);
+}
+.wheel-prize-sub { font-size: 12px; color: var(--muted); }
+@keyframes prize-in {
+  0%   { opacity: 0; transform: scale(.5); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Кнопка з пробігом відблиску — видно, що вона жива й чекає натискання. */
+.wheel-go { position: relative; overflow: hidden; }
+.wheel-go:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: -60%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .35), transparent);
+  animation: go-sheen 2.6s ease-in-out infinite;
+}
+@keyframes go-sheen {
+  0%   { left: -60%; }
+  55%  { left: 120%; }
+  100% { left: 120%; }
+}
+
+.wheel-wait { text-align: center; }
+.wheel-spins {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.wheel-spins b { color: var(--gold); }
+
+/* Кому рух заважає — лишаємо тільки саме обертання (без нього колесо
+   безглузде), решту прибираємо. */
+@media (prefers-reduced-motion: reduce) {
+  .wheel-stage.idle .wheel,
+  .wheel-bulb,
+  .wheel-stage.spinning .wheel-pin,
+  .wheel-stage.landed .wheel-rays,
+  .wheel-stage.landed .wheel-sector.win .sector-face,
+  .wheel-go:not(:disabled)::after,
+  .drawer-btn .dot { animation: none; }
+}
+
+/* ---- РЕФЕРАЛЬНИЙ КАБІНЕТ ---- */
+.ref-rules { display: flex; gap: 8px; margin-bottom: 12px; }
+.ref-rule {
+  flex: 1;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  background: var(--surface2);
+}
+.ref-rule-sum { font-size: 17px; font-weight: 800; color: var(--gold); }
+.ref-rule-what { font-size: 12px; color: var(--muted); }
+
+.ref-total {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--okBorder);
+  border-radius: var(--r2);
+  background: var(--okBg);
+}
+.ref-total-sum { font-size: 18px; font-weight: 800; color: var(--okText); }
+
+/* Посилання — одна велика кнопка «копіювати»: у мініапсі виділяти
+   текст пальцем незручно, а це єдина дія, яка тут потрібна. */
+.ref-link {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  background: var(--surface3);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.ref-link:active { transform: scale(.99); }
+.ref-link-text {
+  flex: 1;
+  font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ref-link-copy { font-size: 11px; color: var(--gold); white-space: nowrap; }
+
+.ref-list { display: flex; flex-direction: column; gap: 8px; }
+.ref-item {
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border2);
+  border-radius: var(--r2);
+  background: var(--surface2);
+}
+/* Друг, який уже поповнив, підсвічений зеленим кантом: по ньому
+   добирати більше нічого. */
+.ref-item.paid { border-left-color: var(--ok); }
+.ref-item-top { display: flex; justify-content: space-between; align-items: baseline; }
+.ref-name { font-size: 14px; font-weight: 600; }
+.ref-earned { font-size: 14px; font-weight: 800; color: var(--gold); }
+.ref-item-sub {
+  display: flex; justify-content: space-between; gap: 8px;
+  margin-top: 3px;
+  font-size: 11px; color: var(--muted);
+}

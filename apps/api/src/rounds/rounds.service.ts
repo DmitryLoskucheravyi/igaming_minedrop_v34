@@ -4,6 +4,7 @@ import { CONFIG, TIER_BY_ID, resolveRound, roundCost } from '@minedrop/engine';
 import type { RoundMode, RoundResult, TierId } from '@minedrop/engine';
 import { PlayersService, type PlayerRecord } from '../players/players.service';
 import { FairnessService } from '../fairness/fairness.service';
+import { WHEEL_FREE_BET } from '../wheel/wheel.types';
 
 /* ============================================================
    ROUNDS — тут вирішується результат. Єдина точка, де рухаються гроші.
@@ -69,13 +70,34 @@ export class RoundsService {
     const free = !buy && !!rec.pendingBonus;
     if (free) bet = rec.pendingBonus!.bet;
 
+    /* ПОДАРОВАНИЙ ПРОКРУТ З КОЛЕСА.
+
+       Це НЕ те саме, що `free` вище: там безкоштовна БОНУСКА, виграна
+       скаттерами (інша шахта, гарантована кірка). Тут — звичайний
+       раунд, за який просто не списують гроші.
+
+       Черга саме така: спершу виграна бонуска, потім подарований
+       прокрут. Бонуска прив'язана до своєї ставки й чекає першої ж
+       звичайної ставки — якби подарунок ліз поперед неї, він з'їдав би
+       цю чергу й відкладав бонуску невідомо на коли.
+
+       Куплений бонус бай подарунка теж не витрачає: гравець заплатив
+       за іншу річ.
+
+       Ставка ФІКСОВАНА сервером (WHEEL_FREE_BET), а не взята з запиту:
+       інакше перед подарованим прокрутом вистачило б виставити
+       максимальну ставку. Через це ж вона не звіряється зі списком
+       дозволених нижче — сервер підставляє своє число, а не чуже. */
+    const gift = !buy && !free && (rec.freeSpins ?? 0) > 0;
+    if (gift) bet = WHEEL_FREE_BET;
+
     /* Ставку клієнта звіряємо зі списком дозволених ЛИШЕ коли вона й
        справді йде в гру: у безкоштовній бонусці сервер однаково бере
        своє збережене число (рядок вище), а надіслане клієнтом ігнорує
        повністю. Перевірка ДО цього моменту відмовляла б у цілком
        робочому безкоштовному раунді через довільне число в тілі
        запиту, яке ні на що вже не впливає. */
-    if (!free && !CONFIG.bets.includes(bet as never)) {
+    if (!free && !gift && !CONFIG.bets.includes(bet as never)) {
       throw new BadRequestException(`Ставка должна быть одной из: ${CONFIG.bets.join(', ')}`);
     }
 
@@ -92,7 +114,7 @@ export class RoundsService {
       throw new BadRequestException('Не выбрана кирка для бонус бая');
     }
 
-    const cost = roundCost(mode, bet, buy, free);
+    const cost = gift ? 0 : roundCost(mode, bet, buy, free);
     if (rec.balance < cost) throw new BadRequestException('Недостаточно монет');
 
     const balanceBefore = rec.balance;
@@ -107,6 +129,9 @@ export class RoundsService {
        ставці, як і мав. */
     /* Безкоштовна бонуска, як і куплена, кірку має гарантовано — тож
        серію промахів вона не витрачає. */
+    /* Подарований прокрут — звичайний раунд у всьому, крім ціни, тож
+       pity на ньому працює як завжди: серія промахів і накопичується,
+       і спрацьовує. Інакше подарунок був би ще й дірою в гарантії. */
     const streak = rec.dryStreaks[bet] ?? 0;
     const pity = !buy && !free && streak >= CONFIG.pity;
 
@@ -125,6 +150,11 @@ export class RoundsService {
     if (free) rec.pendingBonus = null;
     if (resolved.bonusWon) rec.pendingBonus = { bet };
 
+    /* Подарунок списуємо ПІСЛЯ прогону — з тієї ж причини, що й
+       бонуску вище: до цього рядка раунд ще міг не відбутись через
+       кинуту помилку, і тоді прокрут мав лишитись гравцю. */
+    if (gift) rec.freeSpins = Math.max(0, (rec.freeSpins ?? 0) - 1);
+
     /* Лічильник пустих прокрутів цієї ставки: кірка (у т.ч. форсована)
        -> 0, промах -> +1. Інші ставки не чіпаємо. Подаровані раунди
        (куплені й виграні) серію не рухають узагалі. */
@@ -140,6 +170,10 @@ export class RoundsService {
       cost,
       buy,
       free: resolved.setup.free,
+      /* Подарований колесом прокрут. Клієнту це потрібно, щоб показати
+         «бесплатный прокрут» замість списаної ставки, а CRM — щоб
+         відрізняти подарунок від оплаченого раунду в історії. */
+      gift,
       bonusWon: resolved.bonusWon,
       seed,
       spins: resolved.setup.spins,

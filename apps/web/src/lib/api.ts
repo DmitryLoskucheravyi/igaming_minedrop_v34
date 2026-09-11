@@ -40,11 +40,65 @@ export interface PlayerState {
      якій її виграли. Наступний звичайний прокрут піде саме нею і саме
      на цій ставці. null — немає. */
   pendingBonus: { bet: number } | null;
+  /** подаровані колесом прокрути, які ще не зіграні */
+  freeSpins: number;
   pityAt: number;
   clientSeed: string;
   serverSeedHash: string;
   nonce: number;
   config?: PublicConfig;
+}
+
+/* КОЛЕСО ЩОДЕННОГО БОНУСУ.
+   Сектори приходять із сервера — своєї копії списку клієнт не тримає,
+   інакше картинка й математика розійшлись би при першій же зміні. */
+export interface WheelState {
+  ready: boolean;
+  /** коли можна буде крутити (мс epoch); null — можна вже зараз */
+  nextAt: number | null;
+  /** час сервера: годинник на телефоні буває збитий на години */
+  now: number;
+  /** перший прокрут акаунта — приз гарантований */
+  first: boolean;
+  freeSpins: number;
+  /** ставка, на якій зіграють подаровані прокрути (число задає сервер) */
+  freeBet: number;
+  prizes: { id: string; label: string }[];
+}
+
+export interface WheelSpin {
+  prize: { id: string; rub: number; spins: number; label: string };
+  /** НОМЕР СЕКТОРА, на якому має зупинитись колесо. Саме він, а не
+      приз: однакових призів на колесі буває кілька. */
+  index: number;
+  state: WheelState;
+  balance: number;
+}
+
+/* РЕФЕРАЛЬНИЙ КАБІНЕТ. link може бути null: ім'я бота приїжджає з
+   getMe при старті сервера, і до цього моменту зібрати посилання нема
+   з чого — тоді показуємо сам код. */
+export interface ReferralFriend {
+  telegramId: number;
+  name: string;
+  at: number;
+  /** коли друг добив поріг депозиту (null — ще ні) */
+  depositedAt: number | null;
+  /** скільки вже вніс депозитами, ₽ */
+  deposited: number;
+  earned: number;
+}
+
+export interface ReferralState {
+  code: string;
+  link: string | null;
+  webAppUrl: string | null;
+  joinRub: number;
+  depositRub: number;
+  /** з якої суми депозитів друга платиться друга виплата */
+  depositMin: number;
+  earned: number;
+  friends: ReferralFriend[];
 }
 
 export interface RevealedSeries {
@@ -153,6 +207,22 @@ export const Api = {
   rotate() {
     return call<{ revealed: RevealedSeries; next: { serverSeedHash: string; nonce: number } }>(
       '/fairness/rotate', { method: 'POST' });
+  },
+
+  /** Реферальний кабінет: посилання, друзі, заробіток. */
+  referrals() {
+    return call<ReferralState>('/referrals/me');
+  },
+
+  /** Стан колеса: чи можна крутити, коли наступний, які сектори. */
+  wheel() {
+    return call<WheelState>('/wheel');
+  },
+
+  /** Крутнути колесо. Приз визначає СЕРВЕР — анімація на клієнті лише
+      доводить стрілку до вже відомого сектора. */
+  spinWheel() {
+    return call<WheelSpin>('/wheel/spin', { method: 'POST' });
   },
 
   /** Історія платежів + активна заявка. */

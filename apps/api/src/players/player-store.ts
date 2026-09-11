@@ -41,6 +41,16 @@ export class PlayerStore {
         pendingBonus: null,
         revealed: [],
         history: [],
+        /* Колесо з'явилось пізніше за перших гравців: у їхніх документах
+           цих полів немає, і без дефолту вони приїхали б undefined.
+           wheelAt: null тут означає, що давній гравець теж отримає свій
+           перший — гарантований — прокрут. */
+        wheelAt: null,
+        freeSpins: 0,
+        refBy: null,
+        refJoinPaidAt: null,
+        refDepositPaidAt: null,
+        refDeposited: 0,
         ...rest,
       } as unknown as PlayerRecord;
     });

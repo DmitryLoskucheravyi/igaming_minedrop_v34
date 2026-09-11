@@ -27,13 +27,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TierId } from '@minedrop/engine';
 import { Presenter, type HudState } from '../game/presenter';
 import { CURRENCIES, CURRENCY_META, FALLBACK_RATES, type CurrencyCode } from '../lib/currency';
-import { useCurrency, useDepositBadge, useModal } from '../hooks/useGameShell';
+import { useCurrency, useDepositBadge, useModal, useWheelBadge } from '../hooks/useGameShell';
 import { Money } from './Money';
 import { FairPanel } from './FairPanel';
 import { BonusBuyModal } from './BonusBuyModal';
 import { DepositModal } from './DepositModal';
 import { WithdrawModal } from './WithdrawModal';
 import { PaymentsPanel } from './PaymentsPanel';
+import { WheelModal } from './WheelModal';
+import { ReferralPanel } from './ReferralPanel';
 
 const EMPTY: HudState = {
   state: 'LOADING',
@@ -77,6 +79,7 @@ export function GameClient() {
 
   const { modal, open, close } = useModal();
   const deposit = useDepositBadge();
+  const wheel = useWheelBadge();
   const [currency, changeCurrency] = useCurrency(
     useCallback((c: CurrencyCode) => gameRef.current?.setCurrency(c), []));
 
@@ -386,12 +389,26 @@ export function GameClient() {
           <button type="button" className="drawer-btn" onClick={() => openFrom('deposit')}>
             Пополнить баланс
           </button>
+          {/* Колесо стоїть одразу під поповненням і світить крапкою,
+              коли прокрут доступний: подарунок, про який не нагадали,
+              все одно що не подарували. */}
+          <button
+            type="button"
+            className={'drawer-btn' + (wheel.ready ? ' accent' : '')}
+            onClick={() => openFrom('wheel')}
+          >
+            Колесо удачи
+            {wheel.ready && <span className="dot" aria-hidden="true" />}
+          </button>
           <button
             type="button"
             className="drawer-btn accent"
             onClick={() => openFrom('buy')}
           >
             Бонус бай
+          </button>
+          <button type="button" className="drawer-btn" onClick={() => openFrom('ref')}>
+            Пригласи друга
           </button>
           <button
             type="button"
@@ -439,6 +456,13 @@ export function GameClient() {
         />
       )}
       {modal === 'payments' && <PaymentsPanel onClose={close} />}
+      {modal === 'ref' && <ReferralPanel onClose={close} />}
+      {modal === 'wheel' && (
+        <WheelModal
+          onClose={close}
+          onWon={() => { refreshPlayer(); wheel.setReady(false); }}
+        />
+      )}
     </div>
   );
 }

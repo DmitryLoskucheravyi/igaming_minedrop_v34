@@ -24,6 +24,8 @@ import { initDataFromHeader, verifyInitData, type TelegramUser } from './init-da
 export interface RequestWithUser {
   headers: Record<string, string | string[] | undefined>;
   tgUser?: TelegramUser;
+  /** стартовий параметр посилання (реферальний код), якщо був */
+  tgStart?: string;
 }
 
 const header = (req: RequestWithUser, name: string): string | undefined => {
@@ -58,6 +60,10 @@ export class TelegramAuthGuard implements CanActivate {
         throw new UnauthorizedException('x-dev-user должен быть положительным целым');
       }
       req.tgUser = { id, firstName: 'dev-' + id, username: 'dev' + id };
+      /* Поза телеграмом стартового параметра нема звідки взяти, тому
+         в dev-режимі його можна підкинути заголовком — інакше
+         реферальну прив'язку неможливо перевірити в браузері. */
+      req.tgStart = header(req, 'x-dev-start');
       return true;
     }
 
@@ -77,11 +83,18 @@ export class TelegramAuthGuard implements CanActivate {
     }
 
     req.tgUser = res.user;
+    req.tgStart = res.startParam;
     return true;
   }
 }
 
 /** Довірений користувач із перевіреного initData */
+/* Стартовий параметр посилання (реферальний код). undefined — гру
+   відкрили без нього, звичайним входом. */
+export const TgStart = createParamDecorator((_: unknown, ctx: ExecutionContext) => {
+  return ctx.switchToHttp().getRequest<RequestWithUser>().tgStart;
+});
+
 export const TgUser = createParamDecorator((_: unknown, ctx: ExecutionContext): TelegramUser => {
   const req = ctx.switchToHttp().getRequest<RequestWithUser>();
   if (!req.tgUser) throw new UnauthorizedException('Запрос не прошёл гард авторизации');

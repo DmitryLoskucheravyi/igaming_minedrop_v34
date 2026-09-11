@@ -7,6 +7,7 @@ import { RatesService } from '../rates/rates.service';
 import { PlayersService } from '../players/players.service';
 import { SettingsService } from '../settings/settings.service';
 import { PaymentStoreRef } from './payment-store.ref';
+import { ReferralsService } from '../referrals/referrals.service';
 import { DepositAddressPool } from './deposit-addresses.service';
 import {
   MEMO_STEPS, MEMO_UNIT, PAYMENT_MAX_RUB, PAYMENT_MIN_RUB, PAYMENT_TTL_MS,
@@ -45,6 +46,7 @@ export class PaymentRequests implements OnModuleInit, OnModuleDestroy {
     private readonly players: PlayersService,
     private readonly settings: SettingsService,
     private readonly addresses: DepositAddressPool,
+    private readonly referrals: ReferralsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -249,6 +251,13 @@ export class PaymentRequests implements OnModuleInit, OnModuleDestroy {
       throw new NotFoundException(
         `Игрок ${rec.telegramId} не найден — баланс не начислен, заявка осталась в ожидании`);
     }
+
+    /* Депозит запрошеного друга веде до виплати тому, хто його привів
+       (коли набереться поріг). Кличемо ПІСЛЯ того, як гроші реально
+       лягли на баланс: до цього рядка нарахування ще могло не
+       відбутись. Повторний виклик безпечний — усередині стоїть ознака
+       вже оплаченої виплати. */
+    this.referrals.onDeposit(rec.telegramId, rec.amount);
 
     rec.status = 'approved';
     rec.resolvedBy = by;

@@ -58,12 +58,19 @@ function make(mode: DepositMode = 'auto') {
 
   const store = new PaymentStoreRef({ ready: async () => null } as never);
   const addresses = new DepositAddressPool({ usdtTrc20Address: '' } as never, store, cfg);
-  const requests = new PaymentRequests(store, rates, players, cfg, addresses);
-  const unmatched = new UnmatchedRegistry(store, rates, players);
+  /* Реферальні виплати до зіставлення переказів стосунку не мають:
+     стенд перевіряє гроші гравця, а не бонус того, хто його привів.
+     Тому заглушка, яка лише рахує виклики — цього досить, щоб помітити,
+     якщо депозит колись перестане про них повідомляти. */
+  const refCalls: number[] = [];
+  const referrals = { onDeposit: (id: number) => refCalls.push(id) } as never;
+
+  const requests = new PaymentRequests(store, rates, players, cfg, addresses, referrals);
+  const unmatched = new UnmatchedRegistry(store, rates, players, referrals);
   const matcher = new TransferMatcher(requests, unmatched, cfg);
 
   return {
-    addresses, requests, unmatched, matcher,
+    addresses, requests, unmatched, matcher, refCalls,
 
     async onModuleInit() {
       await Promise.all([
@@ -151,6 +158,9 @@ async function main(): Promise<void> {
     const done = svc.listForPlayer(1)[0];
     assert.equal(done.status, 'approved');
     assert.equal(done.resolvedBy, 'bot', 'зарахував бот, а не адмін');
+    /* Реферальна система мусить дізнатись про депозит: саме з цієї
+       події платиться бонус тому, хто привів гравця. */
+    assert.deepEqual(svc.refCalls, [1], 'про депозит не повідомили рефералку');
     await svc.onModuleDestroy();
   });
 

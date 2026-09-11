@@ -23,6 +23,15 @@ const BOOT_ID = Date.now().toString(36);
 export class BotService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger(BotService.name);
   private bot: Bot | null = null;
+  private botName: string | null = null;
+
+  /* Ім'я бота (без @). Заповнюється після init() — саме з нього
+     реферальна система збирає посилання t.me/<bot>?start=... Тримати
+     його ще й у env означало б два джерела, які можуть розійтися:
+     токен від одного бота, а ім'я в конфізі від іншого. */
+  get username(): string | null {
+    return this.botName;
+  }
 
   constructor(@Inject(ENV) private readonly env: Env) {}
 
@@ -112,6 +121,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         secret_token: this.env.webhookSecret ?? undefined,
       });
       await bot.init();
+      this.botName = bot.botInfo.username;
       this.log.log(`Бот @${bot.botInfo.username} на вебхуку ${this.env.webhookUrl}`);
     } else {
       /* start() не резолвиться, поки бот працює, тому без await.
@@ -119,7 +129,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
          unhandled rejection і кладе процес. */
       await bot.init();
       void bot.start({
-        onStart: (info) => this.log.log(`Бот @${info.username} на long polling`),
+        onStart: (info) => {
+          this.botName = info.username;
+          this.log.log(`Бот @${info.username} на long polling`);
+        },
       }).catch((e: Error) => {
         this.log.error(`Long polling зупинився: ${e.message}. API працює далі.`);
       });

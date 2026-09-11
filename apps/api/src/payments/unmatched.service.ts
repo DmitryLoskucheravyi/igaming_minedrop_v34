@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { RatesService } from '../rates/rates.service';
 import { PlayersService } from '../players/players.service';
 import { PaymentStoreRef } from './payment-store.ref';
+import { ReferralsService } from '../referrals/referrals.service';
 import type { IncomingTx } from './payment.types';
 import type { UnmatchedPayment, UnmatchedStatus } from './unmatched.types';
 
@@ -30,6 +31,7 @@ export class UnmatchedRegistry implements OnModuleInit {
     private readonly store: PaymentStoreRef,
     private readonly rates: RatesService,
     private readonly players: PlayersService,
+    private readonly referrals: ReferralsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -94,6 +96,10 @@ export class UnmatchedRegistry implements OnModuleInit {
     }
 
     const balance = this.players.topUp(telegramId, amount);
+    /* Ручне зарахування — теж депозит. Для гравця різниці немає, тож
+       і реферальна виплата має бути такою самою, як за погоджену
+       заявку (див. коментар у ReferralsService). */
+    if (balance !== null) this.referrals.onDeposit(telegramId, amount);
     if (balance === null) throw new NotFoundException(`Игрок ${telegramId} не найден`);
 
     u.status = 'credited';

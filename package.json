@@ -27,7 +27,9 @@
     "test:deposits": "npm run test:deposits -w @minedrop/api",
     "test:chains": "npm run test:chains -w @minedrop/api",
     "test:icons": "npm run test:icons -w @minedrop/api",
-    "build:contracts": "npm run build -w @minedrop/contracts"
+    "build:contracts": "npm run build -w @minedrop/contracts",
+    "test:wheel": "npm run test:wheel -w @minedrop/api",
+    "test:referrals": "npm run test:referrals -w @minedrop/api"
   },
   "devDependencies": {
     "cloudflared": "^0.7.3",

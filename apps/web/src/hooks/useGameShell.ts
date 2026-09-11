@@ -35,7 +35,7 @@ export function useCurrency(onChange: (c: CurrencyCode) => void) {
    Одне поле замість п'яти прапорців. Річ не в економії рядків:
    п'ять незалежних булів описують і стани, яких не буває, — два
    вікна поверх одного, — а тут вони просто невиразні. */
-export type ModalId = 'deposit' | 'withdraw' | 'payments' | 'fair' | 'buy';
+export type ModalId = 'deposit' | 'withdraw' | 'payments' | 'fair' | 'buy' | 'wheel' | 'ref';
 
 export function useModal() {
   const [modal, setModal] = useState<ModalId | null>(null);
@@ -48,6 +48,22 @@ export function useModal() {
    Вона живе 30 хвилин і не показується ніде, крім свого вікна: закрив —
    і про таймер більше ніщо не нагадує. Тому питаємо про неї на старті
    й після кожного закриття вікна, а HUD малює крапку на кнопці «+». */
+/* Чи доступний прокрут колеса. Окремий тихий запит, як і в депозиту:
+   не вийшов — просто не світимо крапку, бо це прикраса меню, а не
+   умова гри. check() потрібен, щоб погасити її одразу після прокруту,
+   не перечитуючи весь стан. */
+export function useWheelBadge() {
+  const [ready, setReady] = useState(false);
+
+  const check = useCallback(() => {
+    void Api.wheel().then((w) => setReady(w.ready)).catch(() => {});
+  }, []);
+
+  useEffect(() => { check(); }, [check]);
+
+  return { ready, check, setReady };
+}
+
 export function useDepositBadge() {
   const [pending, setPending] = useState(false);
 
