@@ -35,8 +35,12 @@ const settings: DepositSettings = {
 /* Стенд збирає рівно те, що в продакшні збирає Nest: чотири сервіси й
    спільне сховище. Делегати нижче потрібні, щоб тести лишились про
    ПОВЕДІНКУ («переказ зіставився»), а не про те, який саме сервіс тепер
-   відповідає за метод. Порядок onModuleInit той самий, що в Nest:
-   сховище -> адреси -> заявки -> неопізнані. */
+   відповідає за метод.
+
+   onModuleInit піднімається ОДНОЧАСНО, через Promise.all — саме так це
+   робить Nest усередині модуля. Раніше стенд будив сервіси по черзі й
+   тому не бачив, що сховище ще не готове: на живому сервері пул адрес
+   стартував порожнім, і кожен депозит падав у «сеть недоступна». */
 function make(mode: DepositMode = 'auto') {
   settings.mode = mode;
   balances = new Map([[1, 0], [2, 0]]);
@@ -62,10 +66,11 @@ function make(mode: DepositMode = 'auto') {
     addresses, requests, unmatched, matcher,
 
     async onModuleInit() {
-      await store.onModuleInit();
-      await addresses.onModuleInit();
-      await requests.onModuleInit();
-      await unmatched.onModuleInit();
+      await Promise.all([
+        addresses.onModuleInit(),
+        requests.onModuleInit(),
+        unmatched.onModuleInit(),
+      ]);
     },
     onModuleDestroy: () => requests.onModuleDestroy(),
 

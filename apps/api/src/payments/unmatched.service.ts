@@ -33,7 +33,7 @@ export class UnmatchedRegistry implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const s = this.store.get();
+    const s = await this.store.ready();
     if (s) {
       for (const u of await s.loadUnmatched()) this.rows.set(u.id, u);
       this.log.log(`Завантажено неопізнаних: ${this.rows.size}`);

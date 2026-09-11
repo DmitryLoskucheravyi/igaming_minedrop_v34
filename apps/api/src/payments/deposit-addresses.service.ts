@@ -38,7 +38,7 @@ export class DepositAddressPool implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const s = this.store.get();
+    const s = await this.store.ready();
     if (s) {
       for (const a of await s.loadAddresses()) this.addrs.set(a.id, a);
       this.log.log(`Завантажено адрес: ${this.addrs.size}`);

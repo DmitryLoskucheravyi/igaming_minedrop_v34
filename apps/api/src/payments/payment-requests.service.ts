@@ -48,7 +48,7 @@ export class PaymentRequests implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    const s = this.store.get();
+    const s = await this.store.ready();
     if (s) {
       for (const p of await s.loadAll()) this.items.set(p.id, p);
       this.log.log(`Завантажено заявок: ${this.items.size}`);
