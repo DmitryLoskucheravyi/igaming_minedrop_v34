@@ -728,28 +728,52 @@ canvas {
 }
 .cur-opt .cur-ico { height: 20px; }
 
-.drawer-btn {
+/* ПУНКТИ МЕНЮ — рядки, а не кнопки.
+
+   Плашка навколо кожного пункту робила з шухляди стос однакових
+   прямокутників, у якому нічого не знайдеш очима: усі вісім важили
+   однаково. Рядок з іконкою читається списком — око чіпляється за
+   значок, а не за рамку. Тло й кант лишились тільки в наведення. */
+.drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   width: 100%;
-  margin-top: 8px;
-  font: 600 13px inherit;
+  padding: 12px 10px;
+  font: 600 14px inherit;
   color: var(--text2);
-  background: var(--surface3);
-  border: 1px solid var(--border);
+  text-align: left;
+  background: none;
+  border: 0;
+  /* Тонка лінія між пунктами — межа, якої вистачає замість рамки. */
+  border-bottom: 1px solid var(--line);
   border-radius: var(--r1);
-  padding: 12px;
   cursor: pointer;
-  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
-              color var(--t) var(--ease), transform var(--t-press) var(--ease);
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
 }
-.drawer-btn:hover { border-color: var(--border2); color: var(--text); }
-.drawer-btn:active { transform: scale(.98); }
-/* «Бонус бай» у меню — акцентна, це головна платна дія */
-.drawer-btn.accent {
-  color: var(--goldText);
-  background: var(--warnBg);
-  border-color: var(--warnBorder);
+.drawer-item:last-of-type { border-bottom: 0; }
+.drawer-item:hover { background: var(--surface3); color: var(--text); }
+.drawer-item:hover .pixicon { fill: var(--gold); }
+.drawer-item:active { background: var(--surface2); }
+
+.pixicon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  fill: var(--muted);
+  /* Без згладжування — інакше піксельна сітка замилюється в пляму. */
+  shape-rendering: crispEdges;
+  transition: fill var(--t) var(--ease);
 }
-.drawer-btn.accent:hover { color: var(--gold); }
+
+/* «Бонус бай» — головна платна дія, тому іконка золота одразу. */
+.drawer-item.accent { color: var(--goldText); }
+.drawer-item.accent .pixicon { fill: var(--goldText); }
+.drawer-item.accent:hover { color: var(--gold); }
+
+/* Колесо з доступним прокрутом світиться так само, як його крапка. */
+.drawer-item.on { color: var(--text); }
+.drawer-item.on .pixicon { fill: var(--gold); }
 
 /* ============================================================
    ВІКНА
@@ -1576,6 +1600,10 @@ canvas {
    найуважніше.
    ============================================================ */
 
+.drawer-item .dot {
+  margin-left: auto;
+}
+.drawer-item .dot,
 .drawer-btn .dot {
   display: inline-block;
   width: 7px; height: 7px;
@@ -1790,7 +1818,11 @@ canvas {
   .wheel-stage.landed .wheel-rays,
   .wheel-stage.landed .wheel-sector.win .sector-face,
   .wheel-go:not(:disabled)::after,
-  .drawer-btn .dot { animation: none; }
+  .drawer-item .dot {
+  margin-left: auto;
+}
+.drawer-item .dot,
+.drawer-btn .dot { animation: none; }
 }
 
 /* ---- РЕФЕРАЛЬНИЙ КАБІНЕТ ---- */

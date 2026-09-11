@@ -37,6 +37,7 @@ import { PaymentsPanel } from './PaymentsPanel';
 import { WheelModal } from './WheelModal';
 import { ReferralPanel } from './ReferralPanel';
 import { SpinsModal } from './SpinsModal';
+import { PixIcon } from '../ui/PixIcon';
 
 const EMPTY: HudState = {
   state: 'LOADING',
@@ -387,7 +388,8 @@ export function GameClient() {
             </div>
           </div>
 
-          <button type="button" className="drawer-btn" onClick={() => openFrom('deposit')}>
+          <button type="button" className="drawer-item" onClick={() => openFrom('deposit')}>
+            <PixIcon name="deposit" />
             Пополнить баланс
           </button>
           {/* Колесо стоїть одразу під поповненням і світить крапкою,
@@ -395,36 +397,39 @@ export function GameClient() {
               все одно що не подарували. */}
           <button
             type="button"
-            className={'drawer-btn' + (wheel.ready ? ' accent' : '')}
+            className={'drawer-item' + (wheel.ready ? ' on' : '')}
             onClick={() => openFrom('wheel')}
           >
+            <PixIcon name="wheel" />
             Колесо удачи
             {wheel.ready && <span className="dot" aria-hidden="true" />}
           </button>
           <button
             type="button"
-            className="drawer-btn accent"
+            className="drawer-item accent"
             onClick={() => openFrom('buy')}
           >
+            <PixIcon name="buy" />
             Бонус бай
           </button>
-          <button type="button" className="drawer-btn" onClick={() => openFrom('spins')}>
+          <button type="button" className="drawer-item" onClick={() => openFrom('spins')}>
+            <PixIcon name="spins" />
             Фриспины
           </button>
-          <button type="button" className="drawer-btn" onClick={() => openFrom('ref')}>
+          <button type="button" className="drawer-item" onClick={() => openFrom('ref')}>
+            <PixIcon name="ref" />
             Пригласи друга
           </button>
-          <button
-            type="button"
-            className="drawer-btn"
-            onClick={() => openFrom('withdraw')}
-          >
+          <button type="button" className="drawer-item" onClick={() => openFrom('withdraw')}>
+            <PixIcon name="withdraw" />
             Вывод средств
           </button>
-          <button type="button" className="drawer-btn" onClick={() => openFrom('payments')}>
+          <button type="button" className="drawer-item" onClick={() => openFrom('payments')}>
+            <PixIcon name="history" />
             История платежей
           </button>
-          <button type="button" className="drawer-btn" onClick={() => openFrom('fair')}>
+          <button type="button" className="drawer-item" onClick={() => openFrom('fair')}>
+            <PixIcon name="fair" />
             Честность раунда
           </button>
         </aside>
