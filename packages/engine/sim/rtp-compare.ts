@@ -18,22 +18,30 @@ const TARGET = 0.95;
 const phys = CONFIG.phys as unknown as Record<string, number>;
 const rubber = CONFIG.rubber as unknown as Record<string, number>;
 
+/* «ПІСЛЯ» — те, що зараз у конфізі. Знімок, а не копія чисел: інакше
+   цей файл треба було б правити після кожного підбору. */
 const NEW = {
-  phys: { restitution: 0.42, bounceKick: 2.8, friction: 0.12, comOffset: 0.18, spinInertia: 2.4, airDrag: 0.14 },
-  rubber: { restitution: 0.95, minKick: 7, maxKick: 18, centerFrac: 0.5 },
+  phys: { ...phys },
+  rubber: { ...rubber },
 };
+/* «ДО» — стан до правок фізики (коміт 7c3c139 і раніше). */
 const OLD = {
-  phys: { restitution: 0.34, bounceKick: 1.4, friction: 0.16, comOffset: 0.15, spinInertia: 1.7, airDrag: 0.18 },
+  phys: {
+    ...phys,
+    restitution: 0.34, bounceKick: 1.4, friction: 0.16, comOffset: 0.15,
+    spinInertia: 1.7, airDrag: 0.18, straightSec: 1.6, straightPush: 1.4,
+    straightSpin: 1.2 * 1.4,
+  },
   // centerFrac > 1 = смуга ширша за шахту, тобто обмеження спавну вимкнене
-  rubber: { restitution: 0.82, minKick: 5, maxKick: 13, centerFrac: 9 },
+  rubber: { ...rubber, restitution: 0.82, minKick: 5, maxKick: 13, centerFrac: 9, sideBoost: 1.4 },
 };
 
-function run(label: string, v: typeof NEW) {
+function run(label: string, v: { phys: Record<string, number>; rubber: Record<string, number> }) {
   Object.assign(phys, v.phys);
   Object.assign(rubber, v.rubber);
 
   const collected: number[] = [];
-  let withPick = 0, dry = 0, blocks = 0, hits = 0;
+  let withPick = 0, dry = 0, blocks = 0, hits = 0, depth = 0, mults = 0, secs = 0;
   for (let i = 0; i < N; i++) {
     const seed = roundSeed('srv-final', 'cli', i + 1);
     const pity = dry >= CONFIG.pity;
@@ -43,6 +51,7 @@ function run(label: string, v: typeof NEW) {
     dry = gotPick ? 0 : dry + 1;
     collected.push(r.sim.collected);
     blocks += r.sim.blocks; hits += r.sim.hits;
+    if (gotPick) { depth += r.sim.depth; mults += r.sim.mults; secs += r.sim.timeSec; }
   }
 
   const meanRTP = (K: number) =>
@@ -60,8 +69,11 @@ function run(label: string, v: typeof NEW) {
     + ' RTP@' + CONFIG.payoutK + ' = ' + (meanRTP(CONFIG.payoutK) * 100).toFixed(2) + '%'
     + ' | payoutK для 95% ≈ ' + Kfit.toFixed(0)
     + ' | кірка ' + ((withPick / N) * 100).toFixed(1) + '%'
-    + ' | блоків/забіг ' + (blocks / withPick).toFixed(0)
-    + ' | ударів/забіг ' + (hits / withPick).toFixed(0));
+    + ' | блоків ' + (blocks / withPick).toFixed(0)
+    + ' | ударів ' + (hits / withPick).toFixed(0)
+    + ' | глибина ' + (depth / withPick).toFixed(1)
+    + ' | множників ' + (mults / withPick).toFixed(2)
+    + ' | сек ' + (secs / withPick).toFixed(1));
 }
 
 console.log('ставок у кожному прогоні:', N);
