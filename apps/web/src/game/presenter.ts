@@ -1319,15 +1319,14 @@ export class Presenter {
       ctx.fillRect(0, 0, this.w, this.h);
       const cy = this.h * 0.42 + this.stage * this.itemH * 0.9;
       const fa = Math.min(1, a * 1.7);
-      this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, fa);
 
-      /* Прогрес до гарантованої кірки — на самому кільці. Малюється
-         ПІСЛЯ нього: заглиблена панель непрозора, під кільцем паличок
-         не було б видно взагалі. Гасне разом із кільцем (fa), щоб не
-         висіти в повітрі під час переходу до поля. */
+      /* Прогрес до гарантованої кірки — ПЕРЕД кільцем, бо сегменти в
+         ньому прозорі й колір їм дає заливка знизу. Гасне разом із
+         кільцем (fa), щоб не висіти в повітрі під час переходу до
+         поля. */
       ctx.save();
       ctx.globalAlpha = fa;
-      this.reel.drawPips(
+      this.reel.drawSegments(
         ctx, this.w / 2, cy, this.frameW, this.frameH,
         this.player?.dryStreaks?.[this.bet] ?? 0,
         this.player?.pityAt ?? CONFIG.pity,
@@ -1335,6 +1334,8 @@ export class Presenter {
         this.pipLitT > 0 ? this.pipLit : -1,
       );
       ctx.restore();
+
+      this.reel.draw(ctx, this.w / 2, cy, this.frameW, this.frameH, this.itemW, this.itemH, fa);
     }
 
     /* HUD поверх поля — окремим шаром (game/hud-canvas). Кожен напис
