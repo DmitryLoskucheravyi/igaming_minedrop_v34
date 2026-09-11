@@ -101,6 +101,17 @@ export interface ReferralState {
   friends: ReferralFriend[];
 }
 
+/* КУПЛЕНІ ФРІСПІНИ. Ціни на всі ставки рахує сервер — клієнт їх лише
+   показує, тож двох формул не буває. */
+export interface SpinsState {
+  pack: number;
+  chanceX: number;
+  prices: Record<string, number>;
+  left: number;
+  bet: number;
+  balance: number;
+}
+
 export interface RevealedSeries {
   serverSeed: string;
   serverSeedHash: string;
@@ -207,6 +218,20 @@ export const Api = {
   rotate() {
     return call<{ revealed: RevealedSeries; next: { serverSeedHash: string; nonce: number } }>(
       '/fairness/rotate', { method: 'POST' });
+  },
+
+  /** Пакет фріспінів: ціни, скільки лишилось. */
+  spins() {
+    return call<SpinsState>('/spins');
+  },
+
+  /** Купити пакет на вказану ставку. Ціну списує сервер зі свого
+      розрахунку — число з клієнта туди не доходить. */
+  buySpins(bet: number) {
+    return call<{ left: number; bet: number; balance: number }>('/spins/buy', {
+      method: 'POST',
+      body: JSON.stringify({ bet }),
+    });
   },
 
   /** Реферальний кабінет: посилання, друзі, заробіток. */

@@ -51,6 +51,15 @@ export class PlayerStore {
         refJoinPaidAt: null,
         refDepositPaidAt: null,
         refDeposited: 0,
+        /* Оборот з'явився пізніше за перших гравців: нуль означає, що
+           пробіг рахуємо з моменту появи лічильника. Заднім числом його
+           не відновити, та й потреби немає — цілі відіграшу теж
+           ставляться від «зараз». */
+        turnover: 0,
+        bonusLocked: 0,
+        bonusTarget: 0,
+        bonusUntil: 0,
+        bonusCap: 0,
         ...rest,
       } as unknown as PlayerRecord;
     });

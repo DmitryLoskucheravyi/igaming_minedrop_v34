@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import {
-  ReferralsService, REF_JOIN_RUB, REF_DEPOSIT_RUB, REF_DEPOSIT_MIN,
+  ReferralsService, REF_JOIN_RUB, REF_DEPOSIT_RUB, REF_DEPOSIT_MIN, REF_BONUS_WAGER_X,
 } from '../src/referrals/referrals.service';
 import type { PlayerRecord } from '../src/players/players.service';
 
@@ -30,7 +30,17 @@ function make() {
   const db = new Map<number, PlayerRecord>();
   let hook: ((rec: PlayerRecord) => void) | null = null;
 
+  /* Реферальні гроші приходять БОНУСОМ (баланс + замок на відіграш).
+     Стенд повторює лише видиму частину — нарахування й запис виклику;
+     арифметику замка перевіряє wager.test. */
+  const wagered: [number, number, number][] = [];
   const players = {
+    grantBonus: (id: number, rub: number, x: number) => {
+      const rec = db.get(id);
+      if (!rec) return;
+      rec.balance += rub;
+      wagered.push([id, rub, x]);
+    },
     byId: (id: number) => db.get(id),
     all: () => [...db.values()],
     persist: () => undefined,
@@ -58,7 +68,7 @@ function make() {
     return rec;
   };
 
-  return { svc, db, add };
+  return { svc, db, add, wagered };
 }
 
 function main(): void {
@@ -82,6 +92,17 @@ function main(): void {
     svc.onDeposit(2, REF_DEPOSIT_MIN);
     svc.onDeposit(2, 10_000);
     assert.equal(host.balance, REF_JOIN_RUB + REF_DEPOSIT_RUB);
+  });
+
+  test('обидві виплати приходять бонусом із відіграшем x10', () => {
+    const { svc, add, wagered } = make();
+    add(1);
+    add(2, 1);                                   // прихід друга
+    svc.onDeposit(2, REF_DEPOSIT_MIN);           // і його депозит
+    assert.deepEqual(wagered, [
+      [1, REF_JOIN_RUB, REF_BONUS_WAGER_X],
+      [1, REF_DEPOSIT_RUB, REF_BONUS_WAGER_X],
+    ]);
   });
 
   test('депозит нижче порога — доплати немає', () => {

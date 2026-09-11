@@ -43,9 +43,11 @@ interface Props {
   title: string;
   onClose: () => void;
   children: ReactNode | ((close: () => void) => ReactNode);
+  /** вікно без власної рамки, тла й видимого заголовка */
+  bare?: boolean;
 }
 
-export function Modal({ title, onClose, children }: Props) {
+export function Modal({ title, onClose, children, bare }: Props) {
   const [closing, setClosing] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -68,16 +70,34 @@ export function Modal({ title, onClose, children }: Props) {
       onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}
     >
       <div
-        className="modalbox"
+        className={'modalbox' + (bare ? ' bare' : '')}
         ref={box}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
+        {/* bare — вікно без власної рамки й заголовка: усе це вже
+            намальоване на самому вмісті (картка бонус бая). Назва
+            лишається в розмітці для читалок, просто не показується. */}
         <div className="modalhead">
-          <h2>{title}</h2>
-          <button type="button" className="x" onClick={close} aria-label="Закрыть">✕</button>
+          <h2 className={bare ? 'sr-only' : undefined}>{title}</h2>
+          <button type="button" className="x" onClick={close} aria-label="Закрыть">
+            {/* У безрамковому вікні хрестик мусить читатись поверх
+                намальованої картки, тому він піксельний і великий — так
+                само складений із квадратів, як і решта арту. Звичайним
+                вікнам лишається символ: там він стоїть на рівному тлі. */}
+            {bare
+              ? (
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="x-pix">
+                  <path
+                    d="M2 2h4v4H2zM6 6h4v4H6zM10 10h4v4h-4zM14 14h4v4h-4zM18 18h4v4h-4z
+                       M18 2h4v4h-4zM14 6h4v4h-4zM6 14h4v4H6zM2 18h4v4H2z"
+                  />
+                </svg>
+              )
+              : '✕'}
+          </button>
         </div>
         {typeof children === 'function' ? children(close) : children}
       </div>

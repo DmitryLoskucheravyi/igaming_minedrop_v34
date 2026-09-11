@@ -1297,66 +1297,173 @@ canvas {
 /* ============================================================
    БОНУС БАЙ — слайдер кірок
    ============================================================ */
-.buy-lead { margin: 0 0 14px; }
-
 .buy-slider {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  position: relative;
   /* гортання пальцем обробляємо самі, браузеру горизонталь не віддаємо */
   touch-action: pan-y;
 }
 
-.buy-arrow {
-  flex: 0 0 auto;
-  width: 40px;
-  height: 72px;
-  font: 600 24px inherit;
-  line-height: 1;
-  color: var(--text2);
-  background: var(--surface3);
-  border: 1px solid var(--border);
-  border-radius: var(--r1);
-  cursor: pointer;
-  transition: border-color var(--t) var(--ease), color var(--t) var(--ease),
-              opacity var(--t) var(--ease), transform var(--t-press) var(--ease);
-}
-.buy-arrow:hover:not(:disabled) { border-color: var(--border2); color: var(--text); }
-.buy-arrow:active:not(:disabled) { transform: scale(.94); }
-.buy-arrow:disabled { opacity: .3; cursor: default; }
+/* Стрілки лежать ПОВЕРХ картки, а не збоку: інакше вони з'їдали б
+   ширину, заради якої картку й розтягували.
 
-.buy-slide {
-  flex: 1 1 auto;
-  min-width: 0;
+   Плашки під ними немає навмисно — на різьбленій рамці картки другий
+   прямокутник виглядав би як наліпка. Читабельність дає не фон, а
+   темний контур і тінь самої стрілки. */
+.buy-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  /* Палець цілиться в 60 px, а не в саму стрілку: вона вужча. */
+  width: 60px;
+  height: 76px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 16px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r2);
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition: opacity var(--t) var(--ease), transform var(--t-press) var(--ease);
 }
-.buy-pick {
-  width: 88px;
-  height: 88px;
+.chev {
+  width: 36px;
+  height: 48px;
+  fill: var(--gold);
+  stroke: #2a1d05;
+  stroke-width: 1.5;
+  stroke-linejoin: miter;
+  /* Без згладжування — інакше сходинки замиляться в дугу й уся затія
+     з піксельним стилем зникне. */
+  shape-rendering: crispEdges;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .7));
+}
+.chev.right { transform: scaleX(-1); }
+.buy-arrow:hover:not(:disabled) .chev { fill: #fff0b8; }
+/* Стрілки стоять НА ТЕМНІЙ СТІНІ всередині картки, а не на її краю:
+   рамка золота, і золотий шеврон на ній просто зникав. */
+.buy-arrow:first-of-type { left: 4%; }
+.buy-arrow:not(:first-of-type) { right: 4%; }
+.buy-arrow:active:not(:disabled) { transform: translateY(-50%) scale(.9); }
+.buy-arrow:disabled { opacity: 0; pointer-events: none; }
+
+/* Слайд = намальована картка НА ВСЕ ВІКНО. Своєї рамки й фону в нього
+   немає: і те, й те намальоване на картинці, а другий кант поверх
+   першого виглядав би як помилка верстки. */
+.buy-slide {
+  position: relative;
+  width: 100%;
+  /* Співвідношення сторін картки (687x1024) — щоб написи, які сидять у
+     відсотках, ніколи не роз'їхались із намальованими панелями. */
+  aspect-ratio: 687 / 1024;
+  /* Над карткою — хрестик, під нею — крапки; решту висоти забирає вона. */
+  max-height: calc(var(--tg-viewport-stable-height, 100dvh) - 140px);
+  margin: 0 auto;
+}
+.buy-card {
+  width: 100%;
+  height: 100%;
+  display: block;
   object-fit: contain;
-  image-rendering: pixelated;
+  border-radius: var(--r2);
+  user-select: none;
+  -webkit-user-drag: none;
 }
-.buy-name {
-  font: 700 16px inherit;
-  letter-spacing: .08em;
-}
-.buy-stats {
+
+/* Напис у намальованій панелі. Координати приходять інлайном із
+   lib/buy-cards — тут лише те, як текст поводиться всередині. */
+.buy-plate {
+  position: absolute;
   display: flex;
-  gap: 16px;
-  font: 400 11.5px ui-monospace, monospace;
-  color: var(--muted2);
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  line-height: 1;
+  pointer-events: none;
+  /* Текст на темній панелі: тінь відсікає його від текстури стіни. */
+  text-shadow: 0 2px 4px rgba(0, 0, 0, .75);
+  /* Панелі дрібні, а картка масштабується — тримаємо кегль у частках
+     ширини слайда, інакше на телефоні написи вилізуть за рамку. */
+  font-size: clamp(10px, 4.2cqw, 20px);
 }
-.buy-stats b { color: var(--text2); font-weight: 600; }
-.buy-coef { font: 400 10.5px ui-monospace, monospace; color: var(--muted2); }
+.buy-slide { container-type: inline-size; }
+
+.buy-title { font-weight: 800; letter-spacing: .1em; font-size: clamp(12px, 5.4cqw, 26px); }
+
+/* Статистика: число велике, підпис дрібний поруч — панель низька, і
+   два рядки в ній читались би гірше, ніж один. */
+.buy-stat { flex-direction: column; gap: 1px; }
+.buy-stat b { color: var(--text); font-weight: 800; font-size: clamp(12px, 5cqw, 24px); }
+.buy-stat span { color: var(--muted); font-size: clamp(8px, 2.8cqw, 13px); letter-spacing: .04em; }
+
+/* Нижня панель картки — кнопка. Власного фону й рамки не має: вона вже
+   намальована, кнопка лише ловить натискання й тримає напис. */
+.buy-buy {
+  pointer-events: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--gold);
+  font-weight: 800;
+  letter-spacing: .02em;
+  font-size: clamp(13px, 5.2cqw, 26px);
+  transition: filter var(--t) var(--ease), transform var(--t-press) var(--ease);
+}
+.buy-buy:hover:not(:disabled) { filter: brightness(1.15); }
+.buy-buy:active:not(:disabled) { transform: scale(.97); }
+.buy-buy.off { color: var(--dangerText); cursor: default; }
+
+/* Вікно бонус бая — без рамки: її роль грає сама картка. */
+.modalbox.bare {
+  position: relative;          /* якір для хрестика поверх картки */
+  width: min(420px, 100%);
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+.modalbox.bare .modalhead {
+  position: absolute;
+  /* Хрестик — НАД карткою, на затемненні. У куті самої картки він
+     лягав на різьблену рамку й губився в ній: там і золото, і дрібний
+     рельєф, тобто найгірше можливе тло для золотого значка. */
+  top: -54px;
+  right: 2px;
+  margin: 0;
+  z-index: 3;
+}
+/* У безрамковому вікні хрестик власного тла не має — як і стрілки. */
+.modalbox.bare .x {
+  width: 48px;
+  height: 48px;
+  border-radius: 0;
+}
+.modalbox.bare .x:hover { background: none; }
+.x-pix {
+  width: 34px;
+  height: 34px;
+  fill: var(--gold);
+  stroke: #2a1d05;
+  stroke-width: 1.2;
+  shape-rendering: crispEdges;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .7));
+}
+.modalbox.bare .x:hover .x-pix { fill: #fff0b8; }
+/* Лишається в розмітці для читалок, але не займає місця. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 /* крапки-індикатор: активна підсвічена */
+.modalbox.bare .buy-dots { margin-top: 10px; }
 .buy-dots {
   display: flex;
   justify-content: center;
@@ -1386,7 +1493,6 @@ canvas {
 }
 .buy-dot.on::before { background: var(--gold); scale: 1.3; }
 
-.buy-note { margin: 12px 0 0; text-align: center; }
 
 /* ============================================================
    РУХ
@@ -1751,3 +1857,67 @@ canvas {
   margin-top: 3px;
   font-size: 11px; color: var(--muted);
 }
+
+/* Умова відіграшу у вікні виводу. Не помилка (червоним), а правило —
+   тому жовтий «очікування», той самий, що й у заявок на розгляді. */
+.wager-note {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid var(--warnBorder);
+  border-radius: var(--r2);
+  background: var(--warnBg);
+  color: var(--warnText);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.wager-note b { color: var(--gold); }
+
+/* Розклад балансу у вікні виводу */
+.dep-v.ok { color: var(--okText); }
+.dep-v.locked { color: var(--goldText); }
+
+.bonus-bar-wrap { margin: 6px 0 2px; }
+.bonus-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.bonus-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--goldBg), var(--gold));
+  transition: width .4s ease;
+}
+
+/* ---- ПАКЕТ ФРІСПІНІВ ---- */
+.fs-left {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--okBorder);
+  border-radius: var(--r2);
+  background: var(--okBg);
+  color: var(--okText);
+  font-size: 13px;
+}
+.fs-bets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.fs-bet {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  padding: 7px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  background: var(--surface2);
+  color: var(--text2);
+  cursor: pointer;
+}
+.fs-bet.on { border-color: var(--gold); color: var(--text); }
+.fs-bet:disabled { opacity: .4; cursor: default; }
+.fs-bet-v { font-size: 13px; font-weight: 700; }
+/* Ціна пакета дрібнішим: вибирають ставку, а ціна — її наслідок. */
+.fs-bet-p { font-size: 10px; color: var(--muted); }

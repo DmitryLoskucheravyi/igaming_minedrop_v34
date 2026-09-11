@@ -9,6 +9,8 @@ import { BotService } from '../telegram/bot.service';
    Дві виплати запрошувачу, і обидві — за подію в житті ЗАПРОШЕНОГО:
      прийшов за посиланням              -> REF_JOIN_RUB
      заніс депозитами REF_DEPOSIT_MIN   -> REF_DEPOSIT_RUB
+   Обидві приходять БОНУСНИМИ грошима — із відіграшем x10 і замком на
+   вивід, доки він не зроблений (див. REF_BONUS_WAGER_X).
 
    ЧОМУ ОЗНАКИ ВИПЛАТ ЛЕЖАТЬ У ЗАПРОШЕНОГО. Подія належить йому, а
    виплата лише її наслідок. Поки прапорець стоїть у того, з ким подія
@@ -32,6 +34,17 @@ export const REF_DEPOSIT_RUB = 200;
    який заніс 150 і ще 150, вніс ті самі 300, і відмовляти йому через
    те, що переказів було два, — правило нізвідки. */
 export const REF_DEPOSIT_MIN = 300;
+
+/* ВІДІГРАШ НА РЕФЕРАЛЬНІ ГРОШІ.
+
+   Обидві виплати — бонусні гроші, а не свої: гравець їх не заносив.
+   Тому вимога до них жорсткіша, ніж до власного депозиту (x5): x10.
+   100 ₽ за прихід -> 1000 ₽ обороту, 200 ₽ за депозит -> 2000 ₽.
+
+   Поки бонус не відіграно, ця сума замкнена на балансі: грати нею
+   можна, виводити — ні. Інакше рефералка лишалась би банкоматом:
+   завів фейк, отримав виплату, зняв. */
+export const REF_BONUS_WAGER_X = 10;
 
 export interface ReferralFriend {
   telegramId: number;
@@ -80,11 +93,11 @@ export class ReferralsService implements OnModuleInit {
 
   private payJoin(rec: PlayerRecord): void {
     if (!rec.refBy || rec.refJoinPaidAt) return;
-    const paid = this.players.topUp(rec.refBy, REF_JOIN_RUB, 'реферал: друг прийшов');
-    /* topUp повертає null, якщо запрошувача вже немає (видалили
-       акаунт). Тоді прапорець НЕ ставимо: гроші не нараховані, і
-       позначати виплату як зроблену не можна. */
-    if (paid === null) return;
+    /* Запрошувача може вже не бути (видалили акаунт) — тоді нічого не
+       нараховано, і позначати виплату як зроблену не можна. */
+    if (!this.players.byId(rec.refBy)) return;
+    this.players.grantBonus(
+      rec.refBy, REF_JOIN_RUB, REF_BONUS_WAGER_X, 'реферал: друг прийшов');
     rec.refJoinPaidAt = Date.now();
     this.players.persist(rec);
     this.log.log(`реферал: ${rec.refBy} +${REF_JOIN_RUB} за прихід ${rec.telegramId}`);
@@ -109,8 +122,11 @@ export class ReferralsService implements OnModuleInit {
     if (!rec.refBy || rec.refDepositPaidAt) return;
     if ((rec.refDeposited ?? 0) < REF_DEPOSIT_MIN) return;
 
-    const paid = this.players.topUp(rec.refBy, REF_DEPOSIT_RUB, 'реферал: депозит друга');
-    if (paid === null) return;
+    if (!this.players.byId(rec.refBy)) return;
+    /* Бонус замикається на тому, ХТО ЙОГО ОТРИМАВ (запрошувачеві), а не
+       на тому, хто заніс депозит: відіграє його той, кому він дістався. */
+    this.players.grantBonus(
+      rec.refBy, REF_DEPOSIT_RUB, REF_BONUS_WAGER_X, 'реферал: депозит друга');
     rec.refDepositPaidAt = Date.now();
     this.players.persist(rec);
     this.log.log(

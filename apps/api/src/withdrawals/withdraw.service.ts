@@ -72,6 +72,24 @@ export class WithdrawService implements OnModuleInit {
       throw new BadRequestException('Не похоже на адрес TRC20 (T + 33 символа)');
     }
 
+    /* ЗАМКНЕНИЙ БОНУС. Перевіряємо ДО списання балансу: інакше довелось
+       би повертати щойно зняте, а кожен зайвий рух грошей — це ще одне
+       місце, де вони можуть загубитись.
+
+       Замок не закриває вивід цілком — він лише не дає вивести САМІ
+       бонусні гроші. Своє поверх бонусу забрати можна будь-коли, і це
+       принципово: гроші гравця його власні, умови ставляться на
+       подарунки. */
+    const player = this.players.byId(telegramId);
+    if (!player) throw new NotFoundException('Игрок не найден');
+
+    const available = this.players.withdrawable(player);
+    if (value > available) {
+      const locked = this.players.locked(player);
+      throw new BadRequestException(
+        `Доступно к выводу ${available} ₽: ещё ${locked} ₽ — бонус в отыгрыше`);
+    }
+
     /* Одна активна заявка на гравця — як і в депозиті. Інакше можна
        нарізати баланс на десяток заявок і завалити ними CRM. */
     if (this.activeFor(telegramId)) {

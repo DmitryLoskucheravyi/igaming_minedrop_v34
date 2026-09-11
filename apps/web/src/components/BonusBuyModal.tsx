@@ -4,8 +4,16 @@
    БОНУС БАЙ — купівля гарантованої кірки.
 
    Слайдер: один слайд = одна кірка. Гортається пальцем, стрілками
-   з боків і крапками знизу. Кожен слайд показує, за що саме платиш:
-   картинку, характеристики та ціну в поточній ставці.
+   з боків і крапками знизу.
+
+   Слайд — це НАМАЛЬОВАНА КАРТКА (public/cards) на всю ширину вікна, з
+   порожніми панелями, у які компонент вписує назву, міцність і урон.
+   Нижня панель — не напис, а САМА КНОПКА покупки: окрема кнопка під
+   карткою дублювала б намальоване й забирала в картки висоту.
+   Числа не вшиті в картинку навмисно — ціна залежить від поточної
+   ставки, а міцність із уроном від балансу тірів, і кожна їх правка
+   означала б перемальовування всіх чотирьох файлів. Координати панелей
+   заміряно з самих картинок — див. lib/buy-cards.
 
    ЧОМУ ЦІНА В КОЖНОЇ КІРКИ СВОЯ
    Дерев'яна кірка й алмазна заробляють зовсім різне (заміряно
@@ -20,6 +28,7 @@ import { TIERS, type TierId } from '@minedrop/engine';
 import type { CurrencyCode, Rates } from '../lib/currency';
 import { Modal } from './Modal';
 import { Money } from './Money';
+import { BUY_CARDS, plateStyle } from '../lib/buy-cards';
 
 interface Props {
   bet: number;
@@ -41,6 +50,19 @@ interface Props {
    пальця під час звичайного тапу по кнопці. */
 const SWIPE_MIN_PX = 40;
 
+/* Стрілка — СХОДИНКОВИЙ трикутник, а не символ ‹ і не гладкий шеврон:
+   уся гра намальована пікселями, і плавна дуга поруч із блоковою
+   кіркою читалась би як чужа деталь. Малюємо квадратами по 4 одиниці
+   сітки, вимикаємо згладжування (shape-rendering у css) — виходить той
+   самий «різаний» край, що й у спрайтів. */
+function Chevron({ dir }: { dir: 'left' | 'right' }) {
+  return (
+    <svg viewBox="0 0 24 32" aria-hidden="true" className={'chev ' + dir}>
+      <path d="M20 4h-4v4h-4v4H8v8h4v4h4v4h4z" />
+    </svg>
+  );
+}
+
 export function BonusBuyModal({
   bet, balance, buyPrices, currency, rates, onBuy, onClose, index, onIndex,
 }: Props) {
@@ -61,18 +83,15 @@ export function BonusBuyModal({
   }, [i, go]);
 
   const tier = TIERS[i];
+  const card = BUY_CARDS[tier.id];
   const price = Math.round(bet * (buyPrices[tier.id] ?? 0));
   const enough = balance >= price;
   const money = (rub: number) => <Money rub={rub} currency={currency} rates={rates} whole />;
 
   return (
-    <Modal title="Бонус бай" onClose={onClose}>
+    <Modal title="Бонус бай" onClose={onClose} bare>
       {(close) => (
         <>
-          <p className="hint buy-lead">
-            Кирка достаётся <b>гарантированно</b>, без рулетки.
-          </p>
-
           <div
             className="buy-slider"
             onTouchStart={(e) => {
@@ -97,17 +116,40 @@ export function BonusBuyModal({
               disabled={i === 0}
               aria-label="Предыдущая кирка"
             >
-              ‹
+              <Chevron dir="left" />
             </button>
 
+            {/* Картка — намальована картинка, поверх якої лягають рівно
+                чотири написи. Кожен сидить у СВОЇЙ намальованій панелі:
+                координати заміряно з файлів (lib/buy-cards). */}
             <div className="buy-slide">
-              <img className="buy-pick" src={tier.skin} alt="" />
-              <div className="buy-name" style={{ color: tier.color }}>{tier.name.toUpperCase()}</div>
-              <div className="buy-stats">
-                <span><b>{tier.hp}</b> прочность</span>
-                <span><b>{tier.dmg}</b> урон</span>
+              <img className="buy-card" src={card.src} alt="" draggable={false} />
+
+              <div className="buy-plate buy-title" style={plateStyle(card.geom.title)}>
+                <span style={{ color: tier.color }}>{tier.name.toUpperCase()}</span>
               </div>
-              <div className="buy-coef">коэффициент цены &times;{buyPrices[tier.id] ?? '—'}</div>
+
+              <div className="buy-plate buy-stat" style={plateStyle(card.geom.left)}>
+                <b>{tier.hp}</b>
+                <span>прочность</span>
+              </div>
+              <div className="buy-plate buy-stat" style={plateStyle(card.geom.right)}>
+                <b>{tier.dmg}</b>
+                <span>урон</span>
+              </div>
+
+              {/* Нижня панель картки — САМА КНОПКА. Окрема кнопка під
+                  карткою дублювала б те, що вже намальовано, і забирала
+                  висоту в самої картки. */}
+              <button
+                type="button"
+                className={'buy-plate buy-buy' + (enough ? '' : ' off')}
+                style={plateStyle(card.geom.price)}
+                disabled={!enough || price <= 0}
+                onClick={() => { onBuy(tier.id as TierId); close(); }}
+              >
+                {enough ? <>Купить · {money(price)}</> : <>Не хватает {money(price - balance)}</>}
+              </button>
             </div>
 
             <button
@@ -117,7 +159,7 @@ export function BonusBuyModal({
               disabled={i === last}
               aria-label="Следующая кирка"
             >
-              ›
+              <Chevron dir="right" />
             </button>
           </div>
 
@@ -133,17 +175,6 @@ export function BonusBuyModal({
               />
             ))}
           </div>
-
-          <button
-            type="button"
-            className="btn wide"
-            disabled={!enough || price <= 0}
-            onClick={() => { onBuy(tier.id as TierId); close(); }}
-          >
-            {enough ? <>Купить за {money(price)}</> : <>Не хватает {money(price - balance)}</>}
-          </button>
-
-          <p className="hint buy-note">Цена от ставки {money(bet)}.</p>
         </>
       )}
     </Modal>

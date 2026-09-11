@@ -33,6 +33,10 @@ export interface WithdrawState {
   setAddress: (s: string) => void;
 
   min: number;
+  /** замкнений бонус: прогрес, термін і стеля ставки */
+  bonus: { locked: number; done: number; need: number; until: number; maxBet: number };
+  /** скільки з балансу можна подати на вивід */
+  available: number;
   max: number;
   tooSmall: boolean;
   /** сума більша за баланс — грошей просто немає */
@@ -58,10 +62,15 @@ export function useWithdraw(balance: number, onBalance: () => void): WithdrawSta
   const min = info?.minRub ?? 500;
   const max = info?.maxRub ?? Infinity;
   const active = info?.active ?? null;
+  /* Розклад балансу: що можна виводити й що лежить замкненим бонусом.
+     Поки сервер не відповів, вважаємо весь баланс доступним — інакше
+     на мить показали б «0 до виводу» на порожньому місці. */
+  const bonus = info?.bonus ?? { locked: 0, done: 0, need: 0, until: 0, maxBet: 0 };
+  const available = info?.available ?? balance;
 
   const trimmed = address.trim();
   const tooSmall = amount < min;
-  const tooBig = amount > balance;
+  const tooBig = amount > available;
   const overMax = amount > max;
   const validAddress = TRC20_RE.test(trimmed);
   const badAddress = trimmed.length > 0 && !validAddress;
@@ -103,7 +112,7 @@ export function useWithdraw(balance: number, onBalance: () => void): WithdrawSta
   return {
     info, error, busy, active,
     amount, setAmount, address, setAddress,
-    min, max, tooSmall, tooBig, overMax, badAddress, canSubmit,
+    min, max, tooSmall, tooBig, overMax, badAddress, canSubmit, bonus, available,
     create, cancel,
   };
 }

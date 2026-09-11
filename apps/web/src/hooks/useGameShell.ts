@@ -35,7 +35,7 @@ export function useCurrency(onChange: (c: CurrencyCode) => void) {
    Одне поле замість п'яти прапорців. Річ не в економії рядків:
    п'ять незалежних булів описують і стани, яких не буває, — два
    вікна поверх одного, — а тут вони просто невиразні. */
-export type ModalId = 'deposit' | 'withdraw' | 'payments' | 'fair' | 'buy' | 'wheel' | 'ref';
+export type ModalId = 'deposit' | 'withdraw' | 'payments' | 'fair' | 'buy' | 'wheel' | 'ref' | 'spins';
 
 export function useModal() {
   const [modal, setModal] = useState<ModalId | null>(null);

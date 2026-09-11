@@ -5,6 +5,7 @@ import type { RoundMode, RoundResult, TierId } from '@minedrop/engine';
 import { PlayersService, type PlayerRecord } from '../players/players.service';
 import { FairnessService } from '../fairness/fairness.service';
 import { WHEEL_FREE_BET } from '../wheel/wheel.types';
+import { FS_CHANCE_X } from '../spins/spins.types';
 
 /* ============================================================
    ROUNDS — тут вирішується результат. Єдина точка, де рухаються гроші.
@@ -88,7 +89,16 @@ export class RoundsService {
        інакше перед подарованим прокрутом вистачило б виставити
        максимальну ставку. Через це ж вона не звіряється зі списком
        дозволених нижче — сервер підставляє своє число, а не чуже. */
-    const gift = !buy && !free && (rec.freeSpins ?? 0) > 0;
+    /* КУПЛЕНИЙ ПАКЕТ ФРІСПІНІВ.
+
+       Йде ПОПЕРЕД подарунків колеса: за нього заплачено, і тримати
+       оплачене в черзі за безкоштовним було б щонайменше дивно.
+       Ставка — та, за якою пакет куплений; шанс кірки подвоєний
+       (FS_CHANCE_X), виграш замикається на відіграш (нижче). */
+    const paidSpin = !buy && !free && (rec.buySpins ?? 0) > 0;
+    if (paidSpin) bet = rec.buySpinBet;
+
+    const gift = !buy && !free && !paidSpin && (rec.freeSpins ?? 0) > 0;
     if (gift) bet = WHEEL_FREE_BET;
 
     /* Ставку клієнта звіряємо зі списком дозволених ЛИШЕ коли вона й
@@ -97,7 +107,7 @@ export class RoundsService {
        повністю. Перевірка ДО цього моменту відмовляла б у цілком
        робочому безкоштовному раунді через довільне число в тілі
        запиту, яке ні на що вже не впливає. */
-    if (!free && !gift && !CONFIG.bets.includes(bet as never)) {
+    if (!free && !gift && !paidSpin && !CONFIG.bets.includes(bet as never)) {
       throw new BadRequestException(`Ставка должна быть одной из: ${CONFIG.bets.join(', ')}`);
     }
 
@@ -114,11 +124,35 @@ export class RoundsService {
       throw new BadRequestException('Не выбрана кирка для бонус бая');
     }
 
-    const cost = gift ? 0 : roundCost(mode, bet, buy, free);
+    /* СТЕЛЯ СТАВКИ, ПОКИ БОНУС НЕ ВІДІГРАНИЙ.
+
+       Без неї відіграш нічого не означає: ціль у 2000 ₽ знімається
+       одним спіном на 2000 ₽, і гравець із грошима на балансі
+       перетворює бонус на підкидання монетки. Перевіряємо лише те, що
+       гравець ставить САМ: подаровані й куплені прокрути йдуть за своєю
+       ставкою, яку він у цей момент не обирає. */
+    if (!gift && !paidSpin) {
+      const capBet = this.players.maxBet(rec);
+      if (capBet > 0 && bet > capBet) {
+        throw new BadRequestException(
+          `Пока бонус в отыгрыше, максимальная ставка ${capBet} ₽`);
+      }
+    }
+
+    const cost = (gift || paidSpin) ? 0 : roundCost(mode, bet, buy, free);
     if (rec.balance < cost) throw new BadRequestException('Недостаточно монет');
 
     const balanceBefore = rec.balance;
     rec.balance -= cost;
+    /* Оборот для відіграшу — це те, що гравець РЕАЛЬНО поставив. Тому
+       береться cost, а не bet: подарований прокрут коштує нуль і борг
+       не зменшує, інакше подарунки колеса перетворились би на спосіб
+       обійти відіграш чужими грошима. */
+    /* Оборот. Подаровані й куплені прокрути коштують нуль, але ставку
+       на полі роблять справжню — і в казино такі прокрути зараховуються
+       в оборот за номіналом. Інакше виходило б, що гравець грає, а
+       відіграш бонусу стоїть. */
+    this.players.noteWager(rec, (gift || paidSpin) ? bet : cost);
 
     /* PITY рахується ОКРЕМО на кожній ставці. Серія на ставці 10 нічого
        не дає на ставці 250 — тож набити промахи по 10 і зняти гарантовану
@@ -133,12 +167,29 @@ export class RoundsService {
        pity на ньому працює як завжди: серія промахів і накопичується,
        і спрацьовує. Інакше подарунок був би ще й дірою в гарантії. */
     const streak = rec.dryStreaks[bet] ?? 0;
-    const pity = !buy && !free && streak >= CONFIG.pity;
+    /* Гарантії не отримують і серії не рухають ані куплені прокрути
+       (у них своя, вища ймовірність кірки — саме з неї рахувалась ціна
+       пакета), ані подаровані колесом: інакше п'ять безкоштовних
+       промахів підводили б лічильник, і гарантію на СВОЇЙ ставці
+       гравець отримував би за чужий рахунок. */
+    const pity = !buy && !free && !paidSpin && !gift && streak >= CONFIG.pity;
 
     const { seed, nonce } = this.fairness.nextSeed(rec);
-    const resolved = resolveRound(seed, mode, bet, pity, buy, free);
+    const chanceX = paidSpin ? FS_CHANCE_X : 1;
+    const resolved = resolveRound(seed, mode, bet, pity, buy, free, chanceX);
 
     rec.balance += resolved.payout;
+    /* ВИГРАШ КУПЛЕНИХ ПРОКРУТІВ НЕ ЗАМИКАЄТЬСЯ.
+
+       Спершу він замикався на x10, як реферальні гроші, і це була
+       помилка: пакет купують за ВЛАСНІ гроші, а відіграш вішають на
+       подарунки. Порахували наслідки — пакет ціною 3520 ₽ при середньому
+       виграші 3381 ₽ і цілі в 33 810 ₽ обороту давав фактичну віддачу
+       ~57% замість 96%, під які рахувалась ціна. Замок тихо
+       перетворював чесний продукт на грабіжницький.
+
+       Захист від відмивання депозиту тут дає не замок, а сама ціна:
+       пакет коштує 35.2 ставки, і ці гроші йдуть в оборот. */
 
     /* Виграну бонуску списуємо ПІСЛЯ прогону — до цього моменту раунд
        ще міг не відбутись через кинуту помилку, і тоді вона мала б
@@ -154,11 +205,12 @@ export class RoundsService {
        бонуску вище: до цього рядка раунд ще міг не відбутись через
        кинуту помилку, і тоді прокрут мав лишитись гравцю. */
     if (gift) rec.freeSpins = Math.max(0, (rec.freeSpins ?? 0) - 1);
+    if (paidSpin) rec.buySpins = Math.max(0, (rec.buySpins ?? 0) - 1);
 
     /* Лічильник пустих прокрутів цієї ставки: кірка (у т.ч. форсована)
        -> 0, промах -> +1. Інші ставки не чіпаємо. Подаровані раунди
        (куплені й виграні) серію не рухають узагалі. */
-    const nextStreak = (buy || free)
+    const nextStreak = (buy || free || paidSpin || gift)
       ? streak
       : (resolved.setup.tiers.length ? 0 : streak + 1);
     rec.dryStreaks[bet] = nextStreak;
@@ -174,6 +226,11 @@ export class RoundsService {
          «бесплатный прокрут» замість списаної ставки, а CRM — щоб
          відрізняти подарунок від оплаченого раунду в історії. */
       gift,
+      /* Множник шансу — щоб клієнт зібрав ТУ САМУ рулетку з того ж
+         сида. Без нього куплений прокрут розійшовся б із сервером. */
+      chanceX,
+      /** цей раунд зіграно купленим прокрутом */
+      paidSpin,
       bonusWon: resolved.bonusWon,
       seed,
       spins: resolved.setup.spins,

@@ -36,6 +36,7 @@ import { WithdrawModal } from './WithdrawModal';
 import { PaymentsPanel } from './PaymentsPanel';
 import { WheelModal } from './WheelModal';
 import { ReferralPanel } from './ReferralPanel';
+import { SpinsModal } from './SpinsModal';
 
 const EMPTY: HudState = {
   state: 'LOADING',
@@ -407,6 +408,9 @@ export function GameClient() {
           >
             Бонус бай
           </button>
+          <button type="button" className="drawer-btn" onClick={() => openFrom('spins')}>
+            Фриспины
+          </button>
           <button type="button" className="drawer-btn" onClick={() => openFrom('ref')}>
             Пригласи друга
           </button>
@@ -457,6 +461,7 @@ export function GameClient() {
       )}
       {modal === 'payments' && <PaymentsPanel onClose={close} />}
       {modal === 'ref' && <ReferralPanel onClose={close} />}
+      {modal === 'spins' && <SpinsModal onClose={close} onBought={refreshPlayer} />}
       {modal === 'wheel' && (
         <WheelModal
           onClose={close}

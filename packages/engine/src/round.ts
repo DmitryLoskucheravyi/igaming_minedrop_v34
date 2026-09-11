@@ -37,8 +37,10 @@ export interface RoundSetup {
 
    pity=true — «пусто» прибрано з таблиці, тобто кірка гарантована;
    з того самого сида той самий тір, просто без промаху. */
-function spinBet(rnd: Rng, pity: boolean): { spins: SpinResult[]; tiers: TierId[] } {
-  const table = pity ? tierOnlyTable() : reelTable();
+function spinBet(
+  rnd: Rng, pity: boolean, chanceX: number,
+): { spins: SpinResult[]; tiers: TierId[] } {
+  const table = pity ? tierOnlyTable() : reelTable(chanceX);
   const spins: SpinResult[] = [];
   for (let i = 0; i < CONFIG.spinsPerBet; i++) {
     const slot = pickWeighted(table, rnd);
@@ -55,7 +57,7 @@ function spinBet(rnd: Rng, pity: boolean): { spins: SpinResult[]; tiers: TierId[
     pity — сервер вирішує його зі свого лічильника пустих ставок і кладе
     в RoundResult; клієнт передає сюди те саме значення. */
 export function buildSetup(
-  seed: string, pity = false, buy?: TierId, free = false,
+  seed: string, pity = false, buy?: TierId, free = false, chanceX = 1,
 ): RoundSetup {
   /* БОНУС БАЙ: рулетка не крутиться взагалі — гравець уже заплатив за
      конкретну кірку. Стартова колонка береться з того самого потоку
@@ -97,7 +99,7 @@ export function buildSetup(
     };
   }
 
-  const { spins, tiers } = spinBet(reelRnd, pity);
+  const { spins, tiers } = spinBet(reelRnd, pity, chanceX);
 
   const startCols = tiers.length ? [Math.floor(colRnd() * CONFIG.cols)] : [];
 
@@ -151,8 +153,9 @@ export interface Resolved {
     mode лишається в сигнатурі для сумісності (завжди 'bet'). */
 export function resolveRound(
   seed: string, _mode: RoundMode, bet: number, pity = false, buy?: TierId, free = false,
+  chanceX = 1,
 ): Resolved {
-  const setup = buildSetup(seed, pity, buy, free);
+  const setup = buildSetup(seed, pity, buy, free, chanceX);
   const made = createRun(seed, setup);
   const run = made ? made.run.runToEnd() : null;
   const sim = summarize(run);

@@ -1,10 +1,12 @@
-import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { CONFIG, serverSeedHash } from '@minedrop/engine';
 import type { RoundResult } from '@minedrop/engine';
 import { MongoService } from '../db/mongo.service';
 import { PlayerStore } from './player-store';
 import type { TelegramUser } from '../telegram/init-data';
+import { FS_PACK, spinsPrice } from '../spins/spins.types';
+import { BONUS_DAYS, BONUS_MAX_BET_SHARE, BONUS_MAX_CASHOUT_X } from './bonus.types';
 
 /* ============================================================
    PLAYERS — стан гравця живе на СЕРВЕРІ.
@@ -83,6 +85,58 @@ export interface PlayerRecord {
      кожен запит означало б тримати дві різні відповіді на одне
      питання. */
   refDeposited: number;
+
+  /* ОБОРОТ — сума всіх ставок за життя акаунта.
+
+     Лічильник накопичувальний і ніколи не обнуляється: він не «борг», а
+     просто пробіг. Відносно нього ставляться цілі відіграшу бонусів
+     (bonusTarget нижче).
+
+     ВЛАСНИЙ ДЕПОЗИТ ВІДІГРАШУ НЕ ВИМАГАЄ. Колись тут стояла вимога x5
+     на кожне поповнення, і це була помилка: у казино відіграш вішають
+     на БОНУС, а не на гроші гравця. Вимога до чистого депозиту — це
+     прихована комісія (оборот у 5 депозитів при віддачі 96% коштує
+     ~20% від самого депозиту), та ще й закривала вивід тих грошей, які
+     лежали на балансі ДО поповнення. Від фарму захищає замок на бонус,
+     а не це. */
+  turnover: number;
+
+  /* БОНУСНІ ГРОШІ В ОБІГУ.
+
+     Це вже не умова «спершу пограй», а замок на конкретну суму.
+     bonusLocked — скільки ₽ з балансу зараз НЕ виводяться;
+     bonusTarget — значення turnover, на якому замок спаде.
+
+     Окремого «бонусного гаманця» немає навмисно. На балансі гроші
+     однакові, розділити їх можна лише на папері, і будь-яка спроба
+     списувати «спершу бонусні» породжує питання, на які немає чесної
+     відповіді: з якого гаманця пішла ставка, куди лягла виплата, що
+     робити з виграшем із бонусної ставки. Тому баланс один, а бонус —
+     це просто число, нижче якого не можна опускати вивід.
+
+     Коли оборот дотягується до bonusTarget, замок знімається повністю,
+     і все, що на той момент лишилось на балансі, стає своїм. Програв
+     раніше — замок однаково спадає разом із грошима: він обмежує вивід,
+     а не ставки. */
+  bonusLocked: number;
+  bonusTarget: number;
+  /* Доки бонус живий. Не відіграв за цей час — замок і самі гроші
+     згорають. Без терміну подарунок висів би на балансі вічно,
+     роздуваючи видиме число й нічого не значачи. */
+  bonusUntil: number;
+  /* Стеля виводу з бонусного циклу: балансова позначка, вище за яку
+     цикл нічого не віддає. Ставиться при нарахуванні як «баланс тоді +
+     бонус * BONUS_MAX_CASHOUT_X» — на безкоштовні гроші стеля стоїть у
+     будь-якому казино, інакше подарунок у 100 ₽ може обернутись
+     виплатою в 50 000. */
+  bonusCap: number;
+
+  /* КУПЛЕНІ ФРІСПІНИ. buySpins — скільки лишилось, buySpinBet — ставка,
+     за якою пакет куплений (вона ж і грається). Ставка зберігається
+     разом із пакетом, а не береться поточна: інакше пакет, куплений на
+     10, можна було б відіграти на 2000. */
+  buySpins: number;
+  buySpinBet: number;
 
   /* КОЛЕСО ЩОДЕННОГО БОНУСУ.
      wheelAt — коли крутили востаннє; null (або 0) означає «жодного разу»,
@@ -173,6 +227,13 @@ export class PlayersService implements OnModuleInit {
       refJoinPaidAt: null,
       refDepositPaidAt: null,
       refDeposited: 0,
+      turnover: 0,
+      bonusLocked: 0,
+      bonusTarget: 0,
+      bonusUntil: 0,
+      bonusCap: 0,
+      buySpins: 0,
+      buySpinBet: 0,
       clientSeed: randomBytes(8).toString('hex'),
       serverSeed,
       serverSeedHash: serverSeedHash(serverSeed),
@@ -196,6 +257,157 @@ export class PlayersService implements OnModuleInit {
     return rec;
   }
 
+  /** Ставка зіграна: зараховуємо оборот. Зберігати окремо не треба —
+      раунд і так перезаписує гравця одразу після цього. */
+  noteWager(rec: PlayerRecord, cost: number): void {
+    if (cost <= 0) return;
+    rec.turnover = (rec.turnover ?? 0) + cost;
+    this.settleBonus(rec);
+  }
+
+  /* Стан бонусного циклу після будь-якої зміни: чи не вийшов термін, чи
+     не відіграний, чи не перевищена стеля.
+
+     Кличеться ЛІНИВО — з нарахування обороту й з місць, які показують
+     або віддають гроші. Окремий планувальник тут зайвий: поки гравець
+     нічого не робить, різниці між «бонус згорів» і «бонус ще висить»
+     немає ні для кого. */
+  settleBonus(rec: PlayerRecord): void {
+    if ((rec.bonusLocked ?? 0) <= 0) return;
+
+    /* ТЕРМІН ВИЙШОВ. Згорає і замок, і самі гроші — на те він і
+       строковий подарунок. Знімаємо рівно замкнену частину й не більше
+       за баланс: власні гроші гравця згоріти не можуть. */
+    if (rec.bonusUntil > 0 && Date.now() > rec.bonusUntil) {
+      const burn = Math.min(rec.bonusLocked, Math.max(0, rec.balance));
+      rec.balance -= burn;
+      this.log.warn(`бонус згорів: ${rec.telegramId} -${burn} -> ${rec.balance}`);
+      this.clearBonus(rec);
+      return;
+    }
+
+    if ((rec.turnover ?? 0) < rec.bonusTarget) return;
+
+    /* ВІДІГРАНО. Замок спадає з усього, що лишилось, але не вище за
+       стелю циклу: усе понад неї — виграш безкоштовних грошей, який ми
+       домовились не віддавати без межі. */
+    if (rec.bonusCap > 0 && rec.balance > rec.bonusCap) {
+      const cut = Math.round(rec.balance - rec.bonusCap);
+      rec.balance = rec.bonusCap;
+      this.log.warn(`стеля бонусу: ${rec.telegramId} зрізано ${cut} -> ${rec.balance}`);
+    }
+    this.log.log(`бонус відіграно: ${rec.telegramId} відкрито ${rec.bonusLocked} ₽`);
+    this.clearBonus(rec);
+  }
+
+  private clearBonus(rec: PlayerRecord): void {
+    rec.bonusLocked = 0;
+    rec.bonusTarget = 0;
+    rec.bonusUntil = 0;
+    rec.bonusCap = 0;
+  }
+
+  /* Стеля ставки, поки бонус не відіграний. 0 — обмеження немає.
+
+     Без неї відіграш не значить нічого: ціль знімається одним великим
+     спіном (див. BONUS_MAX_BET_SHARE). */
+  maxBet(rec: PlayerRecord): number {
+    const locked = this.locked(rec);
+    if (locked <= 0) return 0;
+    return Math.max(CONFIG.bets[0], Math.round(locked * BONUS_MAX_BET_SHARE));
+  }
+
+  /* Нарахувати БОНУСНІ гроші: на баланс лягають одразу, але замикаються
+     до відіграшу rub * multiplier.
+
+     Другий бонус не скидає прогрес першого, а подовжує ціль: інакше
+     вигідно було б ловити нарахування впритул одне за одним. */
+  grantBonus(telegramId: number, rub: number, multiplier: number, why: string): void {
+    const rec = this.players.get(telegramId);
+    if (!rec || rub <= 0) return;
+    /* Спершу розрахуємось зі старим циклом: він міг уже згоріти, і тоді
+       новий бонус не має успадкувати ні його ціль, ні його стелю. */
+    this.settleBonus(rec);
+
+    /* Баланс ДО нарахування — база стелі: те, що гравець мав своє,
+       обмежувати не можна, обмежуємо лише виграш подарунка. */
+    const before = rec.balance;
+    rec.balance += rub;
+    rec.bonusLocked = (rec.bonusLocked ?? 0) + rub;
+    const base = Math.max(rec.bonusTarget ?? 0, rec.turnover ?? 0);
+    rec.bonusTarget = base + rub * multiplier;
+    /* Термін рахується від ОСТАННЬОГО нарахування: другий бонус
+       продовжує цикл, а не доживає на хвості першого. */
+    rec.bonusUntil = Date.now() + BONUS_DAYS * 24 * 60 * 60 * 1000;
+    /* Стеля циклу: своє + кратність бонусу. Виграв понад неї на
+       подаровані гроші — надлишок не віддається (BONUS_MAX_CASHOUT_X). */
+    rec.bonusCap = Math.max(rec.bonusCap ?? 0, before + rub * BONUS_MAX_CASHOUT_X);
+    this.persist(rec);
+    this.log.warn(`бонус (${why}): ${telegramId} +${rub} -> ${rec.balance}, `
+      + `відіграти ${rub * multiplier} (ціль ${rec.bonusTarget})`);
+  }
+
+  /* Купівля пакета фріспінів: списуємо ціну, видаємо прокрути.
+
+     Ціну рахує сервер зі ставки (spinsPrice), число з клієнта сюди не
+     доходить взагалі — інакше пакет можна було б купити за одиницю. */
+  buySpins(rec: PlayerRecord, bet: number): { left: number; bet: number; balance: number } {
+    const price = spinsPrice(bet);
+    if (rec.balance < price) {
+      throw new BadRequestException(`Недостаточно монет: пакет стоит ${price} ₽`);
+    }
+    rec.balance -= price;
+    rec.buySpins = FS_PACK;
+    rec.buySpinBet = bet;
+    /* Ціна пакета — ЦЕ СТАВКА, і в оборот вона йде так само, як ставка
+       звичайного раунду чи бонус бая. Раніше не йшла, і виходило, що
+       гравець витрачає гроші на гру, а відіграш бонусу стоїть на місці. */
+    this.noteWager(rec, price);
+    this.persist(rec);
+    this.log.warn(`куплено ${FS_PACK} фріспінів: ${rec.telegramId} -${price} `
+      + `(ставка ${bet}) -> ${rec.balance}`);
+    return { left: rec.buySpins, bet, balance: rec.balance };
+  }
+
+  /* Замкнути суму, яка ВЖЕ на балансі (виграш куплених прокрутів).
+     Від grantBonus відрізняється лише тим, що грошей не додає: вони
+     прийшли виплатою раунду. */
+  lockWinnings(rec: PlayerRecord, rub: number, multiplier: number): void {
+    if (rub <= 0) return;
+    rec.bonusLocked = (rec.bonusLocked ?? 0) + rub;
+    const base = Math.max(rec.bonusTarget ?? 0, rec.turnover ?? 0);
+    rec.bonusTarget = base + rub * multiplier;
+  }
+
+  /* Замкнена частина балансу. Обмежена самим балансом: якщо гравець
+     програв бонус, замикати більше немає чого, і показувати борг, який
+     уже неможливо витратити, — тільки плутати. */
+  locked(rec: PlayerRecord): number {
+    /* Перед відповіддю добиваємо стан: бонус міг згоріти, поки гравець
+       не заходив, і показувати замок, якого вже немає, не можна. */
+    this.settleBonus(rec);
+    return Math.min(rec.bonusLocked ?? 0, Math.max(0, rec.balance));
+  }
+
+  /** Скільки з балансу реально можна подати на вивід. */
+  withdrawable(rec: PlayerRecord): number {
+    return Math.max(0, Math.floor(rec.balance - this.locked(rec)));
+  }
+
+  /* Прогрес відіграшу бонусу — для смужки в інтерфейсі. Рахуємо від
+     моменту нарахування, а не від нуля життя гравця: інакше смужка
+     стартувала б із випадкового місця. */
+  bonusProgress(rec: PlayerRecord): {
+    locked: number; done: number; need: number; until: number; maxBet: number;
+  } {
+    const locked = this.locked(rec);
+    if (locked <= 0) return { locked: 0, done: 0, need: 0, until: 0, maxBet: 0 };
+    return {
+      locked, done: rec.turnover ?? 0, need: rec.bonusTarget ?? 0,
+      until: rec.bonusUntil ?? 0, maxBet: this.maxBet(rec),
+    };
+  }
+
   /** Публічний зріз: без serverSeed, лише його хеш */
   publicState(rec: PlayerRecord) {
     return {
@@ -210,6 +422,15 @@ export class PlayersService implements OnModuleInit {
       /* Подаровані прокрути видно в тому ж зрізі, що й баланс: клієнт
          малює по них плашку й розуміє, чому наступний спін безкоштовний. */
       freeSpins: rec.freeSpins ?? 0,
+      /* Куплені прокрути — окремо від подарованих: у них інша ставка й
+         інший шанс, і плутати їх в інтерфейсі не можна. */
+      buySpins: rec.buySpins ?? 0,
+      buySpinBet: rec.buySpinBet ?? 0,
+      /* Борг по відіграшу видно в тому ж зрізі, що й баланс: клієнт
+         малює по ньому плашку у вікні виводу. */
+      /* Замкнений бонус видно поруч із балансом: на головному екрані
+         баланс один, а розклад «своє / в обігу» показує вікно виводу. */
+      locked: this.locked(rec),
       pityAt: CONFIG.pity,
       clientSeed: rec.clientSeed,
       serverSeedHash: rec.serverSeedHash,

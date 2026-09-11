@@ -6,6 +6,7 @@ import { TelegramModule } from './telegram/telegram.module';
 import { PlayersModule } from './players/players.module';
 import { WheelModule } from './wheel/wheel.module';
 import { ReferralsModule } from './referrals/referrals.module';
+import { SpinsModule } from './spins/spins.module';
 import { FairnessModule } from './fairness/fairness.module';
 import { RoundsModule } from './rounds/rounds.module';
 import { RatesModule } from './rates/rates.module';
@@ -18,7 +19,7 @@ import { WatcherModule } from './watcher/watcher.module';
   imports: [
     ConfigModule, DbModule, SettingsModule, RatesModule, TelegramModule, PlayersModule,
     FairnessModule, RoundsModule, PaymentsModule, WithdrawModule, WatcherModule,
-    AdminModule, WheelModule, ReferralsModule,
+    AdminModule, WheelModule, ReferralsModule, SpinsModule,
   ],
 })
 export class AppModule {}

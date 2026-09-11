@@ -53,7 +53,7 @@ export const CONFIG = {
      удвічі менша віддача.
 
      Ціль зараз 96%. Історія: 252 -> 428 -> 587 -> 222 -> 240 -> 216
-     -> 215 -> 191 -> 188 -> 230 -> 215 -> 133 -> 154 -> 146 -> 144.5.
+     -> 215 -> 191 -> 188 -> 230 -> 215 -> 133 -> 154 -> 146 -> 144.5 -> 144.
 
      Дробове значення тут не описка: K — просто дільник, цілим він бути
      не зобов'язаний, а 144.5 дає рівно цільові 96% там, де 144 і 145
@@ -88,7 +88,7 @@ export const CONFIG = {
      ділить і виплату бонуски, і базовий RTP, тож їхнє відношення
      лишається. А от зміна ваг блоків, фізики чи цінностей — це новий
      прогін sim/final.ts. */
-  payoutK: 144.5,
+  payoutK: 144,
   /* Стеля виграшу за раунд, у ставках. Реальний максимум на поточній
      математиці ≈ x26 на 50k ставок (p99.9 ≈ x15), тому стеля майже
      ніколи не спрацьовує — це чесний запобіжник, а не маркетингове
@@ -884,9 +884,32 @@ export const ORE_VEINS: Partial<Record<BlockId, VeinSpec>> = {
    null у полі tier = «пусто». */
 export interface ReelSlot { tier: Tier | null; weight: number }
 
-export function reelTable(): ReelSlot[] {
-  const table: ReelSlot[] = [{ tier: null, weight: CONFIG.nothingWeight }];
-  for (const t of TIERS) table.push({ tier: t, weight: t.weight });
+/* chanceX — у скільки разів підняти ЙМОВІРНІСТЬ кірки (куплені
+   фріспіни). 1 — звичайна рулетка.
+
+   Множимо не ваги кірок «на око», а рахуємо коефіцієнт так, щоб
+   ймовірність вийшла рівно вдвічі більшою: p = S/(N+S), і для цільової
+   p' потрібне k = N*p' / (S*(1-p')). Наївне «помножити ваги кірок на 2»
+   дало б не подвоєння, а щось між — і чим частіші кірки, тим сильніше
+   б недодавало.
+
+   Розклад МІЖ тірами при цьому не змінюється: усі ваги кірок множаться
+   на той самий k, тож дорогі лишаються так само рідкісними відносно
+   дешевих. Підняли частоту кірки, а не її якість. */
+export function reelTable(chanceX = 1): ReelSlot[] {
+  const nothing = CONFIG.nothingWeight;
+  let sum = 0;
+  for (const t of TIERS) sum += t.weight;
+
+  let k = 1;
+  if (chanceX !== 1 && sum > 0) {
+    const p0 = sum / (nothing + sum);
+    const p1 = Math.min(0.999, p0 * chanceX);
+    k = (nothing * p1) / (sum * (1 - p1));
+  }
+
+  const table: ReelSlot[] = [{ tier: null, weight: nothing }];
+  for (const t of TIERS) table.push({ tier: t, weight: t.weight * k });
   return table;
 }
 

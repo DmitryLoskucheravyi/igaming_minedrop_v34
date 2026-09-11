@@ -264,6 +264,13 @@ export class Run {
      спільної нормалі дотику (навіщо — див. collide). */
   private hitStrength = 0;
   private rubberKick = 0;
+  /* Цього кроку вже рвонуло. Вибух сам виставляє швидкість кірки, тому
+     звичайний відскок після нього не потрібен — і, головне, шкідливий:
+     він перераховував vx/vy від нової швидкості й зрізав бічну складову
+     вибуху до ЗВИЧАЙНОЇ стелі (4.5) замість вибухової (tntSide). На
+     екрані це виглядало як «іноді відкидає вбік, а іноді ні», залежно
+     від того, скільки клітинок кірка зачепила тим самим кроком. */
+  private blasted = false;
   private rubberNx = 0;
   private rubberNy = 0;
 
@@ -515,6 +522,7 @@ export class Run {
     this.rubberKick = 0;
     this.rubberNx = 0;
     this.rubberNy = 0;
+    this.blasted = false;
     let sumX = 0, sumY = 0;
 
     const cx = Math.floor(p.x), cy = Math.floor(p.y);
@@ -553,7 +561,7 @@ export class Run {
        пружним має вийти дотик (hitStrength), або повідомляє, що серед
        зачеплених була гума (rubberKick). Мертвій кірці відскакувати
        нічим. */
-    if (!p.dead) {
+    if (!p.dead && !this.blasted) {
       if (this.rubberKick > 0) {
         /* ТРАМПЛІН ШТОВХАЄ ВІД СЕБЕ, А НЕ ВІД СЕРЕДНЬОГО ДОТИКУ.
 
@@ -1055,6 +1063,7 @@ export class Run {
       p.vy = -P.tntBlast * (0.6 + 0.4 * fromBelow);
       /* Вибух кидає різко — це його робота, тому йому дозволено
          перевищити стелю звичайного руху (див. tntSide у config). */
+      this.blasted = true;
       const tntCap = P.maxSideSpeed * P.tntSide;
       p.vx = clamp(
         p.vx * 0.35 + (ex / len) * P.tntBlast * 0.7 + (this.rnd() - 0.5) * P.tntBlast * 0.35,

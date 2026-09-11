@@ -24,7 +24,7 @@ import { Money } from './Money';
 import { NumField } from '../ui/NumField';
 import { useAsk } from '../ui/Ask';
 import { useWithdraw, type WithdrawState } from '../hooks/useWithdraw';
-import { WITHDRAW_STATUS_RU, when } from '../lib/format';
+import { WITHDRAW_STATUS_RU, rub, when, whenFull } from '../lib/format';
 
 interface Props {
   balance: number;
@@ -70,6 +70,29 @@ export function WithdrawModal({ balance, currency, rates, onClose, onBalance }: 
 }
 
 /* ---- форма заявки ---- */
+/* Смужка відіграшу бонусу. Показує не «скільки лишилось», а шлях: де
+   був, де зараз, скільки до кінця — так зрозуміліше, що прогрес іде
+   від ставок, а не з'являється сам. */
+function BonusBar({ done, need, until, maxBet }: {
+  done: number; need: number; until: number; maxBet: number;
+}) {
+  const left = Math.max(0, need - done);
+  /* Ділити нема на що, якщо цілі немає: без цієї перевірки на порожньому
+     стані вийшов би NaN у ширині. */
+  const pct = need > 0 ? Math.min(100, Math.max(0, (done / need) * 100)) : 0;
+  return (
+    <div className="bonus-bar-wrap">
+      <div className="bonus-bar"><i style={{ width: pct.toFixed(1) + '%' }} /></div>
+      <p className="dep-sub">
+        Отыграно {rub(done)} из {rub(need)} ₽ — осталось <b>{rub(left)} ₽</b> ставок.
+        Деньги не списываются: это оборот.
+        {maxBet > 0 && ` Пока бонус в отыгрыше, ставка не больше ${rub(maxBet)} ₽.`}
+        {until > 0 && ` Успеть до ${whenFull(until)} — иначе бонус сгорит.`}
+      </p>
+    </div>
+  );
+}
+
 function WithdrawForm({ wd, balance, currency, rates }: {
   wd: WithdrawState; balance: number; currency: CurrencyCode; rates: Rates;
 }) {
@@ -96,10 +119,10 @@ function WithdrawForm({ wd, balance, currency, rates }: {
         <button
           type="button"
           className="dep-chip"
-          onClick={() => wd.setAmount(Math.floor(balance))}
-          disabled={balance < wd.min}
+          onClick={() => wd.setAmount(Math.floor(wd.available))}
+          disabled={wd.available < wd.min}
         >
-          всё (<Money rub={balance} currency={currency} rates={rates} whole />)
+          всё (<Money rub={wd.available} currency={currency} rates={rates} whole />)
         </button>
       </div>
 
@@ -120,10 +143,35 @@ function WithdrawForm({ wd, balance, currency, rates }: {
           : 'Сверь адрес: перевод в блокчейне не отменить.'}
       </p>
 
+      {/* РОЗКЛАД БАЛАНСУ. На головному екрані баланс один — так і має
+          бути, гравець грає всім разом. А тут, де йдеться про вивід,
+          різниця вже принципова, і ховати її не можна. */}
       <div className="wd-row">
         <span className="dep-k">На балансе</span>
         <span className="dep-v"><Money rub={balance} currency={currency} rates={rates} whole /></span>
       </div>
+      {wd.bonus.locked > 0 && (
+        <>
+          <div className="wd-row">
+            <span className="dep-k">Доступно к выводу</span>
+            <span className="dep-v ok">
+              <Money rub={wd.available} currency={currency} rates={rates} whole />
+            </span>
+          </div>
+          <div className="wd-row">
+            <span className="dep-k">Бонус в отыгрыше</span>
+            <span className="dep-v locked">
+              <Money rub={wd.bonus.locked} currency={currency} rates={rates} whole />
+            </span>
+          </div>
+          <BonusBar
+            done={wd.bonus.done}
+            need={wd.bonus.need}
+            until={wd.bonus.until}
+            maxBet={wd.bonus.maxBet}
+          />
+        </>
+      )}
 
       <button
         type="button"
@@ -132,7 +180,7 @@ function WithdrawForm({ wd, balance, currency, rates }: {
         onClick={() => void wd.create()}
       >
         {wd.busy ? 'Создаю…'
-          : wd.tooBig ? 'На балансе недостаточно'
+          : wd.tooBig ? 'Больше, чем доступно к выводу'
           : wd.overMax ? `Максимум ${wd.max} ₽`
           : 'Создать заявку'}
       </button>

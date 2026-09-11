@@ -766,7 +766,11 @@ export class Presenter {
 
     /* Розбираємо сид САМІ. Якщо сервер прислав спини, яких із цього
        сида не виходить, — це не наша гра, і про це треба сказати вголос. */
-    this.setup = buildSetup(round.seed, round.pity, round.buy, !!round.free);
+    /* chanceX — множник шансу куплених фріспінів. Без нього клієнт
+       зібрав би з того самого сида іншу рулетку й розійшовся б із
+       сервером саме на тих раундах, за які гравець заплатив. */
+    this.setup = buildSetup(
+      round.seed, round.pity, round.buy, !!round.free, round.chanceX ?? 1);
     if (this.setup.spins.join() !== round.spins.join()
       || this.setup.tiers.join() !== round.tiers.join()
       || this.setup.startCols.join() !== round.startCols.join()) {

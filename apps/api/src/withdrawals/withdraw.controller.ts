@@ -30,12 +30,14 @@ export class WithdrawController {
   /** Історія виводів + активна заявка. */
   @Get('me')
   me(@TgUser() user: TelegramUser) {
-    this.players.findOrCreate(user);
+    const rec = this.players.findOrCreate(user);
     return {
       active: this.withdraw.activeFor(user.id) ?? null,
       history: this.withdraw.listForPlayer(user.id),
       minRub: WITHDRAW_MIN_RUB,
       maxRub: WITHDRAW_MAX_RUB,
+      bonus: this.players.bonusProgress(rec),
+      available: this.players.withdrawable(rec),
     };
   }
 
