@@ -26,16 +26,40 @@ export class PlayerStore {
     this.col = db.collection<StoredPlayer>('players');
   }
 
-  /** Усі гравці з БД. Дозаповнюємо поля, яких могло не бути в старих
-      документах (dryStreaks/revealed/history), щоб код далі не думав про це.
-      Старе поле dryStreak (одне число) просто ігнорується — серії тепер
-      живуть по ставках, невелика втрата серії при міграції прийнятна. */
+  /* Усі гравці з БД.
+
+     Тут же живе МІГРАЦІЯ старих документів. Правило одне: код вище не
+     має знати, якого віку запис, тому всі поля, додані пізніше,
+     дозаповнюються саме тут.
+
+     ПЕРЕХІД НА ДВА БАЛАНСИ. Колись було одне поле balance плюс число
+     bonusLocked («скільки з нього не виводиться»). Розкладаємо його
+     чесно: замкнена частина стає бонусним балансом, решта — готівкою.
+     Невиконаний залишок відіграшу (bonusTarget - turnover) переїжджає
+     у wagerNeed, а прогрес починається з нуля — від нової бази його
+     однаково не відрахувати.
+
+     Старе поле dryStreak (одне число) просто ігнорується: серії тепер
+     живуть по ставках, невелика втрата серії при міграції прийнятна. */
   async loadAll(): Promise<PlayerRecord[]> {
     const docs = await this.col.find().toArray();
     return docs.map((d) => {
-      const { _id, dryStreak, ...rest } = d as
-        { _id: number; dryStreak?: number } & Record<string, unknown>;
+      const {
+        _id, dryStreak, balance, bonusLocked, bonusTarget, turnover, ...rest
+      } = d as {
+        _id: number; dryStreak?: number; balance?: number;
+        bonusLocked?: number; bonusTarget?: number; turnover?: number;
+      } & Record<string, unknown>;
       void _id; void dryStreak;
+
+      const locked = Math.max(0, Math.min(bonusLocked ?? 0, balance ?? 0));
+      const legacy = balance === undefined ? {} : {
+        cash: Math.max(0, (balance ?? 0) - locked),
+        bonus: locked,
+        wagerNeed: Math.max(0, (bonusTarget ?? 0) - (turnover ?? 0)),
+        wagerDone: 0,
+      };
+
       return {
         dryStreaks: {},
         pendingBonus: null,
@@ -51,16 +75,20 @@ export class PlayerStore {
         refJoinPaidAt: null,
         refDepositPaidAt: null,
         refDeposited: 0,
-        /* Оборот з'явився пізніше за перших гравців: нуль означає, що
-           пробіг рахуємо з моменту появи лічильника. Заднім числом його
-           не відновити, та й потреби немає — цілі відіграшу теж
-           ставляться від «зараз». */
-        turnover: 0,
-        bonusLocked: 0,
-        bonusTarget: 0,
+        cash: 0,
+        bonus: 0,
+        wagerNeed: 0,
+        wagerDone: 0,
         bonusUntil: 0,
         bonusCap: 0,
+        freeSpinWin: 0,
+        buySpins: 0,
+        buySpinBet: 0,
         ...rest,
+        /* Розклад зі старого balance кладеться ПІСЛЯ rest: він точніший
+           за дефолти й має перекривати їх, але тільки якщо старе поле
+           взагалі було. */
+        ...legacy,
       } as unknown as PlayerRecord;
     });
   }

@@ -28,7 +28,11 @@ export class AdminPlayersController {
         telegramId: r.telegramId,
         firstName: r.firstName,
         username: r.username ?? null,
-        balance: r.balance,
+        /* Адмін бачить розклад: у CRM різниця між готівкою й бонусом
+           у відіграші принципова — перше виводиться, друге ні. */
+        balance: this.players.total(r),
+        cash: r.cash ?? 0,
+        bonus: r.bonus ?? 0,
         nonce: r.nonce,
         // найдовша серія до гарантії серед усіх ставок гравця
         dryStreak: Math.max(0, ...Object.values(r.dryStreaks)),

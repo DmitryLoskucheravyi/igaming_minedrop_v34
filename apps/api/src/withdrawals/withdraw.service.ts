@@ -85,7 +85,7 @@ export class WithdrawService implements OnModuleInit {
 
     const available = this.players.withdrawable(player);
     if (value > available) {
-      const locked = this.players.locked(player);
+      const locked = player.bonus ?? 0;
       throw new BadRequestException(
         `Доступно к выводу ${available} ₽: ещё ${locked} ₽ — бонус в отыгрыше`);
     }

@@ -42,6 +42,11 @@ export interface PlayerState {
   pendingBonus: { bet: number } | null;
   /** подаровані колесом прокрути, які ще не зіграні */
   freeSpins: number;
+  /* Розклад балансу. Гравцю показується сума (balance вище), а ці два
+     числа потрібні там, де різниця щось означає: готівка виводиться,
+     бонус спершу треба відіграти. */
+  cash: number;
+  bonus: number;
   pityAt: number;
   clientSeed: string;
   serverSeedHash: string;

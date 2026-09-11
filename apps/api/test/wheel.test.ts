@@ -27,9 +27,18 @@ function test(name: string, fn: () => void): void {
 
 function make(): { svc: WheelService; rec: PlayerRecord; credited: number[] } {
   const credited: number[] = [];
-  const rec = { telegramId: 1, balance: 0, wheelAt: null, freeSpins: 0 } as PlayerRecord;
+  /* Баланс тепер два (готівка + бонус) — колесо платить ГОТІВКОЮ через
+     topUp, тож стенду досить її однієї. */
+  const rec = {
+    telegramId: 1, cash: 0, bonus: 0, wheelAt: null, freeSpins: 0,
+  } as PlayerRecord;
   const players = {
-    topUp: (_id: number, amount: number) => { credited.push(amount); rec.balance += amount; return rec.balance; },
+    total: () => rec.cash + rec.bonus,
+    topUp: (_id: number, amount: number) => {
+      credited.push(amount);
+      rec.cash += amount;
+      return rec.cash;
+    },
     persist: () => undefined,
   } as never;
   return { svc: new WheelService(players), rec, credited };
@@ -42,7 +51,7 @@ function main(): void {
       const res = svc.spin(rec);
       assert.equal(res.prize.id, WHEEL_FIRST_PRIZE);
       assert.equal(credited[0], res.prize.rub);
-      assert.equal(rec.balance, res.prize.rub);
+      assert.equal(rec.cash, res.prize.rub);
     }
   });
 
@@ -90,13 +99,13 @@ function main(): void {
     const { svc, rec, credited } = make();
     const spins = WHEEL_PRIZES.find((p) => p.spins > 0)!;
     rec.wheelAt = Date.now() - WHEEL_COOLDOWN_MS - 1000;
-    const before = rec.balance;
+    const before = rec.cash;
     /* Найрідкісніший сектор чекати жеребкуванням безглуздо — заводимо
        гравцю запас напряму й перевіряємо саме накопичення. */
     rec.freeSpins = 2;
     rec.freeSpins += spins.spins;
     assert.equal(rec.freeSpins, 2 + spins.spins);
-    assert.equal(rec.balance, before);
+    assert.equal(rec.cash, before);
     assert.equal(credited.length, 0);
   });
 

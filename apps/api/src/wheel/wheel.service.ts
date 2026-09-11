@@ -105,6 +105,6 @@ export class WheelService {
     else this.players.persist(rec);
 
     this.log.log(`колесо: ${rec.telegramId} -> ${prize.label}`);
-    return { prize, index, state: this.state(rec), balance: rec.balance };
+    return { prize, index, state: this.state(rec), balance: this.players.total(rec) };
   }
 }

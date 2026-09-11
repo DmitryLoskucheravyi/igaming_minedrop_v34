@@ -34,7 +34,10 @@ export class AdminRequestsController {
   private playerOf(telegramId: number) {
     const pl = this.players.byId(telegramId);
     return pl
-      ? { firstName: pl.firstName, username: pl.username ?? null, balance: pl.balance }
+      ? {
+        firstName: pl.firstName, username: pl.username ?? null,
+        balance: (pl.cash ?? 0) + (pl.bonus ?? 0),
+      }
       : null;
   }
 

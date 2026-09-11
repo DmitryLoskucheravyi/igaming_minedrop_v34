@@ -30,7 +30,7 @@ export class SpinsController {
       prices: Object.fromEntries(CONFIG.bets.map((b) => [b, spinsPrice(b)])),
       left: rec.buySpins ?? 0,
       bet: rec.buySpinBet ?? 0,
-      balance: rec.balance,
+      balance: this.players.total(rec),
     };
   }
 
