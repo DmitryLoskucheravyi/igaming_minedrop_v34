@@ -65,21 +65,41 @@ const PRUNE_EVERY = 60;   // кроків між прибираннями
 
 /* TNT: вибух — не статична фігура (квадрат) і не рівномірний розкид по
    ньому, а ПРОМЕНІ з епіцентру в випадкових напрямках (як у Minecraft):
-   кожен промінь має свою "потужність", яка гасне по дорозі — тому форма
-   виходить органічною випуклістю, різною щоразу, з нерівними краями,
-   а не рівним колом чи квадратом. TNT_RAYS — скільки променів пускати;
-   TNT_POWER_MIN/MAX — стартова потужність променя; TNT_STEP — крок
-   променя в клітинках; TNT_DECAY_MIN/RAND — на скільки потужність
-   гасне за крок. TNT_MAX_HITS лишається жорсткою стелею (безпека і
-   узгодженість з інваріантом у sim/smoke.ts), якщо променів випадково
-   зійшлось забагато. */
-export const TNT_RAYS = 9;         // було 14 — вибух менший за проханням
-export const TNT_POWER_MIN = 1.6;  // було 2.4
-export const TNT_POWER_MAX = 3.0;  // було 4.4
+   кожен промінь має свою "потужність", яка гасне по дорозі.
+
+   ЧОМУ РАНІШЕ ВИХОДИЛО ВСЕ ОДНО РІВНЕ КОЛО. Гасіння перекидалось НА
+   КОЖНОМУ КРОЦІ, і за сім-вісім кроків ці кидки усереднювались: усі
+   промені долітали приблизно однаково далеко. Тобто випадковість була,
+   але закон великих чисел з'їдав її саме там, де вона й потрібна.
+
+   Тепер розкид ПО ПРОМЕНЮ, а не по кроку:
+     - своє гасіння на весь промінь (TNT_DECAY_MIN/RAND). Промінь із
+       малим гасінням пробиває далеко, із великим — глухне поруч, і
+       вибух виходить із язиками, а не кулею;
+     - промінь ще й ВИЛЯЄ по дорозі (TNT_WOBBLE) — тому край рваний, а
+       не циркульний.
+
+   TNT_RAYS — скільки променів пускати; TNT_POWER_MIN/MAX — стартова
+   потужність; TNT_STEP — крок у клітинках. Дальність променя ≈
+   power / decay * step, тобто зараз від ~1.4 до ~7.6 клітинок за
+   промінь, з типовим значенням близько 3.1 (було рівно ~2.1 в усіх
+   променів, звідси й рівне коло).
+
+   TNT_MAX_HITS лишається жорсткою стелею (безпека і узгодженість з
+   інваріантом у sim/smoke.ts), якщо променів випадково зійшлось
+   забагато. Піднято разом із радіусом: на старій стелі більший вибух
+   просто обрізався б, і зусилля пішло б у нікуди. */
+export const TNT_RAYS = 13;        // 14 -> 9 -> 13
+export const TNT_POWER_MIN = 2.1;  // 2.4 -> 1.6 -> 2.4 -> 2.1
+export const TNT_POWER_MAX = 4.2;  // 4.4 -> 3.0 -> 5.0 -> 4.2
 export const TNT_STEP = 0.4;
-export const TNT_DECAY_MIN = 0.3;
-export const TNT_DECAY_RAND = 0.25;
-export const TNT_MAX_HITS = 28;    // стеля ТВЕРДИХ блоків на одну детонацію
+/* Гасіння — ОДНЕ НА ВЕСЬ ПРОМІНЬ (див. пояснення вище), не на крок. */
+export const TNT_DECAY_MIN = 0.22;
+export const TNT_DECAY_RAND = 0.38;
+/* На скільки радіан промінь може вильнути за крок. Дає рваний край;
+   більше — і промені почнуть закручуватись у спіраль замість летіти. */
+export const TNT_WOBBLE = 0.22;
+export const TNT_MAX_HITS = 44;    // стеля ТВЕРДИХ блоків на одну детонацію
                                     // (TNT у наборі не ріжеться — див. impact()).
 export const TNT_CHAIN_RADIUS = 2; // увесь TNT у цьому радіусі від епіцентру
                                     // детонує гарантовано, поза залежністю від променів
@@ -131,9 +151,6 @@ export const MULT_WINDOW_SEC = 15;
    Тож поріг піднято, а поштовх послаблено — і головне, він тепер
    переважно КРУТИТЬ кірку, а бічну швидкість додає лише як затравку.
    Далі її підхоплює вже звичайна фізика дотику. */
-/* Ближче за стільки клітинок до стінки зрив однозначно йде ВІД неї:
-   там вибору немає, у стінку штовхати нікуди. */
-const WALL_GUARD = 2.2;
 
 /* ---- ВИШТОВХУВАННЯ З БЛОКУ (див. Run.separate) ----
    Скільки разів за крок повторити розділення. Одного проходу мало:
@@ -398,13 +415,18 @@ export class Run {
            видимого кувирка, а не ривок нізвідки. Центр більше нікого не
            притягує; стінка ж лишається межею — за WALL_GUARD від неї
            напрямок однозначно «від стінки». */
-        const nearLeft = p.x < WALL_GUARD;
-        const nearRight = p.x > this.mine.cols - WALL_GUARD;
+        const nearLeft = p.x < P.wallGuard;
+        const nearRight = p.x > this.mine.cols - P.wallGuard;
+        const atWall = nearLeft || nearRight;
         const dir = nearLeft ? 1
           : nearRight ? -1
           : Math.abs(p.rotV) > 1e-3 ? Math.sign(p.rotV)
           : (this.rnd() < 0.5 ? -1 : 1);
-        p.vx = clamp(p.vx + dir * P.straightPush * (0.6 + this.rnd() * 0.8),
+        /* Біля стінки штовхаємо сильніше (wallEscape): звичайного
+           поштовху там не вистачає, щоб вийти з крайньої смуги, і кірка
+           лишалась висіти на місці, лише щосекунди смикаючись. */
+        const push = P.straightPush * (atWall ? P.wallEscape : 1);
+        p.vx = clamp(p.vx + dir * push * (0.6 + this.rnd() * 0.8),
                      -P.maxSideSpeed, P.maxSideSpeed);
         /* Крутимо сильніше, ніж штовхаємо: далі кірку понесе вбік уже
            тертя на першому ж дотику, і рух вийде наслідком видимого
@@ -456,10 +478,10 @@ export class Run {
        відштовхується вбік ТА гальмує падіння, як і має. */
     if (p.x < R) {
       p.x = R;
-      if (p.vx < 0) this.resolveContact(p, R, 1, 0, P.wallBounce, 0, P.maxRise);
+      if (p.vx < 0) this.resolveContact(p, R, 1, 0, P.wallBounce, P.wallKick, P.maxRise);
     } else if (p.x > this.mine.cols - R) {
       p.x = this.mine.cols - R;
-      if (p.vx > 0) this.resolveContact(p, R, -1, 0, P.wallBounce, 0, P.maxRise);
+      if (p.vx > 0) this.resolveContact(p, R, -1, 0, P.wallBounce, P.wallKick, P.maxRise);
     }
 
     /* Колізія — не одна точка попереду по вектору швидкості (тоді
@@ -939,14 +961,17 @@ export class Run {
 
         const hitMap = new Map<string, { r: number; c: number; id: Cell['id'] }>();
         for (let i = 0; i < TNT_RAYS; i++) {
-          const angle = this.rnd() * Math.PI * 2;
-          const dx = Math.cos(angle), dy = Math.sin(angle);
+          let angle = this.rnd() * Math.PI * 2;
           let power = TNT_POWER_MIN + this.rnd() * (TNT_POWER_MAX - TNT_POWER_MIN);
+          /* Одне гасіння на весь промінь — саме воно й робить форму
+             нерівною (див. коментар до констант). */
+          const decay = TNT_DECAY_MIN + this.rnd() * TNT_DECAY_RAND;
           let x = ec + 0.5, y = er + 0.5;
           while (power > 0) {
-            x += dx * TNT_STEP;
-            y += dy * TNT_STEP;
-            power -= TNT_DECAY_MIN + this.rnd() * TNT_DECAY_RAND;
+            angle += (this.rnd() - 0.5) * TNT_WOBBLE;
+            x += Math.cos(angle) * TNT_STEP;
+            y += Math.sin(angle) * TNT_STEP;
+            power -= decay;
             const rr = Math.floor(y), cc = Math.floor(x);
             const key = rr + ',' + cc;
             if (cleared.has(key) || hitMap.has(key)) continue;
@@ -1028,9 +1053,12 @@ export class Run {
       const fromBelow = Math.max(0, -ey / len);   // 1 — рвонуло рівно під кіркою
 
       p.vy = -P.tntBlast * (0.6 + 0.4 * fromBelow);
+      /* Вибух кидає різко — це його робота, тому йому дозволено
+         перевищити стелю звичайного руху (див. tntSide у config). */
+      const tntCap = P.maxSideSpeed * P.tntSide;
       p.vx = clamp(
         p.vx * 0.35 + (ex / len) * P.tntBlast * 0.7 + (this.rnd() - 0.5) * P.tntBlast * 0.35,
-        -P.maxSideSpeed, P.maxSideSpeed,
+        -tntCap, tntCap,
       );
       p.rotV += (this.rnd() < 0.5 ? -1 : 1) * P.spinKick * 1.2;
       this.checkDead(p, idx);
