@@ -146,9 +146,20 @@ export class Mine {
 
     const oreMap = this.oreMapFor(Math.floor(r / ORE_REGION_ROWS));
 
+    /* Слайм кладеться лише в центральній смузі (CONFIG.rubber.centerFrac):
+       біля стінки трамплін відкидає кірку в саму стінку. Підміна робиться
+       ПІСЛЯ вибору, а не викиданням слайма з ваг: інакше на крайніх
+       колонках зсунувся б увесь розклад блоків, а з ним і ряд перестав би
+       збігатися між сервером і клієнтом при тому самому сіді. Тут же
+       випадкове число вже витрачене, тож потік rnd() не міняється. */
+    const rubberHalf = (this.cols * CONFIG.rubber.centerFrac) / 2;
+
     for (let c = 0; c < this.cols; c++) {
       const ore = oreMap.get(r + ',' + c);
-      const k = ore ?? (pickWeightedKey(w, rnd, 'stone') as BlockId | 'air');
+      let k = ore ?? (pickWeightedKey(w, rnd, 'stone') as BlockId | 'air');
+      if (k === 'rubber' && Math.abs(c + 0.5 - this.cols / 2) > rubberHalf) {
+        k = 'stone';
+      }
       if (k === 'air') { row[c] = null; continue; }
       const cell: Cell = {
         id: k as BlockId,
