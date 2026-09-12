@@ -164,14 +164,19 @@ export function drawLiveLog(c: HudCtx, toasts: readonly Toast[], playing: boolea
 }
 
 /* Сумарний виграш поточного забігу — постійний напис зверху по
-   центру, просто текстом (без фону). Живе, доки триває копання. */
+   центру, просто текстом (без фону). Живе, доки триває копання.
+
+   Перед сумою слово WIN: саме число посеред екрана не каже, ЩО це за
+   число — виграш, ставка чи баланс. Слово латиницею навмисно, як на
+   табличці результату (ui/win-word.png): два написи про одне й те саме
+   не мають бути різними словами. */
 
 export function drawRunningTotal(c: HudCtx, run: Run | null, runBet: number, running: boolean): void {
   if (!run || !running) return;
   const cash = run.collected * runBet / CONFIG.payoutK;
   if (cash <= 0) return;   // "+0" на весь екран нічого не каже — просто мовчимо, доки нема чого показати
   c.money(cash, c.w / 2, 46 + c.topInset,
-    '800 20px ui-monospace, monospace', '#ffd34d');
+    '800 20px ui-monospace, monospace', '#ffd34d', 'center', 'WIN ');
 }
 
 /* Скаттери поточного забігу — три зірки в ряд під сумою.

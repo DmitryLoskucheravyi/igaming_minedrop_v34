@@ -25,7 +25,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TierId } from '@minedrop/engine';
-import { Presenter, type HudState } from '../game/presenter';
+import { Presenter, SPEEDS, type HudState } from '../game/presenter';
 import { CURRENCIES, CURRENCY_META, FALLBACK_RATES, type CurrencyCode } from '../lib/currency';
 import { useCurrency, useDepositBadge, useModal, useWheelBadge } from '../hooks/useGameShell';
 import { Money } from './Money';
@@ -167,6 +167,12 @@ export function GameClient() {
   // RESULT без панелі на канвасі (нульовий виграш) — тут і тільки тут
   // повідомлення показує сам HUD, бо полю нема чого малювати.
   const showMessage = hud.state !== 'IDLE' && (hud.state !== 'RESULT' || hud.resultEmpty);
+
+  /* Скільки стрілок швидкості горить: рівно позиція поточного режиму в
+     списку. x1 — нуль, тобто всі сірі. indexOf може дати -1, якщо
+     швидкість прийшла не зі списку, — тоді теж нуль, а не мінус одна
+     стрілка. */
+  const speedLit = Math.max(0, SPEEDS.indexOf(hud.speed));
   const statusText = hud.error ?? (showMessage ? hud.message : '');
 
   return (
@@ -261,32 +267,16 @@ export function GameClient() {
             className="buybtn"
             onClick={() => open('buy')}
             disabled={roundInFlight}
+            aria-label="Бонус бай"
           >
-            Бонус бай
+            {/* Напис намальований усередині картинки, тому тексту в
+                кнопці немає — але є aria-label: для читача екрана
+                кнопка без назви це кнопка без назви. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/ui/bonus-btn.png" alt="" draggable={false} />
           </button>
 
-          <div className="bet-readout">
-            <Money rub={hud.bet} currency={currency} rates={hud.rates} whole bump />
-          </div>
-
           <div className="control-row">
-            <button
-              type="button"
-              className={'sidebtn speedbtn' + (hud.speed > 1 ? ' fast' : '')}
-              onClick={cycleSpeed}
-              aria-label={'Скорость ×' + hud.speed}
-              title={'Скорость игры ×' + hud.speed}
-            >
-              {hud.speed > 1
-                ? <span className={'speed-num' + (hud.speed >= 10 ? ' small' : '')}>{hud.speed}×</span>
-                : (
-                  <svg className="ic-stroke" viewBox="0 0 24 24" aria-hidden="true">
-                    <polyline points="5 5 12 12 5 19" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
-                )}
-            </button>
-
             <div className="control-core">
               <button type="button" className="stepbtn" disabled={!canBetDown} onClick={betDown} aria-label="Ставка меньше">−</button>
 
@@ -324,6 +314,49 @@ export function GameClient() {
                 ? <svg className="ic-fill" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
                 : <svg className="ic-fill" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l12 7-12 7z" /></svg>}
             </button>
+          </div>
+        </div>
+
+        {/* ЛІВИЙ НИЖНІЙ КУТ: швидкість і ставка.
+
+            Стоїть окремо від центральної колонки й НИЖЧЕ за неї, а не
+            поруч: на вузькому телефоні (360 px) ряд «− пуск +» разом з
+            автогрою займає 266 px, тобто починається вже з 47-ї
+            точки — кутовий блок наїхав би на кнопку «−». Через це
+            .controls підняті, а кут живе у власній смузі під ними.
+
+            Клас playing той самий, що в панелі: поки кірка летить,
+            унизу канваса малюється лог виграшу, і все зайве має з'їхати
+            йому з дороги. */}
+        <div className={'hud-left' + (playing ? ' playing' : '')}>
+          {/* ШВИДКІСТЬ — не перемикач із числом, а смужка: по стрілці на
+              кожен режим понад звичайний, і загоряються вони поступово.
+              На x1 усі сірі — тобто «не розігнано» видно без читання
+              цифри, самою кількістю світла. */}
+          <button
+            type="button"
+            className="speedbtn"
+            onClick={cycleSpeed}
+            aria-label={'Скорость ×' + hud.speed}
+            title={'Скорость игры ×' + hud.speed}
+          >
+            {SPEEDS.slice(1).map((sp, i) => (
+              <svg
+                key={sp}
+                className={'sp-arrow' + (i < speedLit ? ' on' : '')}
+                viewBox="0 0 12 24"
+                aria-hidden="true"
+              >
+                <polyline points="3 5 9 12 3 19" />
+              </svg>
+            ))}
+          </button>
+
+          {/* Ставка без плашки: підкладка тут сперечалася б із кутовим
+              положенням — у кутку читається сам напис, а не пігулка. */}
+          <div className="bet-line">
+            <span className="bet-word">BET</span>
+            <Money rub={hud.bet} currency={currency} rates={hud.rates} whole bump />
           </div>
         </div>
       </div>

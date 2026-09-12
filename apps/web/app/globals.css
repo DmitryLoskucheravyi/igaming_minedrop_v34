@@ -183,14 +183,14 @@ html, body {
 .balance-chip {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px 6px 5px 14px;
+  gap: 8px;
+  padding: 4px 5px 4px 11px;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--rPill);
 }
 .balance-chip .value {
-  font: 700 17px ui-monospace, monospace;
+  font: 700 15px ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   color: var(--gold);
 }
@@ -219,8 +219,8 @@ html, body {
 
 /* ---- кнопка «+» біля балансу ---- */
 .deposit-btn {
-  width: 30px;
-  height: 30px;
+  width: 27px;
+  height: 27px;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -308,6 +308,12 @@ html, body {
   position: absolute;
   left: 0;
   right: 0;
+  /* Панель стоїть на самому низу — це головна дія екрана, і місце в
+     неї крайнє нижнє. Лівий кут (ставка й швидкість) поруч із нею
+     вміщується лише тому, що обидва стиснуті: ряд «− пуск +» у сітці
+     центрований, його ядро займає 200 px, тобто на 360 px починається
+     з 80-ї точки, а кут закінчується на 70-й. Чіпаєш розміри — звіряй
+     цю пару чисел, інакше кут наїде на «−». */
   bottom: 18px;
   z-index: 3;
   display: flex;
@@ -319,48 +325,111 @@ html, body {
 }
 .controls > * { pointer-events: auto; }
 
-/* Бонус бай просто на полі — над ставкою. Золотий, бо це єдина платна
-   дія в нижній панелі й вона має читатись окремо від сірих кнопок. */
+/* Бонус бай — НАМАЛЬОВАНА кнопка (public/ui/bonus-btn.png), а не
+   пігулка з текстом. Своїх фарб у неї більше немає: підложка, рамка й
+   тінь намальовані в самій картинці, і якби вони лишились у css, під
+   золотом проступав би другий, намальований кодом прямокутник.
+
+   Розмір задаємо ШИРИНОЮ, висоту тримає aspect-ratio за пропорціями
+   файлу (324x143): так кнопка не попливе, якщо колись перемалювати арт
+   у іншій роздільності.
+
+   Файл зведено до 324 px: на екрані кнопка 84 px, тобто навіть із
+   запасом на потрійну щільність (252 px) — а більшої на телефонах не
+   буває. Оригінал лежить у art/ui, перегнати можна scripts/cutout.mjs. */
 .buybtn {
   /* Праворуч, а не по центру: центр нижньої панелі належить ставці й
      кнопці «грати», і платна дія не має з ними конкурувати за вісь. */
   align-self: flex-end;
   margin-right: 14px;
-  min-height: 34px;
-  font: 700 12px inherit;
-  letter-spacing: .04em;
-  color: var(--onGold);
-  background: var(--goldFloat);
-  -webkit-backdrop-filter: var(--floatBlur);
-  backdrop-filter: var(--floatBlur);
-  border: 1px solid var(--floatBorder);
-  border-radius: var(--rPill);
-  box-shadow: var(--floatShadow);
-  padding: 8px 16px;
+  width: 84px;
+  aspect-ratio: 324 / 143;
+  /* Ближче до ряду кнопок: коли ставка поїхала в кут, над рядом
+     лишився зайвий повітряний проміжок. */
+  margin-bottom: -4px;
+  padding: 0;
+  background: none;
+  border: 0;
   cursor: pointer;
+  /* Тінь під самою кнопкою, а не під прямокутником: drop-shadow іде за
+     альфою, box-shadow обвів би порожній кут. */
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .45));
 }
-.buybtn:hover:not(:disabled) { background: var(--goldFloatUp); }
+.buybtn img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Арт гладкий (глянець, градієнти), тож pixelated тут НЕ ставимо —
+     на відміну від решти інтерфейсу, який справді піксельний. */
+  object-fit: contain;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+/* Наведення підсвічує сам метал, а не підкладає інший фон — фону
+   більше немає. */
+/* Окремим рядком, бо спільний перехід нижче перелічує background і
+   border-color — те, чого в цієї кнопки більше немає, а міняється в
+   неї саме filter. */
+.buybtn { transition: filter var(--t) var(--ease), scale var(--t-press) var(--ease),
+                      transform .3s var(--ease), opacity .2s ease; }
+.buybtn:hover:not(:disabled) { filter: drop-shadow(0 3px 8px rgba(0, 0, 0, .5)) brightness(1.08); }
 .buybtn:disabled { opacity: .4; cursor: default; }
 
-.bet-readout {
-  font: 700 15px ui-monospace, monospace;
+/* ---- ЛІВИЙ НИЖНІЙ КУТ: швидкість над ставкою ---- */
+.hud-left {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  transition: transform .3s var(--ease), opacity .2s ease;
+}
+/* Їде вниз разом із панеллю: поки кірка летить, унизу канваса
+   малюється лог виграшу, і кут стоїть рівно на його шляху. */
+.hud-left.playing { transform: translateY(120px); opacity: 0; pointer-events: none; }
+
+/* Ставка без плашки. Тінь замість підкладки: над травою й над каменем
+   однаково світлий напис інакше не тримається, а пігулка в кутку
+   виглядала б як ще одна кнопка. */
+.bet-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  font: 700 14px ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   color: var(--gold);
-  background: var(--floatBg);
-  -webkit-backdrop-filter: var(--floatBlur);
-  backdrop-filter: var(--floatBlur);
-  border: 1px solid var(--floatBorder);
-  box-shadow: var(--floatShadow);
-  padding: 5px 16px;
-  border-radius: var(--rPill);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .85), 0 0 10px rgba(0, 0, 0, .55);
+  padding-left: 2px;
+}
+.bet-word {
+  font-size: 10px;
+  letter-spacing: .12em;
+  color: var(--muted);
 }
 
+/* Сітка, а не flex, і саме через центрування головної кнопки.
+
+   Коли швидкість пішла в лівий кут, у ряду лишилась одна бокова
+   кнопка — автогра праворуч. У flex вона тягла б ряд на себе, і «пуск»
+   ставав би лівіше за середину екрана на пів своєї ширини: заміряно
+   29 px зсуву на 390 px ширини, і це видно.
+
+   Три колонки 1fr / auto / 1fr: ядро завжди рівно по центру сцени, а
+   бокові кнопки живуть у своїх колонках і на нього не впливають —
+   скільки б їх там не було. */
 .control-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 14px;
+  width: 100%;
   pointer-events: none;
 }
+.control-core { grid-column: 2; }
+.control-row > .sidebtn { grid-column: 3; justify-self: start; }
 .control-row button { pointer-events: auto; }
 .control-core {
   display: flex;
@@ -383,9 +452,11 @@ html, body {
    уже зайнятий від'їздом панелі, і кнопка тиснулась би ті самі 300 мс
    замість миттєвого відгуку. Тому press — це окрема властивість
    `scale`, вона компонується з translateY і має власну тривалість. */
+/* .buybtn сюди більше не входить: у неї немає ні фону, ні рамки, а
+   міняється filter — свій перехід вона оголошує сама, вище. Лишити її
+   тут означало б, що це правило (воно нижче за файлом) мовчки скасує
+   той перехід. */
 .bonusnext,
-.buybtn,
-.bet-readout,
 .control-core,
 .stepbtn,
 .sidebtn,
@@ -399,7 +470,6 @@ html, body {
 }
 .controls.playing .bonusnext,
 .controls.playing .buybtn,
-.controls.playing .bet-readout,
 .controls.playing .control-core,
 .controls.playing .autobtn {
   transform: translateY(130px);
@@ -425,11 +495,11 @@ html, body {
 }
 
 .stepbtn {
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   flex: 0 0 auto;
   border-radius: 50%;
-  font: 600 22px inherit;
+  font: 600 19px inherit;
   line-height: 1;
   color: var(--text);
   background: var(--floatBg);
@@ -466,15 +536,49 @@ html, body {
 .sidebtn .ic-fill { fill: currentColor; }
 .sidebtn .ic-stroke { fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 
-/* Швидкість: x1 — приглушено, x2..x4 — золото + число */
-.speedbtn .speed-num {
-  font: 700 15px ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
+/* ---- ШВИДКІСТЬ: смужка стрілок, а не число ----
+
+   Кнопка більше не кругла й не з .sidebtn: у неї рядок стрілок, тому
+   вона ширша за висоту. Скільки стрілок — вирішує SPEEDS у presenter,
+   тут нічого не зашито.
+
+   Сірі стрілки лишаються НА МІСЦІ, а не зникають: смужка має читатись
+   як шкала («з чотирьох горить дві»), а не як набір, що кожного разу
+   іншої довжини. */
+.speedbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--rPill);
+  background: var(--floatBg);
+  -webkit-backdrop-filter: var(--floatBlur);
+  backdrop-filter: var(--floatBlur);
+  border: 1px solid var(--floatBorder);
+  box-shadow: var(--floatShadow);
+  cursor: pointer;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              scale var(--t-press) var(--ease);
 }
-/* двоцифрові швидкості (тимчасові x10/x25) інакше не влазять у кружок */
-.speedbtn .speed-num.small { font-size: 11px; letter-spacing: -.04em; }
-.speedbtn.fast { color: var(--onGold); background: var(--goldFloat); }
-.speedbtn.fast:hover { background: var(--goldFloatUp); }
+.speedbtn:hover { background: var(--floatBgUp); border-color: var(--floatBorderUp); }
+.speedbtn:active { scale: .94; }
+.sp-arrow {
+  width: 7px;
+  height: 16px;
+  fill: none;
+  /* Тонші за решту іконок ХУДа: стрілок у ряд багато, і на 2.4 вони
+     злипаються в суцільну пляму. */
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke: var(--muted2);
+  transition: stroke var(--t) var(--ease);
+}
+.sp-arrow.on {
+  stroke: #fff;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, .55));
+}
 
 /* Автоплей: увімкнений — зелений */
 .autobtn.on { color: var(--onOk); background: var(--okFloat); }
@@ -488,30 +592,42 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 78px;
-  height: 78px;
+  width: 104px;
+  height: 104px;
   padding: 0;
   border-radius: 50%;
-  background: var(--ok);
+  /* Чорна й прозора, а не зелена. Колір тут нічого не пояснював —
+     кнопка й так єдина кругла посередині, — зате сперечався з ареною:
+     над зеленою травою зелена кнопка зливалась. Прозорість лишає під
+     нею шахту, тому потрібен blur: без нього по темному колу їздили б
+     блоки. */
+  background: rgba(10, 12, 16, .55);
+  -webkit-backdrop-filter: var(--floatBlur);
+  backdrop-filter: var(--floatBlur);
   border: 1px solid var(--floatBorder);
   box-shadow: var(--floatShadow);
   cursor: pointer;
 }
+/* Кільце стрілок іде по КРАЮ кнопки, а не значком у центрі: 74 зі
+   104 — це 71% діаметра. Товщина падає разом із цим: значок
+   малюється з viewBox 24, тож на екрані штрих множиться на 74/24 ≈ 3,
+   і колишні 2.1 дали б смугу в 6 px. 1.5 дає ті самі ~4.5 px, що й на
+   зразку. */
 .playbtn-spin {
-  width: 30px;
-  height: 30px;
-  stroke: var(--onOk);
+  width: 74px;
+  height: 74px;
+  stroke: #fff;
   fill: none;
-  stroke-width: 2.6;
+  stroke-width: 1.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.playbtn-wait { font: 700 22px inherit; color: var(--onOk); }
-.playbtn:hover:not(:disabled) { background: var(--okHover); }
+.playbtn-wait { font: 700 22px inherit; color: #fff; }
+.playbtn:hover:not(:disabled) { background: rgba(26, 30, 38, .62); }
 .playbtn:disabled {
-  background: var(--floatBg);
-  -webkit-backdrop-filter: var(--floatBlur);
-  backdrop-filter: var(--floatBlur);
+  /* Прозоріша за робочу, а не іншого кольору: недоступність читається
+     тим, що крізь кнопку видно більше поля. */
+  background: rgba(10, 12, 16, .35);
   cursor: default;
 }
 .playbtn:disabled .playbtn-spin { stroke: var(--muted2); }
@@ -1602,13 +1718,12 @@ canvas {
   }
   /* Виняток: панель під час розіграшу не їде, але згасає — інакше
      кнопки просто зникнуть поверх живого логу. */
-  .bonusnext, .buybtn, .bet-readout, .control-core, .autobtn,
+  .bonusnext, .buybtn, .control-core, .autobtn,
   .stepbtn, .sidebtn, .playbtn {
     transition: opacity .2s ease !important;
   }
   .controls.playing .bonusnext,
   .controls.playing .buybtn,
-  .controls.playing .bet-readout,
   .controls.playing .control-core,
   .controls.playing .autobtn { transform: none; }
   .bonusnext { animation: none !important; }
