@@ -15,7 +15,8 @@
     "test:icons": "tsx test/icons.test.ts",
     "test:wheel": "tsx test/wheel.test.ts",
     "test:referrals": "tsx test/referrals.test.ts",
-    "test:wager": "tsx test/wager.test.ts"
+    "test:wager": "tsx test/wager.test.ts",
+    "test:promos": "tsx test/promos.test.ts"
   },
   "dependencies": {
     "@minedrop/contracts": "1.0.0",

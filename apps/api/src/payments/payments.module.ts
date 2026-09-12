@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PlayersModule } from '../players/players.module';
 import { ReferralsModule } from '../referrals/referrals.module';
+import { PromosModule } from '../promos/promos.module';
 import { PaymentStoreRef } from './payment-store.ref';
 import { DepositAddressPool } from './deposit-addresses.service';
 import { PaymentRequests } from './payment-requests.service';
@@ -21,7 +22,7 @@ import { PaymentsController } from './payments.controller';
    кільця немає жодного: щоб вибрати найменш завантажену адресу, пул
    отримує готову мапу зайнятості аргументом, а не інжектить заявки. */
 @Module({
-  imports: [PlayersModule, ReferralsModule],
+  imports: [PlayersModule, ReferralsModule, PromosModule],
   providers: [
     PaymentStoreRef,
     DepositAddressPool,

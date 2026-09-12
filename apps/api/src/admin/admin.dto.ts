@@ -33,6 +33,26 @@ export class RejectDto {
   note?: string;
 }
 
+export class AddPromoDto {
+  /* Регістр і пробіли нормалізує сервіс — тут лише межа довжини.
+     Символи теж перевіряє він: правило «тільки латиниця» має бути в
+     одному місці з поясненням, чому саме (кирилична «О» від
+     латинської не відрізняється на око). */
+  @IsString() @MinLength(2) @MaxLength(32)
+  code!: string;
+
+  @IsInt() @Min(1) @Max(500)
+  percent!: number;
+}
+
+export class PatchPromoDto {
+  @IsOptional() @IsInt() @Min(1) @Max(500)
+  percent?: number;
+
+  @IsOptional() @IsBoolean()
+  active?: boolean;
+}
+
 export class AddAddressDto {
   /* Родина, а не мережа: 0x-адреса обслуговує всі EVM-мережі одразу,
      тож заводити її шість разів було б безглуздо. */

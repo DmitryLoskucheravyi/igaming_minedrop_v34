@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { IsIn, IsInt, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { PaymentRequests } from './payment-requests.service';
 import { PlayersService } from '../players/players.service';
 import { SettingsService } from '../settings/settings.service';
@@ -19,6 +19,12 @@ class CreateDto {
 
   @IsIn(Object.keys(TOKENS))
   token!: TokenId;
+
+  /* Промокод необов'язковий. Довжину ріжемо тут, а регістр і пробіли
+     нормалізує сервіс промокодів: гравець копіює код з оголошення
+     разом із чим завгодно. */
+  @IsOptional() @IsString() @MaxLength(32)
+  promo?: string;
 }
 
 @Controller('payments')
@@ -71,7 +77,7 @@ export class PaymentsController {
   @Post()
   create(@TgUser() user: TelegramUser, @Body() dto: CreateDto) {
     this.players.findOrCreate(user);
-    return this.payments.create(user.id, dto.amount, dto.network, dto.token);
+    return this.payments.create(user.id, dto.amount, dto.network, dto.token, dto.promo);
   }
 
   /* Зняти власну заявку, поки переказу ще немає. Без цього помилка в

@@ -275,10 +275,14 @@ export const Api = {
     return call<Payment>(`/payments/${id}/cancel`, { method: 'POST' });
   },
 
-  createPayment(amount: number, network: NetworkId, token: TokenId) {
+  /* Промокод необов'язковий і йде порожнім рядком -> undefined:
+     сервер відрізняє «коду немає» від «код не знайдено», і надсилати
+     туди порожній рядок означало б отримати другу відповідь замість
+     першої. */
+  createPayment(amount: number, network: NetworkId, token: TokenId, promo?: string) {
     return call<Payment>('/payments', {
       method: 'POST',
-      body: JSON.stringify({ amount, network, token }),
+      body: JSON.stringify({ amount, network, token, promo: promo?.trim() || undefined }),
     });
   },
 

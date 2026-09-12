@@ -14,12 +14,13 @@ import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WithdrawModule } from './withdrawals/withdraw.module';
 import { WatcherModule } from './watcher/watcher.module';
+import { PromosModule } from './promos/promos.module';
 
 @Module({
   imports: [
     ConfigModule, DbModule, SettingsModule, RatesModule, TelegramModule, PlayersModule,
     FairnessModule, RoundsModule, PaymentsModule, WithdrawModule, WatcherModule,
-    AdminModule, WheelModule, ReferralsModule, SpinsModule,
+    AdminModule, WheelModule, ReferralsModule, SpinsModule, PromosModule,
   ],
 })
 export class AppModule {}

@@ -65,11 +65,24 @@ function make(mode: DepositMode = 'auto') {
   const refCalls: number[] = [];
   const referrals = { onDeposit: (id: number) => refCalls.push(id) } as never;
 
-  const requests = new PaymentRequests(store, rates, players, cfg, addresses, referrals);
+  /* Промокоди тут теж заглушка, і з тієї ж причини: стенд про адреси й
+     зіставлення переказів, а надбавку перевіряє promos.test. Заглушка
+     не порожня, а рахує виклики — щоб було видно, якщо заявка колись
+     перестане питати про код або нараховувати за ним. */
+  const promoCalls: { checked: (string | undefined)[]; granted: number[] } =
+    { checked: [], granted: [] };
+  const promos = {
+    percentFor: (code?: string) => { promoCalls.checked.push(code); return null; },
+    grant: (id: number) => { promoCalls.granted.push(id); return 0; },
+  } as never;
+
+  const requests = new PaymentRequests(
+    store, rates, players, cfg, addresses, referrals, promos);
   const unmatched = new UnmatchedRegistry(store, rates, players, referrals);
   const matcher = new TransferMatcher(requests, unmatched, cfg);
 
   return {
+    promoCalls,
     addresses, requests, unmatched, matcher, refCalls,
 
     async onModuleInit() {

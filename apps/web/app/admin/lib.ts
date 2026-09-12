@@ -228,6 +228,22 @@ export const WITHDRAW_STATUS_RU: Record<WithdrawStatus, string> = {
   canceled: 'отменено',
 };
 
+/* Промокод — надбавка к пополнению. used/granted нужны не для
+   статистики ради статистики: по ним видно, что код утёк и его пора
+   выключить, ещё до того как это станет заметно по балансу. */
+export interface AdminPromo {
+  id: string;
+  code: string;
+  /** сколько % от суммы пополнения уйдёт бонусом */
+  percent: number;
+  active: boolean;
+  createdAt: number;
+  /** сколько раз сработал на подтверждённой заявке */
+  used: number;
+  /** сколько всего ₽ выдано бонусом по этому коду */
+  granted: number;
+}
+
 export interface AdminAddress {
   id: string;
   address: string;

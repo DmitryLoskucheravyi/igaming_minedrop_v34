@@ -1,7 +1,7 @@
 'use client';
 
 /* ============================================================
-   CRM /admin — вкладки: Игроки, Заявки, Депозиты.
+   CRM /admin — вкладки: Игроки, Заявки, Депозиты, Промокоды.
 
    Разделены по вопросу, на который отвечают: «кто играет», «что ждёт
    моего решения», «как мы вообще принимаем деньги». Адреса и режим
@@ -24,8 +24,9 @@ import { LoginForm } from './LoginForm';
 import { PlayersTab } from './PlayersTab';
 import { RequestsTab } from './RequestsTab';
 import { DepositsTab } from './DepositsTab';
+import { PromosTab } from './PromosTab';
 
-type Tab = 'players' | 'requests' | 'deposits';
+type Tab = 'players' | 'requests' | 'deposits' | 'promos';
 type Auth = 'checking' | 'in' | 'out';
 type Theme = 'dark' | 'light';
 
@@ -127,6 +128,9 @@ export default function AdminPage() {
         <button type="button" className={btn('deposits')} onClick={() => setTab('deposits')}>
           Депозиты
         </button>
+        <button type="button" className={btn('promos')} onClick={() => setTab('promos')}>
+          Промокоды
+        </button>
 
         <div className={s.who}>
           <span className={s.dim}>{admin?.login}</span>
@@ -146,6 +150,7 @@ export default function AdminPage() {
       {tab === 'players' && <PlayersTab />}
       {tab === 'requests' && <RequestsTab onPending={setPending} />}
       {tab === 'deposits' && <DepositsTab />}
+      {tab === 'promos' && <PromosTab />}
     </div>
   );
 }

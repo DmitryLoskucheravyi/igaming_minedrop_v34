@@ -163,6 +163,41 @@ function DepositForm({ dep }: { dep: DepositState }) {
         ))}
       </div>
 
+      {/* Промокод перевіряє СЕРВЕР у момент створення заявки, а не це
+          поле по ходу набору. Перевірка тут означала б запит на кожну
+          літеру й перебір чужих кодів; помилку видно одразу після
+          натискання, а введене нікуди не зникає.
+
+          Регістр не чіпаємо навмисно — його нормалізує сервер, а
+          примусовий uppercase у полі плутав би того, хто вставляє код
+          з оголошення. */}
+      <label className="dep-label" htmlFor="dep-promo">Промокод (необязательно)</label>
+      <div className="dep-field">
+        <input
+          id="dep-promo"
+          className="dep-promo"
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          maxLength={32}
+          value={dep.promo}
+          placeholder="если есть"
+          onChange={(e) => dep.setPromo(e.target.value)}
+        />
+        {dep.promo && (
+          <button
+            type="button"
+            className="dep-clear"
+            aria-label="Очистить"
+            onClick={() => dep.setPromo('')}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
       <button
         type="button"
         className="btn wide"
@@ -245,6 +280,24 @@ function ActiveDeposit({ active, network, paid, left, busy, onRefresh, onCancel 
         <span className="dep-k">К зачислению</span>
         <span className="dep-v">{rub(active.amount)} ₽</span>
       </div>
+
+      {/* Надбавка за промокодом. Показуємо саме тут, поруч із сумою
+          зарахування: гравець має бачити, що код прийнявся, ДО того як
+          переказав гроші — інакше перевіряти обіцянку доведеться вже
+          постфактум.
+
+          Слово «бонусом» не прикраса: ці гроші лягають на бонусний
+          баланс із відіграшем, і плутати їх із готівкою не можна. */}
+      {!!active.promoPercent && (
+        <div className="dep-row">
+          <span className="dep-k">
+            Промокод <b className="dep-promo-code">{active.promo}</b>
+          </span>
+          <span className="dep-v dep-promo-plus">
+            +{rub(Math.round(active.amount * active.promoPercent / 100))} ₽ бонусом
+          </span>
+        </div>
+      )}
 
       {/* Дробный «хвостик» — не украшение: именно по нему перевод
           опознают среди прочих. Округлил — деньги повиснут. */}

@@ -8,6 +8,7 @@ import { PlayersService } from '../players/players.service';
 import { SettingsService } from '../settings/settings.service';
 import { PaymentStoreRef } from './payment-store.ref';
 import { ReferralsService } from '../referrals/referrals.service';
+import { PromosService } from '../promos/promos.service';
 import { DepositAddressPool } from './deposit-addresses.service';
 import {
   MEMO_STEPS, MEMO_UNIT, PAYMENT_MAX_RUB, PAYMENT_MIN_RUB, PAYMENT_TTL_MS,
@@ -47,6 +48,7 @@ export class PaymentRequests implements OnModuleInit, OnModuleDestroy {
     private readonly settings: SettingsService,
     private readonly addresses: DepositAddressPool,
     private readonly referrals: ReferralsService,
+    private readonly promos: PromosService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -162,7 +164,8 @@ export class PaymentRequests implements OnModuleInit, OnModuleDestroy {
     return 1 + Math.floor(Math.random() * MEMO_STEPS);
   }
 
-  create(telegramId: number, amount: number, network: NetworkId, token: TokenId): PaymentRecord {
+  create(telegramId: number, amount: number, network: NetworkId, token: TokenId,
+         promoCode?: string): PaymentRecord {
     const cfg = this.settings.getDeposits();
     const net = NETWORKS[network];
     if (!net || !cfg.networks.includes(network)) {
@@ -177,6 +180,13 @@ export class PaymentRequests implements OnModuleInit, OnModuleDestroy {
     if (this.activeFor(telegramId)) {
       throw new ConflictException('У вас уже есть активная заявка — дождитесь её завершения');
     }
+
+    /* Промокод перевіряємо ДО видачі адреси й до всіх розрахунків.
+       Невідомий код кидає — саме тому, що гравець вписав його свідомо:
+       мовчки створити заявку без надбавки означало б забрати в нього
+       гроші, про які він домовлявся. Хай краще виправить друкарську
+       помилку зараз, ніж прийде зі скаргою після переказу. */
+    const promo = this.promos.percentFor(promoCode);
 
     const addr = this.addresses.pick(net.family, this.busyByAddress());
     const rate = this.rates.snapshot().rubPerUsdt;
@@ -223,10 +233,15 @@ export class PaymentRequests implements OnModuleInit, OnModuleDestroy {
       status: 'pending',
       createdAt: now,
       expiresAt: now + PAYMENT_TTL_MS,
+      /* Відсоток ЗАМОРОЖЕНО тут і більше не перечитується — див.
+         коментар до Payment.promo в контрактах. */
+      promo: promo?.code,
+      promoPercent: promo?.percent,
     };
     this.items.set(rec.id, rec);
     this.persist(rec);
     this.log.log(`нова заявка ${rec.id}: ${telegramId} ${amount}₽ ` +
+      `${promo ? `[промокод ${promo.code} +${promo.percent}%] ` : ''}` +
       `(${usdtAmount} ${token.toUpperCase()} у ${net.name}` +
       `${rateApprox ? ', курс ПРИБЛИЗНИЙ' : ''}) -> ${addr.address}` +
       `${memo ? ` memo ${memo}` : ''}`);
@@ -258,6 +273,14 @@ export class PaymentRequests implements OnModuleInit, OnModuleDestroy {
        відбутись. Повторний виклик безпечний — усередині стоїть ознака
        вже оплаченої виплати. */
     this.referrals.onDeposit(rec.telegramId, rec.amount);
+
+    /* Надбавка за промокодом — БОНУСНИМИ грошима, з відіграшем. Теж
+       після того, як депозит реально ліг: нараховувати бонус за
+       поповнення, якого не сталося, не можна.
+
+       Заявка вже approved не стане двічі (mustOpen кидає на закритій),
+       тож і нарахування тут рівно одне. */
+    this.promos.grant(rec.telegramId, rec.amount, rec.promo, rec.promoPercent);
 
     rec.status = 'approved';
     rec.resolvedBy = by;

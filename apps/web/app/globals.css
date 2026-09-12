@@ -1051,6 +1051,39 @@ canvas {
 }
 .dep-clear:hover { color: var(--text); background: var(--surface3); }
 
+/* ---- ПРОМОКОД ----
+   Поле успадковує вигляд .input, але класу .input на ньому немає
+   навмисно: там flex: 1 під рядок із кнопкою, а тут поле стоїть саме
+   на всю ширину. Дублюємо тільки те, що справді спільне. */
+.dep-promo {
+  width: 100%;
+  padding: 10px 44px 10px 12px;   /* праворуч — місце під хрестик */
+  /* Моноширинний і з розрідженням: код переписують з оголошення
+     посимвольно, і «0» від «O» тут має відрізнятись. */
+  font: 600 14px ui-monospace, monospace;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  -webkit-user-select: text;
+  user-select: text;
+  transition: border-color var(--t) var(--ease);
+}
+/* Підказку НЕ розріджуємо й не переводимо у верхній регістр — інакше
+   порожнє поле виглядає як уже введений код. */
+.dep-promo::placeholder {
+  color: var(--muted2);
+  letter-spacing: normal;
+  text-transform: none;
+}
+.dep-promo:hover { border-color: var(--border2); }
+.dep-promo:focus { outline: 2px solid var(--ok); outline-offset: -1px; }
+
+.dep-promo-code { color: var(--gold); letter-spacing: .06em; }
+.dep-promo-plus { color: var(--ok); }
+
 .dep-chips { display: flex; gap: 8px; margin: 10px 0 4px; }
 .dep-chip {
   flex: 1;

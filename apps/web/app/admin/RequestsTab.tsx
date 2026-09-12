@@ -163,7 +163,17 @@ export function RequestsTab({ onPending }: { onPending?: (n: number) => void }) 
                         {p.player?.username ? '@' + p.player.username : 'ID ' + p.telegramId}
                       </div>
                     </td>
-                    <td className={s.num} data-label="₽">{rub(p.amount)}</td>
+                    <td className={s.num} data-label="₽">
+                      {rub(p.amount)}
+                      {/* Промокод виден прямо в строке: он меняет то, что
+                          получит игрок, а решение об одобрении принимают
+                          здесь, не заглядывая в его заявку. */}
+                      {!!p.promoPercent && (
+                        <div className={s.dim}>
+                          {p.promo} · +{rub(Math.round(p.amount * p.promoPercent / 100))} ₽ бонусом
+                        </div>
+                      )}
+                    </td>
                     <td className={s.num} data-label="Монета">
                       {p.usdtAmount} <span className={s.dim}>{(p.token ?? 'usdt').toUpperCase()}</span>
                       {p.rateApprox && (

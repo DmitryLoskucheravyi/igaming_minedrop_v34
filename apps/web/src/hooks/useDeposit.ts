@@ -64,6 +64,9 @@ export interface DepositState {
 
   amount: number;
   setAmount: (n: number) => void;
+  /** промокод, як його ввів гравець; перевіряє сервер при створенні */
+  promo: string;
+  setPromo: (v: string) => void;
   min: number;
   max: number;
   /** скільки вийде в токені за поточним курсом (0 — рахувати нема з чого) */
@@ -81,6 +84,10 @@ export function useDeposit(onResolved?: () => void): DepositState {
   const { data: info, error, reload, setData, setError } = res;
 
   const [amount, setAmount] = useState(0);
+  /* Промокод НЕ запам'ятовуємо між заявками (на відміну від монети й
+     мережі): код разовий за задумом, і підставити старий у нову заявку
+     означало б мовчки застосувати не те, на що людина розраховує. */
+  const [promo, setPromo] = useState('');
   const [token, setToken] = useState<TokenId>('usdt');
   const [netId, setNetId] = useState<NetworkId | null>(null);
   const [busy, setBusy] = useState(false);
@@ -161,18 +168,19 @@ export function useDeposit(onResolved?: () => void): DepositState {
     if (!network || amount < min || amount > max) return;
     setBusy(true); setError(null);
     try {
-      const p = await Api.createPayment(amount, network.id, token);
+      const p = await Api.createPayment(amount, network.id, token, promo);
       savePick({ token, network: network.id });
       /* Відповідь сервера вже містить готову заявку — другий запит по
          неї був би зайвим обміном на найповільнішому екрані. */
       setData((prev) => prev ? { ...prev, active: p, history: [p, ...prev.history] } : prev);
       setAmount(0);
+      setPromo('');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Не удалось создать заявку');
     } finally {
       setBusy(false);
     }
-  }, [network, amount, min, max, token, setData, setError]);
+  }, [network, amount, min, max, token, promo, setData, setError]);
 
   /** true — заявку знято; підтвердження питає вікно, не хук. */
   const cancel = useCallback(async () => {
@@ -194,7 +202,7 @@ export function useDeposit(onResolved?: () => void): DepositState {
   return {
     info, error, busy, active, paid, left,
     tokens, networks: options, token, setToken, network, setNetwork: setNetId,
-    amount, setAmount, min, max, estimate, tooBig, canSubmit,
+    amount, setAmount, promo, setPromo, min, max, estimate, tooBig, canSubmit,
     create, cancel, reload: () => void reload(),
   };
 }
