@@ -23,8 +23,6 @@ export interface PublicConfig {
   maxWinX: number;
   /** множник ціни бонус баю на кожну кірку (ціна = ставка * множник) */
   buyPrices: Record<string, number>;
-  /** курс для косметичного перерахунку балансу в USDT / зірки */
-  rates: { rubPerUsdt: number; rubPerStar: number; updatedAt: number };
 }
 
 export interface PlayerState {
@@ -42,11 +40,9 @@ export interface PlayerState {
   pendingBonus: { bet: number } | null;
   /** подаровані колесом прокрути, які ще не зіграні */
   freeSpins: number;
-  /* Розклад балансу. Гравцю показується сума (balance вище), а ці два
-     числа потрібні там, де різниця щось означає: готівка виводиться,
-     бонус спершу треба відіграти. */
-  cash: number;
-  bonus: number;
+  /** куплені прокрути, які ще не зіграні, і їхня ставка */
+  buySpins: number;
+  buySpinBet: number;
   pityAt: number;
   clientSeed: string;
   serverSeedHash: string;
@@ -72,7 +68,7 @@ export interface WheelState {
 }
 
 export interface WheelSpin {
-  prize: { id: string; rub: number; spins: number; label: string };
+  prize: { id: string; coins: number; spins: number; label: string };
   /** НОМЕР СЕКТОРА, на якому має зупинитись колесо. Саме він, а не
       приз: однакових призів на колесі буває кілька. */
   index: number;
@@ -87,10 +83,6 @@ export interface ReferralFriend {
   telegramId: number;
   name: string;
   at: number;
-  /** коли друг добив поріг депозиту (null — ще ні) */
-  depositedAt: number | null;
-  /** скільки вже вніс депозитами, ₽ */
-  deposited: number;
   earned: number;
 }
 
@@ -98,10 +90,8 @@ export interface ReferralState {
   code: string;
   link: string | null;
   webAppUrl: string | null;
-  joinRub: number;
-  depositRub: number;
-  /** з якої суми депозитів друга платиться друга виплата */
-  depositMin: number;
+  /** скільки коінів за кожного друга */
+  joinCoins: number;
   earned: number;
   friends: ReferralFriend[];
 }
@@ -133,16 +123,10 @@ export interface RevealedSeries {
   rounds: number;
 }
 
-/* Форма всього, що їде по дроту, описана в @minedrop/contracts —
-   одним джерелом на сервер, гру й CRM. Тут лише перевипуск, щоб решта
-   клієнта імпортувала типи звідти ж, звідки й функції запитів. */
-export type {
-  Family, NetworkId, TokenId,
-  Payment, PaymentMethod, PaymentStatus, PaymentsInfo, DepositNetwork, ResolvedBy,
-  Withdraw, WithdrawInfo, WithdrawMethod, WithdrawStatus,
-} from '@minedrop/contracts';
-import type { NetworkId, TokenId, Payment, PaymentsInfo, Withdraw, WithdrawInfo } from '@minedrop/contracts';
-
+/* Форма щоденної нагороди описана в @minedrop/contracts — одним
+   джерелом на сервер і гру. */
+export type { DailyState, DailyClaim } from '@minedrop/contracts';
+import type { DailyState, DailyClaim } from '@minedrop/contracts';
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -264,46 +248,13 @@ export const Api = {
     return call<WheelSpin>('/wheel/spin', { method: 'POST' });
   },
 
-  /** Історія платежів + активна заявка. */
-  payments() {
-    return call<PaymentsInfo>('/payments/me');
+  /** Щоденна нагорода: чи доступна, який день серії, календар. */
+  daily() {
+    return call<DailyState>('/daily');
   },
 
-  /** Створити заявку на депозит (₽). Повертає заявку з адресою й таймером. */
-  /** зняти власну заявку, поки переказу ще немає */
-  cancelPayment(id: string) {
-    return call<Payment>(`/payments/${id}/cancel`, { method: 'POST' });
-  },
-
-  /* Промокод необов'язковий і йде порожнім рядком -> undefined:
-     сервер відрізняє «коду немає» від «код не знайдено», і надсилати
-     туди порожній рядок означало б отримати другу відповідь замість
-     першої. */
-  createPayment(amount: number, network: NetworkId, token: TokenId, promo?: string) {
-    return call<Payment>('/payments', {
-      method: 'POST',
-      body: JSON.stringify({ amount, network, token, promo: promo?.trim() || undefined }),
-    });
-  },
-
-  /** Історія виводів + активна заявка. */
-  withdrawals() {
-    return call<WithdrawInfo>('/withdrawals/me');
-  },
-
-  /** Заявка на вивід. Баланс списується одразу, тому у відповіді
-      приходить і свіжий стан гравця. */
-  createWithdraw(amount: number, address: string) {
-    return call<{ withdraw: Withdraw; player: PlayerState }>('/withdrawals', {
-      method: 'POST',
-      body: JSON.stringify({ amount, address, method: 'usdt_trc20' }),
-    });
-  },
-
-  /** Скасувати власну заявку — гроші повертаються на баланс. */
-  cancelWithdraw(id: string) {
-    return call<{ withdraw: Withdraw; player: PlayerState }>(`/withdrawals/${id}/cancel`, {
-      method: 'POST',
-    });
+  /** Забрати щоденну нагороду. Суму й день серії визначає СЕРВЕР. */
+  claimDaily() {
+    return call<DailyClaim>('/daily/claim', { method: 'POST' });
   },
 };

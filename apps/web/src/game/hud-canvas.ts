@@ -30,7 +30,7 @@ import { TOAST_LIFE, type Toast } from './effects';
 export const BONUS_INTRO_SEC = 1.9;
 
 /* Рядок стрічки останніх ставок. item — кірка, що випала (null —
-   «пусто»), win/cost — у рублях, x — множник раунду. */
+   «пусто»), win/cost — у коінах, x — множник раунду. */
 export interface HistoryEntry {
   item: ReelItem;
   win: number;
@@ -55,7 +55,7 @@ export interface HudCtx {
   /* Те саме число, але РЯДКОМ і без значка — коли напис треба спершу
      заміряти, а вже потім вирішити, куди його ставити (табличка
      результату центрує слово WIN і суму однією групою). */
-  moneyStr: (rub: number, whole?: boolean) => string;
+  moneyStr: (amount: number, whole?: boolean) => string;
   /** код валюти гравця і чи її значок одноколірний (тонується в текст) */
   currency: string;
   monoCurrency: boolean;
@@ -64,7 +64,7 @@ export interface HudCtx {
 /* Малює суму в поточній валюті гравця зі значком. Полотно брати не
    треба — воно вже в контексті; сюди приходить тільки що і де писати. */
 export type MoneyPainter = (
-  rub: number, x: number, y: number,
+  amount: number, x: number, y: number,
   font: string, color: string, align?: CanvasTextAlign, prefix?: string, whole?: boolean,
 ) => void;
 
@@ -179,20 +179,107 @@ export function drawRunningTotal(c: HudCtx, run: Run | null, runBet: number, run
     '800 20px ui-monospace, monospace', '#ffd34d', 'center', 'WIN ');
 }
 
-/* Скаттери поточного забігу — три зірки в ряд під сумою.
+/* ============================================================
+   НАБІР СКАТТЕРІВ — три гнізда вгорі екрана.
 
-   Порожні кружки показуємо з ПЕРШОГО ж зібраного, а не завжди: доки
-   жодного немає, рядок був би постійним шумом на екрані. А от щойно
-   один упав — гравцю треба бачити, скільки лишилось. */
+   Було: рядок «★★☆ 2/3» текстом. Зірки не мали нічого спільного з
+   самим блоком скаттера (він золотий, з літерою S), а дріб доводилось
+   ЧИТАТИ — при тому, що це найшвидша подія в раунді, і дивитись у цей
+   момент треба на кірку.
 
-export function drawScatters(c: HudCtx, scatters: number, running: boolean): void {
+   Стало: три гнізда, порожні або з монетою. Скільки зібрано, видно
+   боковим зором, не переводячи погляд.
+
+   Гнізда показуємо з ПЕРШОГО ж зібраного, а не завжди: доки жодного
+   немає, ряд був би постійним шумом на екрані.
+   ============================================================ */
+
+/** скільки живе спалах при попаданні (с) */
+export const SCATTER_POP_SEC = 0.5;
+
+/* Розмір гнізда й проміжок — у пікселях екрана. Дрібніше за 34 монета
+   в гнізді перестає читатись як монета. */
+const SLOT = 36;
+const SLOT_GAP = 7;
+/** відступ від правого краю екрана */
+const SLOT_EDGE = 14;
+/* Пропорція картинки (256x254): майже квадрат, але тримаємо точно —
+   інакше на спалаху гніздо ледь помітно пливе. */
+const SLOT_ASPECT = 254 / 256;
+
+export function drawScatters(
+  c: HudCtx, scatters: number, running: boolean, pop = 0,
+): void {
   if (!running || scatters <= 0) return;
   const need = CONFIG.scatter.need;
   const got = Math.min(scatters, need);
-  const y = 106 + c.topInset;
-  const star = '★'.repeat(got) + '☆'.repeat(Math.max(0, need - got));
-  Render.text(c.ctx, star + '  ' + got + '/' + need, c.w / 2, y,
-    '800 16px ui-monospace, monospace', got >= need ? '#ff9a3c' : '#ffc27a');
+  /* БЕЗ topInset, і це не недогляд. Той зсув існує рівно для того, щоб
+     верхній HUD не ліз під стрічку минулих раундів, — а стрічка займає
+     ЛІВИЙ верхній кут. Набір скаттерів стоїть праворуч від неї, тож
+     опускати його нижче немає від чого: виходив порожній відступ на
+     42 px згори. */
+  const y = 4;
+
+  const slot = Assets.get('scatter.slot');
+  const slotOn = Assets.get('scatter.slotOn');
+  /* Картинки ще не доїхали — лишається старий рядок. Мовчки не
+     показувати прогрес не можна: він потрібен саме зараз. */
+  if (!slot || !slotOn) {
+    Render.text(c.ctx, got + '/' + need, c.w - SLOT_EDGE, y + 22,
+      '800 16px ui-monospace, monospace', got >= need ? '#ff9a3c' : '#ffc27a',
+      'right');
+    return;
+  }
+
+  const full = got >= need;
+  const h = SLOT * SLOT_ASPECT;
+  const totalW = need * SLOT + (need - 1) * SLOT_GAP;
+  /* Правий верхній кут. Не по центру — центр угорі належить сумі
+     виграшу, і два написи там сперечались би за те саме місце.
+
+     Лівий верхній зайнятий стрічкою минулих раундів; вона займає до 62%
+     ширини, тож на найвужчому екрані (320) закінчується на 176-й точці,
+     а набір починається з 184-ї. Чіпаєш розмір гнізд — звіряй цю пару.
+
+     Поле SLOT_EDGE, а не 0: ореол спалаху ширший за саме гніздо, і
+     впритул до краю його зрізало б. */
+  const x0 = c.w - SLOT_EDGE - totalW;
+  /* k: 1 у мить попадання -> 0 наприкінці спалаху. */
+  const k = Math.max(0, Math.min(1, pop / SCATTER_POP_SEC));
+
+  for (let i = 0; i < need; i++) {
+    const on = i < got;
+    /* Хто саме спалахує. Поодинокий скаттер — тільки щойно заповнене
+       гніздо. Повний набір — усі три, але ПО ЧЕРЗІ зліва направо:
+       затримка на кожне наступне робить із трьох спалахів одну подію,
+       а не три одночасні. */
+    const lit = full
+      ? Math.max(0, Math.min(1, k * 2.2 - i * 0.45))
+      : (on && i === got - 1 ? k : 0);
+    /* Сусіди ледь здригаються від попадання — саме це й читається як
+       «вони в одному наборі». */
+    const shake = k * 0.06;
+    const scale = 1 + 0.5 * lit * lit + shake;
+
+    const w = SLOT * scale;
+    const hh = h * scale;
+    const cx = x0 + i * (SLOT + SLOT_GAP) + SLOT / 2;
+    const cy = y + h / 2;
+
+    /* Ореол під гніздом — золоте світло, що згасає разом зі спалахом. */
+    if (lit > 0.01) {
+      const r = SLOT * (0.55 + 0.5 * lit);
+      const g = c.ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, 'rgba(255, 200, 90, ' + (0.55 * lit).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(255, 200, 90, 0)');
+      c.ctx.fillStyle = g;
+      c.ctx.beginPath();
+      c.ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      c.ctx.fill();
+    }
+
+    c.ctx.drawImage(on ? slotOn : slot, cx - w / 2, cy - hh / 2, w, hh);
+  }
 }
 
 /* Заставка перед безкоштовною бонускою.
@@ -211,20 +298,47 @@ export function drawBonusIntro(c: HudCtx, bonusIntro: number): void {
   c.ctx.fillRect(0, 0, c.w, c.h);
 
   const cy = c.h / 2;
-  const pop = Math.max(1, 1.5 - (BONUS_INTRO_SEC - t) * 3);
-  const size = Math.round(Math.min(c.w * 0.13, 52) * pop);
-  Render.text(c.ctx, 'БОНУС ГЕЙМ', c.w / 2, cy - 6,
-    '900 ' + size + 'px ui-monospace, monospace', '#ff9a3c');
-  Render.text(c.ctx, '★ ★ ★', c.w / 2, cy - 58,
-    '800 22px ui-monospace, monospace', '#ffc27a');
-  Render.text(c.ctx, 'три скаттера — раунд за счёт заведения',
-    c.w / 2, cy + 34, '700 13px ui-monospace, monospace', '#c8d0da');
+  const img = Assets.get('bonusIntro');
+  if (!img) {
+    /* Плита ще не доїхала — старий текст. Пропустити заставку не можна:
+       раунд списав нуль і шахта інша, без пояснення це схоже на збій. */
+    const size = Math.round(Math.min(c.w * 0.13, 52));
+    Render.text(c.ctx, 'БОНУС ГЕЙМ', c.w / 2, cy - 6,
+      '900 ' + size + 'px ui-monospace, monospace', '#ff9a3c');
+    Render.text(c.ctx, 'три скаттера — раунд за счёт заведения',
+      c.w / 2, cy + 34, '700 13px ui-monospace, monospace', '#c8d0da');
+    c.ctx.restore();
+    return;
+  }
+
+  /* ПОЯВА. Перша третина секунди — виїзд знизу з перельотом: плита
+     проскакує своє місце й вертається. Рух рахуємо з ЧАСУ, ЩО МИНУВ
+     (bonusIntro тікає вниз, тому різниця), інакше анімація йшла б
+     задом наперед. */
+  const inT = Math.min(1, (BONUS_INTRO_SEC - t) / 0.34);
+  const ease = 1 - Math.pow(1 - inT, 3);
+  const over = Math.sin(inT * Math.PI) * 0.06;      // перельот і назад
+  const w = Math.min(c.w * 0.88, 520) * (1 + over);
+  const h = w * (img.naturalHeight / img.naturalWidth);
+  const x = (c.w - w) / 2;
+  const yTop = cy - h / 2 + (1 - ease) * 120;
+
+  c.ctx.globalAlpha = a * ease;
+  c.ctx.drawImage(img, x, yTop, w, h);
+
+  /* Підпис — у порожню смугу самої плити. Частка заміряна по картинці
+     (однорідно темна ділянка займає 0.774..0.916 висоти), а не підібрана
+     на око: перемалюють плиту — переміряти, і число лишиться чесним. */
+  const bandY = yTop + h * 0.845;
+  /* Про «три скаттери» тут не пишемо: три монети намальовані на самій
+     плиті вгорі, і текст лише повторював би картинку. Лишається те,
+     чого з картинки не видно, — що раунд безкоштовний. */
+  Render.text(c.ctx, 'РАУНД ЗА СЧЁТ ЗАВЕДЕНИЯ',
+    c.w / 2, bandY + h * 0.02,
+    '700 ' + Math.max(10, Math.round(w * 0.034)) + 'px ui-monospace, monospace',
+    '#d8c39a');
   c.ctx.restore();
 }
-
-/* Вікно множника: поки воно активне (run.multWindowT > 0), усе зібране
-   множиться на run.multActive. Показуємо великий "X{n}" і смужку часу,
-   що спадає, — під сумарним виграшем. Пульсує, коли лишається < 4с. */
 
 export function drawMultWindow(c: HudCtx, run: Run | null, running: boolean): void {
   if (!run || !running || run.multActive <= 1) return;

@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from './config/config.module';
 import { DbModule } from './db/db.module';
-import { SettingsModule } from './settings/settings.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { PlayersModule } from './players/players.module';
 import { WheelModule } from './wheel/wheel.module';
@@ -9,18 +8,14 @@ import { ReferralsModule } from './referrals/referrals.module';
 import { SpinsModule } from './spins/spins.module';
 import { FairnessModule } from './fairness/fairness.module';
 import { RoundsModule } from './rounds/rounds.module';
-import { RatesModule } from './rates/rates.module';
 import { AdminModule } from './admin/admin.module';
-import { PaymentsModule } from './payments/payments.module';
-import { WithdrawModule } from './withdrawals/withdraw.module';
-import { WatcherModule } from './watcher/watcher.module';
-import { PromosModule } from './promos/promos.module';
+import { DailyModule } from './daily/daily.module';
 
 @Module({
   imports: [
-    ConfigModule, DbModule, SettingsModule, RatesModule, TelegramModule, PlayersModule,
-    FairnessModule, RoundsModule, PaymentsModule, WithdrawModule, WatcherModule,
-    AdminModule, WheelModule, ReferralsModule, SpinsModule, PromosModule,
+    ConfigModule, DbModule, TelegramModule, PlayersModule,
+    FairnessModule, RoundsModule, DailyModule,
+    AdminModule, WheelModule, ReferralsModule, SpinsModule,
   ],
 })
 export class AppModule {}

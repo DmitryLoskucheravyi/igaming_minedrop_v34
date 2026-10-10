@@ -35,25 +35,11 @@ export interface Env {
       (стан гине з рестартом). */
   mongoUrl: string | null;
 
-  /** Адреса гаманця USDT TRC20 для депозитів. Порожньо — депозит вимкнено. */
-  usdtTrc20Address: string | null;
-
-  /* ---- ключі до блокчейн-API ----
-     Родина без ключа просто не слухається: спостерігач пропускає її і
-     каже про це в лог один раз, а не падає. Решта родин працює. */
-  chainKeys: {
-    /** tonapi.io — Bearer */
-    ton: string | null;
-    /** TronGrid — заголовок TRON-PRO-API-KEY */
-    tron: string | null;
-    /** Helius — api-key у запиті */
-    solana: string | null;
-    /** Ankr Advanced API — один ключ на всі шість EVM-мереж */
-    evm: string | null;
-  };
-
-  /** Як часто спостерігач обходить адреси, мс */
-  watcherPollMs: number;
+  /* Часовий пояс календарної доби: у ньому рахується, коли гравцю
+     належить нове щоденне поповнення і чи не перервався стрік. Одна доба
+     на всіх, а не «24 години від останнього заходу»: інакше стрік рвався
+     б від того, що вчора людина зайшла о 9 ранку, а сьогодні о 10. */
+  dailyTz: string;
 
   /* ---- CRM ----
      Обліковий запис адміна засівається в колекцію `admins` при старті.
@@ -79,6 +65,18 @@ export interface Env {
 function resolveDevAuth(isProd: boolean, botToken: string | null): boolean {
   if (isProd) return false;
   return !botToken || process.env.DEV_AUTH === 'true';
+}
+
+/* Кривий пояс у .env не має класти сервер — але й мовчки рахувати добу
+   «десь» теж не можна. Падаємо назад на UTC і кажемо про це в лог. */
+function resolveTz(tz: string): string {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return tz;
+  } catch {
+    console.warn(`DAILY_TZ=${tz} не розпізнано — доба рахується за UTC`);
+    return 'UTC';
+  }
 }
 
 export function loadEnv(): Env {
@@ -117,17 +115,7 @@ export function loadEnv(): Env {
     webhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET?.trim() || null,
     devAuth: resolveDevAuth(isProd, botToken),
     mongoUrl,
-    usdtTrc20Address: process.env.USDT_TRC20_ADDRESS?.trim() || null,
-    chainKeys: {
-      ton: process.env.TONAPI_KEY?.trim() || null,
-      tron: process.env.TRONGRID_KEY?.trim() || null,
-      solana: process.env.HELIUS_KEY?.trim() || null,
-      evm: process.env.ANKR_KEY?.trim() || null,
-    },
-    /* 20 секунд: TON і Solana фіналізуються за 20-30 с, тож частіше
-       безглуздо, а рідше — гравець дивиться на таймер і не розуміє,
-       чому переказ уже пройшов, а заявка все ще чекає. */
-    watcherPollMs: Math.max(5_000, Number(process.env.WATCHER_POLL_MS ?? 20_000)),
+    dailyTz: resolveTz(process.env.DAILY_TZ?.trim() || 'Europe/Kyiv'),
     adminLogin: process.env.ADMIN_LOGIN?.trim() || null,
     adminEmail: process.env.ADMIN_EMAIL?.trim() || null,
     // пароль не тримаємо: у ньому можуть бути значущі пробіли по краях

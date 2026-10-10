@@ -30,6 +30,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Api, type WheelState } from '../lib/api';
 import { Modal } from './Modal';
+import { Coins } from './Money';
 
 /* Скільки повних обертів накрутити до посадки. Менше трьох — і кидок
    читається як смикання, більше шести — гравець чекає даремно. */
@@ -109,11 +110,11 @@ export function WheelModal({ onClose, onWon }: Props) {
   const [angle, setAngle] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [won, setWon] = useState<
-    { label: string; index: number; rub: number; spins: number } | null>(null);
+    { label: string; index: number; coins: number; spins: number } | null>(null);
   const [left, setLeft] = useState(0);
   /* Поправка до годинника телефону: він буває збитий на години, а
      таймер рахується як nextAt - now. Беремо різницю з серверним
-     часом, як у вікні поповнення. */
+     часом. */
   const skew = useRef(0);
   const timer = useRef<number | null>(null);
 
@@ -161,7 +162,7 @@ export function WheelModal({ onClose, onWon }: Props) {
       timer.current = window.setTimeout(() => {
         setWon({
           label: res.prize.label, index: res.index,
-          rub: res.prize.rub, spins: res.prize.spins,
+          coins: res.prize.coins, spins: res.prize.spins,
         });
         setState(res.state);
         setSpinning(false);
@@ -270,10 +271,12 @@ export function WheelModal({ onClose, onWon }: Props) {
            більше немає. Тому тут і підводка, і сума, і що з нею сталось. */
         <div className="wheel-prize" key={won.index}>
           <span className="wheel-prize-cap">Выпало</span>
-          <span className="wheel-prize-label">{won.label}</span>
+          <span className="wheel-prize-label">
+            {won.coins ? <Coins value={won.coins} /> : won.label}
+          </span>
           <span className="wheel-prize-sub">
             {won.spins
-              ? `зачислено · сыграют по ${state?.freeBet ?? 0} ₽ за прокрут`
+              ? `зачислено · сыграют по ${state?.freeBet ?? 0} за прокрут`
               : 'зачислено на баланс'}
           </span>
         </div>

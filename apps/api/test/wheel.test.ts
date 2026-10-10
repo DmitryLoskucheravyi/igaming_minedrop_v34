@@ -2,7 +2,7 @@
    Колесо щоденного бонусу: перший прокрут гарантований, далі раз на
    добу, приз нараховує сервер.
 
-   Перевіряємо саме те, де ціна помилки — гроші: чи не можна крутнути
+   Перевіряємо саме те, де ціна помилки — коіни: чи не можна крутнути
    двічі, чи справді перший приз фіксований, чи лягають фріспіни в
    запас і чи збігається сектор, який віддали клієнту, з призом.
    ============================================================ */
@@ -27,17 +27,15 @@ function test(name: string, fn: () => void): void {
 
 function make(): { svc: WheelService; rec: PlayerRecord; credited: number[] } {
   const credited: number[] = [];
-  /* Баланс тепер два (готівка + бонус) — колесо платить ГОТІВКОЮ через
-     topUp, тож стенду досить її однієї. */
   const rec = {
-    telegramId: 1, cash: 0, bonus: 0, wheelAt: null, freeSpins: 0,
-  } as PlayerRecord;
+    telegramId: 1, coins: 0, wheelAt: null, freeSpins: 0,
+  } as unknown as PlayerRecord;
   const players = {
-    total: () => rec.cash + rec.bonus,
-    topUp: (_id: number, amount: number) => {
+    balance: () => rec.coins,
+    credit: (_id: number, amount: number) => {
       credited.push(amount);
-      rec.cash += amount;
-      return rec.cash;
+      rec.coins += amount;
+      return rec.coins;
     },
     persist: () => undefined,
   } as never;
@@ -50,8 +48,8 @@ function main(): void {
       const { svc, rec, credited } = make();
       const res = svc.spin(rec);
       assert.equal(res.prize.id, WHEEL_FIRST_PRIZE);
-      assert.equal(credited[0], res.prize.rub);
-      assert.equal(rec.cash, res.prize.rub);
+      assert.equal(credited[0], res.prize.coins);
+      assert.equal(rec.coins, res.prize.coins);
     }
   });
 
@@ -91,7 +89,7 @@ function main(): void {
       rec.wheelAt = Date.now() - WHEEL_COOLDOWN_MS - 1000;
       const res = svc.spin(rec);
       assert.equal(WHEEL_PRIZES[res.index].id, res.prize.id);
-      assert.equal(WHEEL_PRIZES[res.index].rub, res.prize.rub);
+      assert.equal(WHEEL_PRIZES[res.index].coins, res.prize.coins);
     }
   });
 
@@ -99,27 +97,27 @@ function main(): void {
     const { svc, rec, credited } = make();
     const spins = WHEEL_PRIZES.find((p) => p.spins > 0)!;
     rec.wheelAt = Date.now() - WHEEL_COOLDOWN_MS - 1000;
-    const before = rec.cash;
+    const before = rec.coins;
     /* Найрідкісніший сектор чекати жеребкуванням безглуздо — заводимо
        гравцю запас напряму й перевіряємо саме накопичення. */
     rec.freeSpins = 2;
     rec.freeSpins += spins.spins;
     assert.equal(rec.freeSpins, 2 + spins.spins);
-    assert.equal(rec.cash, before);
+    assert.equal(rec.coins, before);
     assert.equal(credited.length, 0);
   });
 
-  test('усі призи мають або гроші, або прокрути — але не порожнечу', () => {
+  test('усі призи мають або коіни, або прокрути — але не порожнечу', () => {
     for (const p of WHEEL_PRIZES) {
       assert.ok(p.weight > 0, `нульова вага в ${p.id}`);
-      assert.ok(p.rub > 0 || p.spins > 0, `приз ${p.id} нічого не дає`);
-      assert.ok(!(p.rub > 0 && p.spins > 0), `приз ${p.id} дає і гроші, і прокрути`);
+      assert.ok(p.coins > 0 || p.spins > 0, `приз ${p.id} нічого не дає`);
+      assert.ok(!(p.coins > 0 && p.spins > 0), `приз ${p.id} дає і коіни, і прокрути`);
     }
   });
 
   test('фріспіни — найрідкісніший сектор', () => {
     const spins = WHEEL_PRIZES.filter((p) => p.spins > 0);
-    const cash = WHEEL_PRIZES.filter((p) => p.rub > 0);
+    const cash = WHEEL_PRIZES.filter((p) => p.coins > 0);
     const rarest = Math.min(...cash.map((p) => p.weight));
     for (const s of spins) {
       assert.ok(s.weight < rarest,

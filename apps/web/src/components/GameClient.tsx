@@ -26,14 +26,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TierId } from '@minedrop/engine';
 import { Presenter, SPEEDS, type HudState } from '../game/presenter';
-import { CURRENCIES, CURRENCY_META, FALLBACK_RATES, type CurrencyCode } from '../lib/currency';
-import { useCurrency, useDepositBadge, useModal, useWheelBadge } from '../hooks/useGameShell';
-import { Money } from './Money';
+import { useDailyBadge, useModal, useWheelBadge } from '../hooks/useGameShell';
+import { Coins } from './Money';
 import { FairPanel } from './FairPanel';
 import { BonusBuyModal } from './BonusBuyModal';
-import { DepositModal } from './DepositModal';
-import { WithdrawModal } from './WithdrawModal';
-import { PaymentsPanel } from './PaymentsPanel';
+import { DailyModal } from './DailyModal';
 import { WheelModal } from './WheelModal';
 import { ReferralPanel } from './ReferralPanel';
 import { SpinsModal } from './SpinsModal';
@@ -51,7 +48,6 @@ const EMPTY: HudState = {
   scatters: 0,
   scatterNeed: 3,
   pendingBonus: null,
-  rates: FALLBACK_RATES,
   buyPrices: {},
   busy: false,
   resultEmpty: false,
@@ -80,10 +76,10 @@ export function GameClient() {
   const [avatarOk, setAvatarOk] = useState(true);
 
   const { modal, open, close } = useModal();
-  const deposit = useDepositBadge();
   const wheel = useWheelBadge();
-  const [currency, changeCurrency] = useCurrency(
-    useCallback((c: CurrencyCode) => gameRef.current?.setCurrency(c), []));
+  /* Нагорода чекає — вікно відкривається саме, щойно гра завантажилась:
+     перше, що людина бачить за день, — це її подарунок. */
+  const daily = useDailyBadge(useCallback(() => open('daily'), [open]));
 
   /* Пункт меню завжди робить дві речі: ховає шухляду й відкриває
      вікно. Разом, щоб жоден пункт не забув першу половину. */
@@ -106,8 +102,8 @@ export function GameClient() {
     };
   }, []);
 
-  /* Заявку на депозит вирішили в CRM — баланс на сервері змінився, а
-     гра сама туди не ходить поза раундами. Перечитуємо стан гравця. */
+  /* Коіни прийшли поза раундом (нагорода, колесо, покупка) — баланс на
+     сервері змінився, а гра сама туди не ходить. Перечитуємо стан гравця. */
   const refreshPlayer = useCallback(() => { void gameRef.current?.refreshPlayer(); }, []);
 
   const spin = useCallback(() => gameRef.current?.primary(), []);
@@ -207,17 +203,18 @@ export function GameClient() {
         </button>
 
         <div className="balance-chip">
-          <span className="label">БАЛАНС</span>
           <span className="value">
-            <Money rub={hud.balance} currency={currency} rates={hud.rates} whole bump />
+            <Coins value={hud.balance} bump />
           </span>
+          {/* Подарунок біля балансу — єдине «поповнення», яке тепер є:
+              раз на добу. Світиться й підстрибує, поки нагорода чекає. */}
           <button
             type="button"
-            className={'deposit-btn' + (deposit.pending ? ' pending' : '')}
-            aria-label={deposit.pending ? 'Пополнить (есть активная заявка)' : 'Пополнить'}
-            onClick={() => open('deposit')}
+            className={'gift-btn' + (daily.ready ? ' ready' : '')}
+            aria-label={daily.ready ? 'Забрать ежедневную награду' : 'Ежедневная награда'}
+            onClick={() => open('daily')}
           >
-            +
+            <PixIcon name="gift" />
           </button>
         </div>
       </header>
@@ -356,7 +353,7 @@ export function GameClient() {
               положенням — у кутку читається сам напис, а не пігулка. */}
           <div className="bet-line">
             <span className="bet-word">BET</span>
-            <Money rub={hud.bet} currency={currency} rates={hud.rates} whole bump />
+            <Coins value={hud.bet} bump />
           </div>
         </div>
       </div>
@@ -392,42 +389,30 @@ export function GameClient() {
             </div>
           )}
 
-          <div className="drawer-row">
+          <div className="drawer-balance">
             <span className="label">БАЛАНС</span>
             <span className="drawer-value">
-              <Money rub={hud.balance} currency={currency} rates={hud.rates} whole bump />
+              <Coins value={hud.balance} bump />
             </span>
+            {daily.day > 0 && (
+              <span className="drawer-streak">
+                <PixIcon name="flame" />
+                {daily.ready ? `сегодня день ${daily.day}` : `серия ${daily.day} дн.`}
+              </span>
+            )}
           </div>
 
-          <div className="drawer-row">
-            <span className="label">ВАЛЮТА</span>
-            <div className="cur-switch">
-              {CURRENCIES.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className={'cur-opt' + (c === currency ? ' on' : '')}
-                  aria-pressed={c === currency}
-                  title={CURRENCY_META[c].label}
-                  onClick={() => changeCurrency(c)}
-                >
-                  <img
-                    className={'cur-ico' + (CURRENCY_META[c].mono ? ' mono' : '')}
-                    src={CURRENCY_META[c].icon}
-                    alt={CURRENCY_META[c].label}
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button type="button" className="drawer-item" onClick={() => openFrom('deposit')}>
-            <PixIcon name="deposit" />
-            Пополнить баланс
+          <button
+            type="button"
+            className={'drawer-item' + (daily.ready ? ' on' : '')}
+            onClick={() => openFrom('daily')}
+          >
+            <PixIcon name="gift" />
+            Ежедневная награда
+            {daily.ready && <span className="dot" aria-hidden="true" />}
           </button>
-          {/* Колесо стоїть одразу під поповненням і світить крапкою,
-              коли прокрут доступний: подарунок, про який не нагадали,
-              все одно що не подарували. */}
+          {/* Колесо світить крапкою, коли прокрут доступний: подарунок,
+              про який не нагадали, все одно що не подарували. */}
           <button
             type="button"
             className={'drawer-item' + (wheel.ready ? ' on' : '')}
@@ -453,14 +438,6 @@ export function GameClient() {
             <PixIcon name="ref" />
             Пригласи друга
           </button>
-          <button type="button" className="drawer-item" onClick={() => openFrom('withdraw')}>
-            <PixIcon name="withdraw" />
-            Вывод средств
-          </button>
-          <button type="button" className="drawer-item" onClick={() => openFrom('payments')}>
-            <PixIcon name="history" />
-            История платежей
-          </button>
           <button type="button" className="drawer-item" onClick={() => openFrom('fair')}>
             <PixIcon name="fair" />
             Честность раунда
@@ -473,8 +450,6 @@ export function GameClient() {
           bet={hud.bet}
           balance={hud.balance}
           buyPrices={hud.buyPrices}
-          currency={currency}
-          rates={hud.rates}
           onBuy={buyBonus}
           onClose={close}
           index={buySlide}
@@ -482,22 +457,12 @@ export function GameClient() {
         />
       )}
       {modal === 'fair' && <FairPanel fair={hud.fair} onClose={close} />}
-      {modal === 'deposit' && (
-        <DepositModal
-          onClose={() => { close(); deposit.check(); }}
-          onResolved={() => { refreshPlayer(); deposit.check(); }}
-        />
-      )}
-      {modal === 'withdraw' && (
-        <WithdrawModal
-          balance={hud.balance}
-          currency={currency}
-          rates={hud.rates}
+      {modal === 'daily' && (
+        <DailyModal
           onClose={close}
-          onBalance={refreshPlayer}
+          onClaimed={(c) => { refreshPlayer(); daily.setReady(false); daily.setDay(c.day); }}
         />
       )}
-      {modal === 'payments' && <PaymentsPanel onClose={close} />}
       {modal === 'ref' && <ReferralPanel onClose={close} />}
       {modal === 'spins' && <SpinsModal onClose={close} onBought={refreshPlayer} />}
       {modal === 'wheel' && (

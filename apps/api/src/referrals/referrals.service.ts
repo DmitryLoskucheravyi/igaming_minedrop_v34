@@ -6,56 +6,24 @@ import { BotService } from '../telegram/bot.service';
 /* ============================================================
    РЕФЕРАЛЬНА СИСТЕМА.
 
-   Дві виплати запрошувачу, і обидві — за подію в житті ЗАПРОШЕНОГО:
-     прийшов за посиланням              -> REF_JOIN_RUB
-     заніс депозитами REF_DEPOSIT_MIN   -> REF_DEPOSIT_RUB
-   Обидві приходять БОНУСНИМИ грошима — із відіграшем x10 і замком на
-   вивід, доки він не зроблений (див. REF_BONUS_WAGER_X).
+   Одна нагорода запрошувачу — REF_JOIN_COINS, коли друг прийшов за
+   його посиланням.
 
-   ЧОМУ ОЗНАКИ ВИПЛАТ ЛЕЖАТЬ У ЗАПРОШЕНОГО. Подія належить йому, а
+   ЧОМУ ОЗНАКА ВИПЛАТИ ЛЕЖИТЬ У ЗАПРОШЕНОГО. Подія належить йому, а
    виплата лише її наслідок. Поки прапорець стоїть у того, з ким подія
    сталася, повторно оплатити її неможливо в принципі: немає такого
-   порядку дій, за якого «перший депозит» настане двічі. Якби лічильник
-   жив у запрошувача, довелось би зіставляти списки й вірити, що вони
-   не розійшлись.
-
-   ДЕПОЗИТ — ЗВІДКИ ЗАВГОДНО. Сума накопичується і з погодженої заявки
-   (бот або адмін), і з ручного зарахування неопізнаного переказу: для
-   гравця це однаково «я заніс гроші», і рахувати одне, а друге ні —
-   означало б карати його за те, що переказ довелось зіставляти руками.
+   порядку дій, за якого «друг прийшов» настане двічі.
    ============================================================ */
 
-/** скільки отримує запрошувач, коли друг просто прийшов */
-export const REF_JOIN_RUB = 100;
-/** ...і скільки додатково, коли друг занесе REF_DEPOSIT_MIN */
-export const REF_DEPOSIT_RUB = 200;
-
-/* Поріг депозиту для другої виплати. Рахується НАКОПИЧУВАЛЬНО: друг,
-   який заніс 150 і ще 150, вніс ті самі 300, і відмовляти йому через
-   те, що переказів було два, — правило нізвідки. */
-export const REF_DEPOSIT_MIN = 300;
-
-/* ВІДІГРАШ НА РЕФЕРАЛЬНІ ГРОШІ.
-
-   Обидві виплати — бонусні гроші, а не свої: гравець їх не заносив.
-   Тому вимога до них жорсткіша, ніж до власного депозиту (x5): x10.
-   100 ₽ за прихід -> 1000 ₽ обороту, 200 ₽ за депозит -> 2000 ₽.
-
-   Поки бонус не відіграно, ця сума замкнена на балансі: грати нею
-   можна, виводити — ні. Інакше рефералка лишалась би банкоматом:
-   завів фейк, отримав виплату, зняв. */
-export const REF_BONUS_WAGER_X = 10;
+/** скільки коінів отримує запрошувач, коли друг прийшов */
+export const REF_JOIN_COINS = 500;
 
 export interface ReferralFriend {
   telegramId: number;
   name: string;
   /** коли прийшов */
   at: number;
-  /** коли добив поріг депозиту (null — ще ні) */
-  depositedAt: number | null;
-  /** скільки вже вніс депозитами, ₽ — щоб було видно, чи близько поріг */
-  deposited: number;
-  /** скільки ми на ньому заробили, ₽ */
+  /** скільки коінів ми на ньому заробили */
   earned: number;
 }
 
@@ -95,48 +63,14 @@ export class ReferralsService implements OnModuleInit {
     if (!rec.refBy || rec.refJoinPaidAt) return;
     /* Запрошувача може вже не бути (видалили акаунт) — тоді нічого не
        нараховано, і позначати виплату як зроблену не можна. */
-    if (!this.players.byId(rec.refBy)) return;
-    this.players.grantBonus(
-      rec.refBy, REF_JOIN_RUB, REF_BONUS_WAGER_X, 'реферал: друг прийшов');
+    if (this.players.credit(rec.refBy, REF_JOIN_COINS, `друг ${rec.telegramId}`) === null) return;
     rec.refJoinPaidAt = Date.now();
     this.players.persist(rec);
-    this.log.log(`реферал: ${rec.refBy} +${REF_JOIN_RUB} за прихід ${rec.telegramId}`);
-  }
-
-  /* Депозит запрошеного. Кличеться з усіх місць, де депозит реально
-     лягає на баланс, і з РЕАЛЬНО зарахованою сумою.
-
-     Сума накопичується завжди — навіть у гравця без запрошувача й
-     навіть після виплати: це просто факт його життя, і рахувати його
-     вибірково означало б отримати поле, якому не можна вірити.
-     А ось виплата робиться рівно один раз і лише коли набралось
-     REF_DEPOSIT_MIN. */
-  onDeposit(telegramId: number, rub: number): void {
-    const rec = this.players.byId(telegramId);
-    if (!rec) return;
-    if (rub > 0) {
-      rec.refDeposited = (rec.refDeposited ?? 0) + rub;
-      this.players.persist(rec);
-    }
-
-    if (!rec.refBy || rec.refDepositPaidAt) return;
-    if ((rec.refDeposited ?? 0) < REF_DEPOSIT_MIN) return;
-
-    if (!this.players.byId(rec.refBy)) return;
-    /* Бонус замикається на тому, ХТО ЙОГО ОТРИМАВ (запрошувачеві), а не
-       на тому, хто заніс депозит: відіграє його той, кому він дістався. */
-    this.players.grantBonus(
-      rec.refBy, REF_DEPOSIT_RUB, REF_BONUS_WAGER_X, 'реферал: депозит друга');
-    rec.refDepositPaidAt = Date.now();
-    this.players.persist(rec);
-    this.log.log(
-      `реферал: ${rec.refBy} +${REF_DEPOSIT_RUB} за депозити ${rec.telegramId} `
-      + `(${rec.refDeposited} ₽)`);
   }
 
   /* Список друзів. Рахується перебором гравців, а не окремим списком у
-     запрошувача: копія списку — це другий источник правди, який рано
-     чи пізно розійдеться з першим. Гравці й так усі в пам'яті. */
+     запрошувача: копія списку — це друге джерело правди, яке рано чи
+     пізно розійдеться з першим. Гравці й так усі в пам'яті. */
   friends(rec: PlayerRecord): ReferralFriend[] {
     const out: ReferralFriend[] = [];
     for (const p of this.players.all()) {
@@ -145,9 +79,7 @@ export class ReferralsService implements OnModuleInit {
         telegramId: p.telegramId,
         name: p.firstName || (p.username ? '@' + p.username : 'Друг'),
         at: p.createdAt,
-        depositedAt: p.refDepositPaidAt,
-        deposited: p.refDeposited ?? 0,
-        earned: (p.refJoinPaidAt ? REF_JOIN_RUB : 0) + (p.refDepositPaidAt ? REF_DEPOSIT_RUB : 0),
+        earned: p.refJoinPaidAt ? REF_JOIN_COINS : 0,
       });
     }
     return out.sort((a, b) => b.at - a.at);
@@ -162,9 +94,7 @@ export class ReferralsService implements OnModuleInit {
          (getMe не встиг) або гру відкрили поза телеграмом: показати
          сам код усе одно краще, ніж порожнє місце. */
       webAppUrl: this.env.webAppUrl,
-      joinRub: REF_JOIN_RUB,
-      depositRub: REF_DEPOSIT_RUB,
-      depositMin: REF_DEPOSIT_MIN,
+      joinCoins: REF_JOIN_COINS,
       earned: friends.reduce((a, f) => a + f.earned, 0),
       friends,
     };

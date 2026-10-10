@@ -19,15 +19,14 @@
    Дерев'яна кірка й алмазна заробляють зовсім різне (заміряно
    sim/buy.ts: x1.34 проти x10.14 середньої виплати). Плаский цінник
    для всіх зробив би одну покупку грабунком, а іншу — безкоштовними
-   грошима. Тому множник свій на кожну, і приходить він із СЕРВЕРА:
+   коінами. Тому множник свій на кожну, і приходить він із СЕРВЕРА:
    тут його лише показують, списує сервер за власним конфігом.
    ============================================================ */
 
 import { useCallback, useEffect, useRef } from 'react';
 import { TIERS, type TierId } from '@minedrop/engine';
-import type { CurrencyCode, Rates } from '../lib/currency';
 import { Modal } from './Modal';
-import { Money } from './Money';
+import { Coins } from './Money';
 import { BUY_CARDS, plateStyle } from '../lib/buy-cards';
 
 interface Props {
@@ -35,8 +34,6 @@ interface Props {
   balance: number;
   /** множник ціни на кожну кірку: ціна = ставка * множник */
   buyPrices: Record<string, number>;
-  currency: CurrencyCode;
-  rates: Rates;
   onBuy: (tier: TierId) => void;
   onClose: () => void;
   /* Обраний слайд живе ЗЗОВНІ, у GameClient: вікно розмонтовується при
@@ -64,7 +61,7 @@ function Chevron({ dir }: { dir: 'left' | 'right' }) {
 }
 
 export function BonusBuyModal({
-  bet, balance, buyPrices, currency, rates, onBuy, onClose, index, onIndex,
+  bet, balance, buyPrices, onBuy, onClose, index, onIndex,
 }: Props) {
   const touch = useRef<{ x: number; y: number } | null>(null);
 
@@ -86,7 +83,7 @@ export function BonusBuyModal({
   const card = BUY_CARDS[tier.id];
   const price = Math.round(bet * (buyPrices[tier.id] ?? 0));
   const enough = balance >= price;
-  const money = (rub: number) => <Money rub={rub} currency={currency} rates={rates} whole />;
+  const money = (n: number) => <Coins value={n} />;
 
   return (
     <Modal title="Бонус бай" onClose={onClose} bare>

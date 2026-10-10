@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import s from './admin.module.css';
-import { api, rub, when } from './lib';
+import { api, num, when } from './lib';
 import { useAsk } from '../../src/ui/Ask';
 import { NumField } from '../../src/ui/NumField';
 
@@ -11,12 +11,14 @@ interface Player {
   firstName: string;
   username: string | null;
   balance: number;
+  streak: number;
+  dailyDay: string | null;
   nonce: number;
   dryStreak: number;
   seenAt: number;
 }
 
-const QUICK = [250, 500, 1000];
+const QUICK = [500, 1000, 5000];
 
 export function PlayersTab() {
   const [players, setPlayers] = useState<Player[] | null>(null);
@@ -46,7 +48,7 @@ export function PlayersTab() {
 
   useEffect(() => { void load(); }, [load]);
 
-  /* Баланси міняються поза CRM (раунди гравців, підтверджені заявки),
+  /* Баланси міняються поза CRM (раунди гравців, щоденні нагороди),
      тому таблиця освіжається сама — як і вкладка «Заявки». Раніше
      оновити її можна було лише кнопкою, і цифри тихо застарівали.
      Поки відкрите вікно поповнення — не чіпаємо: під ним лежить
@@ -80,8 +82,8 @@ export function PlayersTab() {
   const zeroBalance = (p: Player) => void withRow(p.telegramId, async () => {
     const who = p.firstName || 'ID ' + p.telegramId;
     if (!(await ask.confirm(
-      `Обнулить баланс: ${who}? Сейчас там ${rub(p.balance)} ₽ — вернуть их можно ` +
-      'только пополнением вручную.', true))) return;
+      `Обнулить баланс: ${who}? Сейчас там ${num(p.balance)} коинов — вернуть их можно ` +
+      'только начислением вручную.', true))) return;
     const body = await api<{ telegramId: number; balance: number }>(
       `/players/${p.telegramId}/zero`, { method: 'POST', body: '{}' });
     setPlayers((prev) => prev?.map((x) =>
@@ -91,9 +93,8 @@ export function PlayersTab() {
   const removePlayer = (p: Player) => void withRow(p.telegramId, async () => {
     const who = p.firstName || 'ID ' + p.telegramId;
     if (!(await ask.confirm(
-      `Удалить игрока ${who} насовсем? Пропадут баланс (${rub(p.balance)} ₽), сид и ` +
-      'история раундов. Заявки на депозит и вывод останутся. Зайдёт снова — ' +
-      'заведётся с нуля.', true))) return;
+      `Удалить игрока ${who} насовсем? Пропадут баланс (${num(p.balance)} коинов), ` +
+      'серия заходов, сид и история раундов. Зайдёт снова — заведётся с нуля.', true))) return;
     await api(`/players/${p.telegramId}/delete`, { method: 'POST', body: '{}' });
     setPlayers((prev) => prev?.filter((x) => x.telegramId !== p.telegramId) ?? prev);
   });
@@ -129,7 +130,8 @@ export function PlayersTab() {
           <thead>
             <tr>
               <th>Игрок</th>
-              <th className={s.num}>Баланс&nbsp;₽</th>
+              <th className={s.num}>Коины</th>
+              <th className={s.num}>Стрик</th>
               <th className={s.num}>Nonce</th>
               <th className={s.num}>Серия</th>
               <th>Был</th>
@@ -143,13 +145,16 @@ export function PlayersTab() {
                   <div className="name">{p.firstName || 'Без имени'}</div>
                   <div className="sub">{p.username ? '@' + p.username : 'ID ' + p.telegramId}</div>
                 </td>
-                <td className={s.num} data-label="Баланс ₽"><span className={s.balance}>{rub(p.balance)}</span></td>
+                <td className={s.num} data-label="Коины"><span className={s.balance}>{num(p.balance)}</span></td>
+                <td className={s.num} data-label="Стрик" title={p.dailyDay ? 'последняя награда ' + p.dailyDay : 'ещё не забирал'}>
+                  {p.streak || '—'}
+                </td>
                 <td className={s.num} data-label="Nonce">{p.nonce}</td>
                 <td className={s.num} data-label="Серия">{p.dryStreak}</td>
                 <td data-label="Был">{when(p.seenAt)}</td>
                 <td className={s.num} data-label="">
                   <div className={s.rowActions}>
-                    <button type="button" className={s.addBtn} aria-label="Пополнить"
+                    <button type="button" className={s.addBtn} aria-label="Начислить"
                       onClick={() => { setTarget(p); setAmount(0); setErr(null); }}>+</button>
                     <button type="button" className={s.btnSm} disabled={rowBusy.has(p.telegramId)}
                       onClick={() => zeroBalance(p)}>Обнулить</button>
@@ -161,10 +166,10 @@ export function PlayersTab() {
               </tr>
             ))}
             {players && players.length === 0 && (
-              <tr><td colSpan={6}><div className={s.empty}>Ни одного игрока ещё нет</div></td></tr>
+              <tr><td colSpan={7}><div className={s.empty}>Ни одного игрока ещё нет</div></td></tr>
             )}
             {!players && !err && (
-              <tr><td colSpan={6}><div className={s.empty}>Загрузка…</div></td></tr>
+              <tr><td colSpan={7}><div className={s.empty}>Загрузка…</div></td></tr>
             )}
           </tbody>
         </table>
@@ -173,18 +178,18 @@ export function PlayersTab() {
       {target && (
         <div className={s.overlay} onClick={(e) => { if (e.target === e.currentTarget) setTarget(null); }}>
           <div className={s.modal}>
-            <h2>Пополнить: {target.firstName || ('ID ' + target.telegramId)}</h2>
+            <h2>Начислить: {target.firstName || ('ID ' + target.telegramId)}</h2>
             <p className={s.cur}>
               {target.username ? '@' + target.username + ' · ' : ''}
-              текущий баланс <b>{rub(target.balance)} ₽</b>
+              текущий баланс <b>{num(target.balance)} коинов</b>
             </p>
-            <label className={s.label} htmlFor="topup-amount">Сумма пополнения, ₽</label>
+            <label className={s.label} htmlFor="topup-amount">Сколько коинов начислить</label>
             <NumField id="topup-amount" className={s.input}
               value={amount} onChange={setAmount} autoFocus />
             <div className={s.chips}>
               {QUICK.map((q) => (
                 <button key={q} type="button" className={s.chip} onClick={() => setAmount((a) => a + q)}>
-                  +{rub(q)}
+                  +{num(q)}
                 </button>
               ))}
             </div>
@@ -192,7 +197,7 @@ export function PlayersTab() {
             <div className={s.actions}>
               <button type="button" className={s.confirm} disabled={amount < 1 || saving}
                 onClick={() => void submit()}>
-                {saving ? 'Пополняю…' : `Пополнить на ${rub(amount)} ₽`}
+                {saving ? 'Начисляю…' : `Начислить ${num(amount)} коинов`}
               </button>
               <button type="button" className={s.cancel} onClick={() => setTarget(null)} disabled={saving}>
                 Отмена

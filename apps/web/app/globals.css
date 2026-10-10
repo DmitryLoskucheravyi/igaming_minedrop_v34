@@ -114,10 +114,25 @@ html, body {
   justify-content: space-between;
   gap: 10px;
   padding: 8px 12px;
-  height: 54px;
+  height: 56px;
   flex: 0 0 auto;
-  background: var(--surface);
+  /* Легкий вертикальний градієнт замість плаского кольору: шапка
+     читається як панель над шахтою, а не як смуга іншого відтінку. */
+  background: linear-gradient(180deg, var(--surface2) 0%, var(--surface) 100%);
   border-bottom: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+}
+/* Тонка золота нитка під шапкою — єдиний акцент, що зв'язує її з
+   балансом. */
+.topbar::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 211, 77, .45), transparent);
+  pointer-events: none;
 }
 
 .burger {
@@ -137,7 +152,7 @@ html, body {
               transform var(--t-press) var(--ease);
 }
 .burger:hover { border-color: var(--border2); }
-.burger:active { transform: scale(.94); background: var(--surface2); }
+.burger:active { transform: scale(.9); background: var(--surface2); }
 .burger span {
   display: block;
   width: 16px;
@@ -166,7 +181,7 @@ html, body {
               color var(--t) var(--ease), transform var(--t-press) var(--ease);
 }
 .mutebtn:hover { border-color: var(--border2); }
-.mutebtn:active { transform: scale(.94); background: var(--surface2); }
+.mutebtn:active { transform: scale(.9); background: var(--surface2); }
 /* Вимкнено — глушимо саму кнопку, а не лише міняємо іконку: інакше
    стан видно тільки якщо придивитись до хвильок біля динаміка. */
 .mutebtn.off { color: var(--muted2); }
@@ -183,16 +198,71 @@ html, body {
 .balance-chip {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 5px 4px 11px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
+  gap: 10px;
+  margin-left: auto;
+  padding: 4px 4px 4px 14px;
+  background: linear-gradient(180deg, #1c232b 0%, #12171c 100%);
+  border: 1px solid var(--border2);
   border-radius: var(--rPill);
+  box-shadow: inset 0 1px 0 var(--glassEdge), 0 2px 10px rgba(0, 0, 0, .35);
 }
 .balance-chip .value {
-  font: 700 15px ui-monospace, monospace;
+  font: 800 16px ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   color: var(--gold);
+  text-shadow: 0 0 12px rgba(255, 211, 77, .25);
+}
+.balance-chip .cur-ico { height: 1.15em; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)); }
+
+/* ---- подарунок біля балансу: щоденна нагорода ----
+   Замість старого «+» поповнення. Поки нагорода чекає — кнопка золота,
+   світиться й час від часу підстрибує; забрав — стає тихою сірою. */
+.gift-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--surface3);
+  border: 1px solid var(--border2);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
+              transform var(--t) var(--spring), box-shadow var(--t) var(--ease);
+}
+.gift-btn .pixicon { width: 20px; height: 20px; fill: var(--muted); }
+/* тач-ціль 44px навколо 36px кружка */
+.gift-btn::after { content: ''; position: absolute; inset: -5px; }
+.gift-btn:hover { border-color: var(--border3); }
+.gift-btn:active { transform: scale(.86); }
+.gift-btn.ready {
+  background: var(--goldGrad);
+  border-color: var(--goldEdge);
+  box-shadow: var(--goldGlow);
+  animation: gift-hop 2.4s var(--ease-out) infinite;
+}
+.gift-btn.ready .pixicon { fill: var(--onGold); }
+/* Червона крапка — універсальне «є непрочитане». */
+.gift-btn.ready::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff4d4d;
+  box-shadow: 0 0 0 2px var(--surface), 0 0 8px rgba(255, 77, 77, .8);
+}
+@keyframes gift-hop {
+  0%, 60%, 100% { transform: none; }
+  68% { transform: translateY(-4px) rotate(-8deg); }
+  76% { transform: translateY(0) rotate(6deg); }
+  84% { transform: translateY(-2px) rotate(-3deg); }
+  92% { transform: none; }
 }
 
 /* ---- сума + значок валюти ---- */
@@ -204,55 +274,13 @@ html, body {
   font-variant-numeric: tabular-nums;
 }
 .cur-ico {
-  height: 1.15em;
+  height: 1.05em;
   width: auto;
   object-fit: contain;
   vertical-align: middle;
+  /* Значок коіна — піксельний SVG, згладжувати нічого. */
+  image-rendering: pixelated;
 }
-/* одноколірний значок (рубль) — тонуємо у білий, щоб читався на темному */
-.cur-ico.mono { filter: brightness(0) invert(1); }
-/* image-rendering: pixelated тут навмисно НЕМА, хоч гра й піксельна:
-   файли значків 560-600 px, а показуються 20-44 — при nearest-neighbour
-   з них викидається дев'ять пікселів із десяти, і значок розсипається.
-   Пікселізацію лишаємо тому, що її й малювали пікселями: канвасу та
-   картинці кірки в бонус-баї. */
-
-/* ---- кнопка «+» біля балансу ---- */
-.deposit-btn {
-  width: 27px;
-  height: 27px;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font: 700 19px inherit;
-  line-height: 1;
-  color: var(--onOk);
-  background: var(--ok);
-  border: 0;
-  border-radius: 50%;
-  cursor: pointer;
-  position: relative;
-  transition: background var(--t) var(--ease), transform var(--t-press) var(--ease);
-}
-/* Кружок лишається дрібним — він у вузькому чипі балансу, — а тапати
-   по ньому можна на всі 44px: невидима зона поверх сусіднього відступу. */
-.deposit-btn::after { content: ''; position: absolute; inset: -7px -7px -7px -2px; }
-/* Заявка на поповнення жива, а вікно закрите — інакше про 30-хвилинний
-   таймер ніде не дізнатись, доки сам не відкриєш поповнення. */
-.deposit-btn.pending::before {
-  content: '';
-  position: absolute;
-  top: -1px;
-  right: -1px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--goldText);
-  box-shadow: 0 0 0 2px var(--surface2);
-}
-.deposit-btn:hover { background: var(--okHover); }
-.deposit-btn:active { transform: scale(.9); }
 
 /* ---- плавуча плашка статусу над полем ---- */
 .statusline {
@@ -279,7 +307,7 @@ html, body {
   /* Центрування трансформом, і воно ж — у ключових кадрах появи:
      інакше до першого кадру анімації плашка стрибне вбік. */
   transform: translateX(-50%);
-  animation: status-in var(--t-in) var(--ease);
+  animation: status-in var(--t-slow) var(--spring);
 }
 .statusline.err { color: var(--dangerText); border-color: var(--noBorder); }
 .statusline .verified { color: var(--okText); }
@@ -464,9 +492,9 @@ html, body {
   transition: background var(--t) var(--ease),
               border-color var(--t) var(--ease),
               color var(--t) var(--ease),
-              scale var(--t-press) var(--ease),
-              transform .3s var(--ease),
-              opacity .2s ease;
+              scale var(--t) var(--spring),
+              transform .42s var(--ease-out),
+              opacity .25s ease;
 }
 .controls.playing .bonusnext,
 .controls.playing .buybtn,
@@ -624,6 +652,45 @@ html, body {
 }
 .playbtn-wait { font: 700 22px inherit; color: #fff; }
 .playbtn:hover:not(:disabled) { background: rgba(26, 30, 38, .62); }
+/* Живе кільце навколо головної кнопки: по краю повільно біжить золотий
+   відблиск. Це єдина кнопка на полі, яка «запрошує», — тому рухається
+   тільки вона, і тільки поки нею можна скористатись. */
+.playbtn { position: relative; isolation: isolate; }
+.playbtn::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  z-index: -1;
+  border-radius: 50%;
+  padding: 3px;
+  background: conic-gradient(from var(--ring-a, 0deg),
+    rgba(255, 211, 77, 0) 0deg, rgba(255, 211, 77, .9) 70deg,
+    rgba(255, 240, 180, 1) 95deg, rgba(255, 211, 77, 0) 160deg,
+    rgba(255, 211, 77, 0) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: ring-spin 3.2s linear infinite;
+  transition: opacity var(--t) var(--ease);
+}
+.playbtn:disabled::before { opacity: 0; animation-play-state: paused; }
+/* М'яке золоте світіння під кнопкою, що повільно дихає. */
+.playbtn:not(:disabled) { animation: play-glow 2.8s ease-in-out infinite; }
+@keyframes play-glow {
+  0%, 100% { box-shadow: var(--floatShadow), 0 0 0 0 rgba(255, 211, 77, 0); }
+  50%      { box-shadow: var(--floatShadow), 0 0 26px 2px rgba(255, 211, 77, .28); }
+}
+.playbtn:not(:disabled) .playbtn-spin { filter: drop-shadow(0 0 6px rgba(255, 255, 255, .35)); }
+/* Натиснув — стрілки провертаються на шосту частину кола й пружинять
+   назад: кнопка «крутити» сама показує, що крутить. */
+.playbtn-spin { transition: transform var(--t-slow) var(--spring); }
+.playbtn:active:not(:disabled) .playbtn-spin { transform: rotate(60deg); }
+@property --ring-a {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes ring-spin { to { --ring-a: 360deg; } }
 .playbtn:disabled {
   /* Прозоріша за робочу, а не іншого кольору: недоступність читається
      тим, що крізь кнопку видно більше поля. */
@@ -709,6 +776,8 @@ canvas {
 }
 .drawer-overlay.open {
   background: var(--overlay);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
   pointer-events: auto;
 }
 .drawer {
@@ -719,13 +788,32 @@ canvas {
   width: 82%;
   max-width: 300px;
   overflow-y: auto;
-  background: var(--surface);
+  background:
+    radial-gradient(120% 40% at 0% 0%, rgba(255, 211, 77, .07), transparent 60%),
+    var(--surface);
   border-right: 1px solid var(--border);
+  box-shadow: 12px 0 40px rgba(0, 0, 0, .5);
   padding: 16px;
   transform: translateX(-100%);
-  transition: transform var(--t-in) var(--ease);
+  transition: transform var(--t-slow) var(--ease-out);
 }
 .drawer.open { transform: translateX(0); }
+/* Пункти виїжджають за шухлядою драбинкою: так меню відчувається як
+   розгортання, а не як підміна картинки. */
+.drawer.open > * { animation: drawer-in .45s var(--ease-out) both; }
+.drawer.open > :nth-child(2) { animation-delay: .03s; }
+.drawer.open > :nth-child(3) { animation-delay: .06s; }
+.drawer.open > :nth-child(4) { animation-delay: .09s; }
+.drawer.open > :nth-child(5) { animation-delay: .12s; }
+.drawer.open > :nth-child(6) { animation-delay: .15s; }
+.drawer.open > :nth-child(7) { animation-delay: .18s; }
+.drawer.open > :nth-child(8) { animation-delay: .21s; }
+.drawer.open > :nth-child(9) { animation-delay: .24s; }
+.drawer.open > :nth-child(10) { animation-delay: .27s; }
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: none; }
+}
 .drawer-head {
   display: flex;
   align-items: center;
@@ -805,44 +893,32 @@ canvas {
 }
 .phandle { font: 400 12px ui-monospace, monospace; color: var(--muted2); }
 
-.drawer-row {
+/* Баланс у меню — картка, а не рядок: це головне число гри. */
+.drawer-balance {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  flex-direction: column;
+  gap: 4px;
+  margin: 14px 0 10px;
+  padding: 12px 14px;
+  background: linear-gradient(160deg, #2a2210 0%, #171d23 70%);
+  border: 1px solid rgba(255, 211, 77, .28);
+  border-radius: var(--r3);
+  box-shadow: inset 0 1px 0 rgba(255, 240, 180, .08);
 }
 .drawer-value {
-  font: 700 16px ui-monospace, monospace;
+  font: 800 24px ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   color: var(--gold);
+  text-shadow: 0 0 16px rgba(255, 211, 77, .3);
 }
-
-/* ---- перемикач валюти у меню ---- */
-.cur-switch { display: flex; gap: 6px; }
-.cur-opt {
-  display: flex;
+.drawer-streak {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 44px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--r1);
-  cursor: pointer;
-  opacity: .55;
-  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
-              opacity var(--t) var(--ease), transform var(--t-press) var(--ease);
+  gap: 6px;
+  font: 600 12px inherit;
+  color: var(--bonusText);
 }
-.cur-opt:hover { border-color: var(--border2); opacity: .8; }
-.cur-opt:active { transform: scale(.94); }
-.cur-opt.on {
-  background: var(--okBg);
-  border-color: var(--okBorder);
-  opacity: 1;
-}
-.cur-opt .cur-ico { height: 20px; }
+.drawer-streak .pixicon { width: 14px; height: 14px; fill: var(--bonus); }
 
 /* ПУНКТИ МЕНЮ — рядки, а не кнопки.
 
@@ -869,7 +945,7 @@ canvas {
 }
 .drawer-item:last-of-type { border-bottom: 0; }
 .drawer-item:hover { background: var(--surface3); color: var(--text); }
-.drawer-item:hover .pixicon { fill: var(--gold); }
+.drawer-item:hover .pixicon { fill: var(--gold); transform: scale(1.15) rotate(-6deg); }
 .drawer-item:active { background: var(--surface2); }
 
 .pixicon {
@@ -879,7 +955,7 @@ canvas {
   fill: var(--muted);
   /* Без згладжування — інакше піксельна сітка замилюється в пляму. */
   shape-rendering: crispEdges;
-  transition: fill var(--t) var(--ease);
+  transition: fill var(--t) var(--ease), transform var(--t) var(--spring);
 }
 
 /* «Бонус бай» — головна платна дія, тому іконка золота одразу. */
@@ -907,6 +983,8 @@ canvas {
   justify-content: center;
   padding: 16px;
   background: var(--overlay);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
   animation: overlay-in var(--t-in) var(--ease);
 }
 .modalbox {
@@ -915,15 +993,21 @@ canvas {
      частину — низ вікна (кнопка «Створити заявку») ішов під край. */
   max-height: calc(var(--tg-viewport-stable-height, 100dvh) - 32px);
   overflow: auto;
-  background: var(--surface2);
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgba(255, 211, 77, .06), transparent 60%),
+    var(--surface2);
   border: 1px solid var(--border);
-  border-radius: var(--r3);
-  box-shadow: 0 16px 40px var(--shadow);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px var(--shadow), inset 0 1px 0 var(--glassEdge);
   padding: 18px 20px 22px;
-  animation: modal-in var(--t-in) var(--ease);
+  animation: modal-in var(--t-slow) var(--spring);
 }
 /* Закриття малюємо самі (Modal.tsx тримає вузол зайві ~180 мс):
    інакше вікно зникає ривком, а шухляда поруч — плавно. */
+/* Фокус на саме вікно ставить useFocusTrap — програмно, щоб Tab
+   ходив усередині. Рамка тут нічого не підказує, тільки обводить усе
+   вікно зеленим. Фокус на кнопках і полях усередині лишається видимим. */
+.modalbox:focus, .modalbox:focus-visible { outline: none; }
 .modal.closing { animation: overlay-out var(--t) var(--ease) forwards; }
 .modal.closing .modalbox { animation: modal-out var(--t) var(--ease) forwards; }
 
@@ -1033,7 +1117,7 @@ canvas {
               color var(--t) var(--ease), transform var(--t-press) var(--ease);
 }
 .btn:hover:not(:disabled) { border-color: var(--border2); color: var(--text); }
-.btn:active:not(:disabled) { transform: scale(.97); }
+.btn:active:not(:disabled) { transform: scale(.96); }
 .btn:disabled { opacity: .5; cursor: default; }
 /* Головна дія вікна — зелена й на всю ширину. */
 .btn.wide {
@@ -1049,6 +1133,20 @@ canvas {
 }
 .btn.wide:hover:not(:disabled) { background: var(--okHover); color: var(--onOk); }
 .btn.wide:disabled { background: var(--surface3); color: var(--muted2); border-color: var(--border); opacity: 1; }
+.btn.wide:not(:disabled) { box-shadow: 0 6px 18px rgba(78, 200, 106, .22); }
+
+/* Золота головна кнопка — там, де дія приносить коіни. */
+.btn.wide.gold {
+  color: var(--onGold);
+  background: var(--goldGrad);
+  border: 1px solid var(--goldEdge);
+  box-shadow: var(--goldGlow), inset 0 1px 0 rgba(255, 255, 255, .45);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, .35);
+  font-size: 15px;
+  font-weight: 800;
+}
+.btn.wide.gold:hover:not(:disabled) { background: var(--goldGradUp); color: var(--onGold); }
+.btn.wide.gold .money { color: inherit; vertical-align: -2px; }
 
 /* Небезпечна дія (скасування заявки, відмова) — червона рамка, не
    червона заливка: це все ще не головна дія вікна. */
@@ -1103,29 +1201,6 @@ canvas {
 .toggle[aria-checked='true'] .toggle-track { background: var(--okBg); border-color: var(--okBorder); }
 .toggle[aria-checked='true'] .toggle-track::after { transform: translateX(14px); background: var(--ok); }
 
-/* ============================================================
-   ПОПОВНЕННЯ Й ВИВЕДЕННЯ
-   ============================================================ */
-.dep-method {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 4px 0 16px;
-}
-.dep-method-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font: 600 11px ui-monospace, monospace;
-  color: var(--infoText);
-  border: 1px solid var(--infoBorder);
-  background: var(--infoBg);
-  border-radius: var(--rPill);
-  padding: 4px 12px;
-}
-.dep-method-note { font-size: 11px; color: var(--muted2); }
-
 .dep-label {
   display: block;
   font: 600 10px ui-monospace, monospace;
@@ -1141,297 +1216,6 @@ canvas {
   line-height: 1.5;
   color: var(--muted2);
   margin-top: 6px;
-}
-
-/* Швидкі чипи ДОДАЮТЬ до суми, а не задають її — тому потрібен спосіб
-   скинути введене одним рухом, а не стирати цифри по одній. */
-.dep-field { position: relative; }
-.dep-field .input { padding-right: 44px; }
-.dep-clear {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  translate: 0 -50%;
-  width: 36px;
-  height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: 0;
-  border-radius: var(--r1);
-  color: var(--muted2);
-  font: 600 13px inherit;
-  cursor: pointer;
-  transition: color var(--t) var(--ease), background var(--t) var(--ease);
-}
-.dep-clear:hover { color: var(--text); background: var(--surface3); }
-
-/* ---- ПРОМОКОД ----
-   Поле успадковує вигляд .input, але класу .input на ньому немає
-   навмисно: там flex: 1 під рядок із кнопкою, а тут поле стоїть саме
-   на всю ширину. Дублюємо тільки те, що справді спільне. */
-.dep-promo {
-  width: 100%;
-  padding: 10px 44px 10px 12px;   /* праворуч — місце під хрестик */
-  /* Моноширинний і з розрідженням: код переписують з оголошення
-     посимвольно, і «0» від «O» тут має відрізнятись. */
-  font: 600 14px ui-monospace, monospace;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r1);
-  -webkit-user-select: text;
-  user-select: text;
-  transition: border-color var(--t) var(--ease);
-}
-/* Підказку НЕ розріджуємо й не переводимо у верхній регістр — інакше
-   порожнє поле виглядає як уже введений код. */
-.dep-promo::placeholder {
-  color: var(--muted2);
-  letter-spacing: normal;
-  text-transform: none;
-}
-.dep-promo:hover { border-color: var(--border2); }
-.dep-promo:focus { outline: 2px solid var(--ok); outline-offset: -1px; }
-
-.dep-promo-code { color: var(--gold); letter-spacing: .06em; }
-.dep-promo-plus { color: var(--ok); }
-
-.dep-chips { display: flex; gap: 8px; margin: 10px 0 4px; }
-.dep-chip {
-  flex: 1;
-  font: 600 12px ui-monospace, monospace;
-  color: var(--text2);
-  background: var(--surface3);
-  border: 1px solid var(--border);
-  border-radius: var(--r1);
-  padding: 9px 0;
-  cursor: pointer;
-  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
-              transform var(--t-press) var(--ease);
-}
-.dep-chip:hover:not(:disabled) { border-color: var(--border2); }
-.dep-chip:active:not(:disabled) { transform: scale(.96); }
-.dep-chip:disabled { opacity: .4; cursor: default; }
-
-/* ---- вибір монети й мережі ----
-   Мережі стоять сіткою з комісією на кожній: це єдине, чим вони
-   відрізняються для гравця, і саме через неї він і вибирає. Іконку
-   малюємо, якщо файл є; немає — лишається назва, і нічого не ламається. */
-.dep-ico {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
-  flex: none;
-}
-.dep-tokens { display: flex; gap: 8px; }
-.dep-token {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  font: 600 12px ui-monospace, monospace;
-  color: var(--text2);
-  background: var(--surface3);
-  border: 1px solid var(--border);
-  border-radius: var(--r1);
-  padding: 10px 0;
-  cursor: pointer;
-  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
-              color var(--t) var(--ease), transform var(--t-press) var(--ease);
-}
-.dep-token:hover { border-color: var(--border2); }
-.dep-token:active { transform: scale(.97); }
-.dep-token.on {
-  color: var(--okText);
-  background: var(--okBg);
-  border-color: var(--okBorder);
-}
-
-.dep-nets {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 8px;
-}
-.dep-net {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-  font: 600 11.5px ui-monospace, monospace;
-  color: var(--text2);
-  background: var(--surface3);
-  border: 1px solid var(--border);
-  border-radius: var(--r1);
-  padding: 10px;
-  cursor: pointer;
-  overflow: hidden;
-  transition: background var(--t) var(--ease), border-color var(--t) var(--ease),
-              color var(--t) var(--ease), transform var(--t-press) var(--ease);
-}
-.dep-net:hover { border-color: var(--border2); }
-.dep-net:active { transform: scale(.98); }
-.dep-net.on {
-  color: var(--okText);
-  background: var(--okBg);
-  border-color: var(--okBorder);
-}
-.dep-net-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.dep-net-fee { flex: none; font-size: 10px; color: var(--muted2); }
-.dep-net.on .dep-net-fee { color: var(--okText); }
-
-/* Попередження, яке рятує гроші: один рядок, не абзац. Жовте, а не
-   червоне — заявка робоча, просто помилитись тут коштує дорого. */
-.dep-warn {
-  margin: 10px 0;
-  padding: 9px 12px;
-  border: 1px solid var(--warnBorder);
-  border-left-width: 3px;
-  border-radius: 0 var(--r1) var(--r1) 0;
-  background: var(--warnBg);
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--warnText);
-}
-.dep-warn b { color: var(--gold); }
-
-.dep-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
-}
-.dep-k {
-  font: 600 10px ui-monospace, monospace;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--muted2);
-}
-.dep-v {
-  font: 600 14px ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  color: var(--text);
-}
-.dep-v.big { font-size: 20px; font-weight: 700; color: var(--gold); }
-.dep-v small { font-size: 11px; color: var(--muted2); }
-
-.dep-addr {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-  margin-bottom: 4px;
-}
-.dep-addr code {
-  flex: 1;
-  min-width: 0;
-  font: 600 12px ui-monospace, monospace;
-  color: var(--text2);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--r1);
-  padding: 10px 12px;
-  word-break: break-all;
-  -webkit-user-select: text;
-  user-select: text;
-}
-.dep-addr .btn { flex: 0 0 auto; }
-
-.dep-timer {
-  text-align: center;
-  font: 700 16px ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .06em;
-  color: var(--okText);
-  padding: 14px 0 2px;
-}
-.dep-timer.urgent { color: var(--dangerText); }
-.dep-expired { text-align: center; }
-.dep-expired p { font: 600 14px inherit; color: var(--text); margin: 8px 0; }
-.dep-expired .hint { color: var(--muted); }
-
-.dep-hist { display: flex; flex-direction: column; gap: 6px; }
-.dep-hist-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  font: 600 12px ui-monospace, monospace;
-  padding: 9px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left-width: 3px;
-  border-radius: 0 var(--r1) var(--r1) 0;
-}
-.dep-hist-amt { color: var(--text); }
-.dep-hist-st { color: var(--muted2); font-size: 11px; }
-
-/* ---- історія платежів (окреме вікно) ---- */
-.pay-list { display: flex; flex-direction: column; gap: 8px; }
-.pay-item {
-  border: 1px solid var(--border);
-  border-left-width: 3px;
-  border-radius: 0 var(--r1) var(--r1) 0;
-  padding: 11px 13px;
-  background: var(--surface);
-}
-.pay-item-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.pay-amt {
-  font: 700 15px ui-monospace, monospace;
-  font-variant-numeric: tabular-nums;
-  color: var(--gold);
-}
-.pay-status {
-  font: 600 11px ui-monospace, monospace;
-  color: var(--muted2);
-  text-transform: uppercase;
-  letter-spacing: .06em;
-}
-.pay-item-sub {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  font: 400 11px ui-monospace, monospace;
-  color: var(--muted2);
-  margin-top: 6px;
-}
-.pay-note {
-  font-size: 11.5px;
-  color: var(--text2);
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
-
-/* Статус заявки — колір лівої грані. Один набір на всі три списки
-   (активна історія депозиту, історія платежів, історія виводів). */
-.st-pending { border-left-color: var(--goldText); }
-/* Синій — «перевод найден, работает бот»: не очікування і не готово,
-   а третій стан, який з жодним не сплутати. */
-.st-processing { border-left-color: var(--infoText); }
-.st-approved { border-left-color: var(--ok); }
-.st-rejected { border-left-color: var(--danger); }
-.st-expired, .st-canceled { border-left-color: var(--border2); }
-
-/* ---- виведення коштів ---- */
-.wd-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 14px 0 4px;
-  font-size: 12px;
 }
 
 /* ============================================================
@@ -1677,7 +1461,7 @@ canvas {
 @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes overlay-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes modal-in {
-  from { opacity: 0; transform: translateY(14px) scale(.97); }
+  from { opacity: 0; transform: translateY(22px) scale(.94); }
   to   { opacity: 1; transform: none; }
 }
 @keyframes modal-out {
@@ -1692,7 +1476,8 @@ canvas {
    поштовх плюс колір напрямку. Зелений — прийшло, червоний — пішло. */
 @keyframes bump-up {
   0%   { transform: none; }
-  35%  { transform: translateY(-3px) scale(1.07); color: var(--okText); }
+  30%  { transform: translateY(-4px) scale(1.12); color: var(--okText);
+         text-shadow: 0 0 14px rgba(123, 226, 160, .6); }
   100% { transform: none; }
 }
 @keyframes bump-down {
@@ -1727,6 +1512,8 @@ canvas {
   .controls.playing .control-core,
   .controls.playing .autobtn { transform: none; }
   .bonusnext { animation: none !important; }
+  .playbtn, .playbtn::before, .gift-btn.ready { animation: none !important; }
+  .drawer.open > * { animation: none !important; }
 }
 
 /* Дизайн і так мобільний за замовчуванням (компактні панелі,
@@ -1751,11 +1538,9 @@ canvas {
 .drawer-item .dot {
   margin-left: auto;
 }
-.drawer-item .dot,
-.drawer-btn .dot {
+.drawer-item .dot {
   display: inline-block;
   width: 7px; height: 7px;
-  margin-left: 8px;
   border-radius: 50%;
   background: var(--gold);
   box-shadow: 0 0 8px var(--gold);
@@ -1982,21 +1767,30 @@ canvas {
   .wheel-stage.landed .wheel-sector.win .sector-face,
   .wheel-go:not(:disabled)::after,
   .drawer-item .dot,
-  .drawer-btn .dot { animation: none; }
+  .drawer-item .dot { animation: none; }
 }
 
 /* ---- РЕФЕРАЛЬНИЙ КАБІНЕТ ---- */
-.ref-rules { display: flex; gap: 8px; margin-bottom: 12px; }
-.ref-rule {
-  flex: 1;
-  display: flex; flex-direction: column; gap: 2px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r2);
-  background: var(--surface2);
+.ref-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 12px;
+  margin-bottom: 12px;
+  text-align: center;
+  border: 1px solid rgba(255, 211, 77, .3);
+  border-radius: var(--r3);
+  background: radial-gradient(100% 120% at 50% 0%, rgba(255, 211, 77, .14), transparent 70%), var(--surface);
 }
-.ref-rule-sum { font-size: 17px; font-weight: 800; color: var(--gold); }
-.ref-rule-what { font-size: 12px; color: var(--muted); }
+.ref-hero-sum {
+  display: inline-flex;
+  align-items: center;
+  font: 900 28px ui-monospace, monospace;
+  color: var(--gold);
+  text-shadow: 0 0 18px rgba(255, 211, 77, .35);
+}
+.ref-hero-what { font-size: 12.5px; color: var(--text2); }
 
 .ref-total {
   display: flex; align-items: center; justify-content: space-between;
@@ -2038,9 +1832,7 @@ canvas {
   border-radius: var(--r2);
   background: var(--surface2);
 }
-/* Друг, який уже поповнив, підсвічений зеленим кантом: по ньому
-   добирати більше нічого. */
-.ref-item.paid { border-left-color: var(--ok); }
+.ref-item.paid { border-left-color: var(--gold); }
 .ref-item-top { display: flex; justify-content: space-between; align-items: baseline; }
 .ref-name { font-size: 14px; font-weight: 600; }
 .ref-earned { font-size: 14px; font-weight: 800; color: var(--gold); }
@@ -2048,39 +1840,6 @@ canvas {
   display: flex; justify-content: space-between; gap: 8px;
   margin-top: 3px;
   font-size: 11px; color: var(--muted);
-}
-
-/* Умова відіграшу у вікні виводу. Не помилка (червоним), а правило —
-   тому жовтий «очікування», той самий, що й у заявок на розгляді. */
-.wager-note {
-  margin: 0 0 12px;
-  padding: 9px 11px;
-  border: 1px solid var(--warnBorder);
-  border-radius: var(--r2);
-  background: var(--warnBg);
-  color: var(--warnText);
-  font-size: 12.5px;
-  line-height: 1.45;
-}
-.wager-note b { color: var(--gold); }
-
-/* Розклад балансу у вікні виводу */
-.dep-v.ok { color: var(--okText); }
-.dep-v.locked { color: var(--goldText); }
-
-.bonus-bar-wrap { margin: 6px 0 2px; }
-.bonus-bar {
-  height: 8px;
-  border-radius: 999px;
-  background: var(--surface3);
-  border: 1px solid var(--border);
-  overflow: hidden;
-}
-.bonus-bar i {
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--goldBg), var(--gold));
-  transition: width .4s ease;
 }
 
 /* ---- ПАКЕТ ФРІСПІНІВ ---- */
@@ -2182,3 +1941,198 @@ canvas {
 }
 .fs-row.bare .fs-plate { position: static; flex-direction: row; gap: 6px; }
 .fs-row.bare .fs-buy { margin-left: auto; }
+
+/* ============================================================
+   ЩОДЕННА НАГОРОДА
+
+   Календар серії на 30 днів (6 у ряд), підсумок і велика золота
+   кнопка. Клітинки з'являються хвилею (--i — номер клітинки), сьогоднішня
+   пульсує, віхи (кожен 7-й і останній день) мають золотий кант.
+   ============================================================ */
+.daily { display: flex; flex-direction: column; gap: 14px; }
+
+.daily-head { display: flex; align-items: center; gap: 12px; }
+.daily-flame {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 60%, rgba(255, 154, 60, .35), rgba(255, 154, 60, .06) 70%);
+  border: 1px solid rgba(255, 154, 60, .45);
+  animation: flame-glow 2.2s ease-in-out infinite;
+}
+.daily-flame .pixicon { width: 26px; height: 26px; fill: var(--bonus); }
+@keyframes flame-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 154, 60, 0); }
+  50%      { box-shadow: 0 0 18px 2px rgba(255, 154, 60, .35); }
+}
+.daily-head-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.daily-streak { font: 800 17px inherit; color: var(--text); }
+.daily-sub { font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+.daily-grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+.daily-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  aspect-ratio: 1 / 1.05;
+  border-radius: var(--r2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  opacity: 0;
+  animation: cell-in .45s var(--spring) both;
+  animation-delay: calc(var(--i) * 14ms);
+}
+.daily-n { font: 600 9.5px ui-monospace, monospace; color: var(--muted2); letter-spacing: .04em; }
+.daily-r { font: 800 12.5px ui-monospace, monospace; color: var(--text2); }
+.daily-cell.mile { border-color: rgba(255, 211, 77, .4); }
+.daily-cell.mile .daily-r { color: var(--goldText); }
+
+.daily-cell.done {
+  background: linear-gradient(180deg, #23301f, #18211a);
+  border-color: var(--okBorder);
+}
+.daily-cell.done .daily-r { color: var(--okText); opacity: .55; }
+.daily-tick {
+  position: absolute;
+  right: 3px;
+  top: 2px;
+  font: 800 10px inherit;
+  color: var(--ok);
+}
+
+.daily-cell.now {
+  background: linear-gradient(180deg, #3b2c0c, #241c0a);
+  border-color: var(--gold);
+}
+.daily-cell.now .daily-n { color: var(--goldText); }
+.daily-cell.now .daily-r { color: var(--gold); }
+.daily-cell.now.ready {
+  z-index: 1;
+  animation: cell-in .45s var(--spring) both, cell-pulse 1.6s ease-in-out .6s infinite;
+  animation-delay: calc(var(--i) * 14ms), .6s;
+}
+@keyframes cell-in {
+  from { opacity: 0; transform: translateY(8px) scale(.7); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes cell-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 211, 77, .0); }
+  50%      { transform: scale(1.08); box-shadow: 0 0 16px 2px rgba(255, 211, 77, .45); }
+}
+
+.daily-sum {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--r2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.daily-sum-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text2);
+}
+.daily-sum-row b {
+  display: inline-flex;
+  align-items: center;
+  font: 800 14px ui-monospace, monospace;
+  color: var(--gold);
+}
+
+.daily-cta { position: relative; }
+.daily-go { margin-top: 0; padding: 15px; }
+.daily-go:not(:disabled) { animation: go-breathe 2s ease-in-out infinite; }
+@keyframes go-breathe {
+  0%, 100% { box-shadow: var(--goldGlow), inset 0 1px 0 rgba(255, 255, 255, .45); }
+  50%      { box-shadow: 0 0 0 1px rgba(255, 211, 77, .55), 0 8px 32px rgba(255, 176, 32, .55),
+                         inset 0 1px 0 rgba(255, 255, 255, .45); }
+}
+/* той самий пробіг відблиску, що й у кнопки колеса */
+.daily-go { position: relative; overflow: hidden; }
+.daily-go:not(:disabled)::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: -60%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .5), transparent);
+  animation: go-sheen 2.6s ease-in-out infinite;
+}
+
+.daily-got {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 6px;
+  animation: prize-in .5s cubic-bezier(.2, 1.5, .4, 1) both;
+}
+.daily-got-cap {
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.daily-got-sum {
+  display: inline-flex;
+  align-items: center;
+  font: 900 30px ui-monospace, monospace;
+  color: var(--gold);
+  text-shadow: 0 0 22px rgba(255, 211, 77, .5);
+}
+.daily-wait { text-align: center; margin: 4px 0 0; }
+.daily-next { display: block; margin-top: 2px; }
+.daily-wait b { color: var(--text); }
+.daily-wait .money { vertical-align: -2px; color: var(--goldText); }
+
+/* Розліт монет із кнопки в момент отримання. Кожна монета летить по
+   своєму вектору (--bx, --by), крутиться (--br) і згасає. */
+.daily-burst {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+.daily-coin {
+  position: absolute;
+  left: -11px;
+  top: -11px;
+  width: 22px;
+  height: 22px;
+  animation: coin-fly .9s var(--ease-out) var(--bd) both;
+}
+.daily-coin .cur-ico { width: 22px; height: 22px; }
+@keyframes coin-fly {
+  0%   { opacity: 0; transform: translate(0, 0) scale(.4) rotate(0deg); }
+  15%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate(var(--bx), calc(var(--by) + 60px)) scale(1) rotate(var(--br)); }
+}
+
+@media (max-width: 360px) {
+  .daily-grid { gap: 4px; }
+  .daily-r { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .daily-cell { opacity: 1; animation: none !important; }
+  .daily-flame, .daily-go, .daily-go::after, .daily-coin { animation: none !important; }
+  .daily-coin { display: none; }
+}

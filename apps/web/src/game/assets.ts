@@ -86,6 +86,16 @@ class AssetStore {
     p['heart'] = '/ui/heart.png';
     // растровий шрифт цифр для попапів виграшу
     p['popupFont'] = '/ui/popup-font.png';
+    /* Набір скаттерів — три гнізда вгорі екрана. Дві картинки на всі
+       три: порожнє гніздо й заповнене. Вони РІЗАНІ ОДНІЄЮ рамкою з
+       оригіналів (art/ui), тобто рамка, заклепки й центр у них
+       збігаються піксель у піксель — інакше в мить заповнення гніздо
+       смикалось би. */
+    p['scatter.slot'] = '/ui/scatter-slot.png';
+    p['scatter.slotOn'] = '/ui/scatter-slot-on.png';
+    /* Плита BONUS GAME. Нижня третина в ній навмисно порожня — туди
+       код пише підпис (див. drawBonusIntro). */
+    p['bonusIntro'] = '/ui/bonus-intro.png';
     // табличка виграшу й слово WIN (обидві намальовані вертикально)
     p['winBanner'] = '/ui/win-banner.png';
     p['winWord'] = '/ui/win-word.png';
@@ -132,9 +142,7 @@ class AssetStore {
      переживають (Render.money малює лише текст, ефект не малюється). */
   private loadExtras(): Promise<unknown> {
     return Promise.all([
-      this.one('cur.RUB', '/coins/rub.png'),
-      this.one('cur.USDT', '/coins/usdt.png'),
-      this.one('cur.XTR', '/coins/xtr.png'),
+      this.one('cur.COIN', '/coins/coin.svg'),
       this.one('fx.tntBlast', '/fx/tnt-blast.png'),
       this.one('fx.pickGrow', '/fx/pick-grow.png'),
       this.one('fx.pickTnt', '/fx/pick-tnt.png'),
@@ -142,7 +150,7 @@ class AssetStore {
     ]);
   }
 
-  /* Одноколірні іконки (значок рубля) тонуються в колір тексту.
+  /* Одноколірні іконки (значки валюти) тонуються в колір тексту.
      Тонована версія кешується за парою ключ+колір — кольорів мало
      (кольори блоків + золото), тож мапа лишається крихітною. */
   private tints = new Map<string, HTMLCanvasElement>();

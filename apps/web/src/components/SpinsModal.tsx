@@ -12,16 +12,14 @@
    Вікно нічого не рахує: пакети, ціни й множник приходять із сервера,
    покупку робить теж він. Тут лише розмітка й натискання.
 
-   Виграш із цих прокрутів — ЗВИЧАЙНІ гроші, без відіграшу: пакет
-   куплено за власні, а відіграш вішають на подарунки (див.
-   spins.types на сервері).
    ============================================================ */
 
 import { useEffect, useState } from 'react';
 import { Api, type SpinsState } from '../lib/api';
 import { Modal } from './Modal';
 import { SPIN_BANNERS, plateStyle } from '../lib/spin-banners';
-import { rub } from '../lib/format';
+import { num } from '../lib/format';
+import { CoinIcon } from './Money';
 
 interface Props {
   onClose: () => void;
@@ -64,7 +62,7 @@ export function SpinsModal({ onClose, onBought }: Props) {
 
       {state && state.left > 0 && (
         <p className="fs-left">
-          У тебя <b>{state.left}</b> прокрутов по {rub(state.bet)} ₽.
+          У тебя <b>{state.left}</b> прокрутов по {num(state.bet)} <CoinIcon />.
           Они сыграют сами при следующем спине.
         </p>
       )}
@@ -73,7 +71,6 @@ export function SpinsModal({ onClose, onBought }: Props) {
         <>
           <p className="dep-sub">
             Шанс кирки в этих прокрутах в <b>x{state.chanceX}</b> выше обычного.
-            Выигрыш — обычные деньги, выводится без отыгрыша.
           </p>
 
           <div className="fs-list">
@@ -108,7 +105,7 @@ export function SpinsModal({ onClose, onBought }: Props) {
                     className="fs-plate fs-stat"
                     style={banner ? plateStyle(banner.geom.right) : undefined}
                   >
-                    <b>{rub(p.bet)} ₽</b>
+                    <b>{num(p.bet)}</b>
                     <span>ставка</span>
                   </div>
 
@@ -119,7 +116,7 @@ export function SpinsModal({ onClose, onBought }: Props) {
                     disabled={!enough || busy !== null}
                     onClick={() => void buy(p.id)}
                   >
-                    {busy === p.id ? '…' : enough ? <>{rub(p.price)} ₽</> : 'мало'}
+                    {busy === p.id ? '…' : enough ? <>{num(p.price)} <CoinIcon /></> : 'мало'}
                   </button>
                 </div>
               );

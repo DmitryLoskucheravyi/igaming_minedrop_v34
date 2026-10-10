@@ -17,7 +17,7 @@ export interface Particle {
   size: number; life: number; color: string;
 }
 
-/* money — сума в рублях: рядок будується на льоту під поточну валюту й
+/* money — сума в коінах: рядок будується на льоту й
    малюється зі значком. prefix — текст перед сумою ('+', 'БУМ! +').
    Якщо money не задано — показуємо просто text. */
 export interface Popup {

@@ -21,10 +21,7 @@ import {
   type RoundResult, type RoundSetup, type Tier, type TierId,
 } from '@minedrop/engine';
 import type { PlayerState } from '../lib/api';
-import {
-  CURRENCY_META, FALLBACK_RATES, fmtAmount, fmtWhole,
-  type CurrencyCode, type Rates,
-} from '../lib/currency';
+import { COIN, fmtAmount, fmtWhole } from '../lib/currency';
 import { haptic, setupMiniApp } from '../lib/telegram';
 import { Assets } from './assets';
 import { Music } from './audio';
@@ -35,13 +32,13 @@ import { Effects, TOAST_LIFE } from './effects';
 import { RoundGateway } from './gateway';
 import { Camera } from './camera';
 import * as Hud from './hud-canvas';
-import { BONUS_INTRO_SEC, type HistoryEntry } from './hud-canvas';
+import { BONUS_INTRO_SEC, SCATTER_POP_SEC, type HistoryEntry } from './hud-canvas';
 
 type State = 'LOADING' | 'IDLE' | 'SPIN' | 'RISE' | 'RUNNING' | 'DROPDONE' | 'RESULT' | 'ERROR';
 
 export interface HudState {
   state: State;
-  /** сирий баланс у рублях (базова одиниця) — DOM форматує сам під вибрану валюту */
+  /** баланс у коінах */
   balance: number;
   bet: number;
   bets: number[];
@@ -58,8 +55,6 @@ export interface HudState {
   /* Невитрачена бонуска: наступний прокрут буде нею, безкоштовно і на
      збереженій ставці. null — немає. */
   pendingBonus: { bet: number } | null;
-  /** курс валют із серверного config (для DOM-форматування) */
-  rates: Rates;
   busy: boolean;
   /** RESULT без жодного виграшу (кірка не випала або нічого не зловила) —
       показувати модалку "+0" нема сенсу, HUD сам скаже коротко в статусі. */
@@ -223,14 +218,13 @@ export class Presenter {
   private bet = 50;
   /** скаттерів зібрано в поточному раунді */
   private scatters = 0;
+  /* Скільки ще триває спалах гнізда після попадання. Окремий таймер, а
+     не похідна від scatters: сам лічильник не міняється, поки наступний
+     скаттер не впав, а спалах має згасати плавно. */
+  private scatterPop = 0;
   /* Заставка «БОНУС ГЕЙМ» перед безкоштовним раундом. Тримається
      стільки секунд; поки йде — рулетка не крутиться. */
   private bonusIntro = 0;
-
-  /* валюта відображення (косметика): база — рублі, гравець може
-     перемкнути на USDT/зірки. Курс приходить у config.rates. */
-  private currency: CurrencyCode = 'RUB';
-  private rates: Rates = FALLBACK_RATES;
 
   /* прискорення програвання (косметика — фізика лишається фіксованим
      кроком SIM_DT, просто за кадр проганяємо більше кроків) і автоплей */
@@ -292,7 +286,7 @@ export class Presenter {
   private onHud: (h: HudState) => void;
   private onResize = () => this.layout();
 
-  /* Поки на екрані модалка (депозит, чесність, історія платежів) або
+  /* Поки на екрані модалка (нагорода, чесність, колесо) або
      фокус у полі вводу — пробіл належить їм, а не грі. Без цього
      набраний у полі суми пробіл і з'їдався (preventDefault), і
      запускав новий раунд «з-під» відкритого вікна. */
@@ -569,13 +563,6 @@ export class Presenter {
     this.emit();
   }
 
-  /** Валюта відображення. Косметика: перемальовує суми на канвасі й у HUD,
-      на баланс і математику не впливає. */
-  setCurrency(c: CurrencyCode): void {
-    this.currency = c;
-    this.emit();
-  }
-
   /** Наступне прискорення по колу: 1 -> 2 -> 3 -> 4 -> 1.
       Фізика від цього не змінюється (той самий фіксований крок) —
       просто за кадр робимо більше кроків, тож раунд грається швидше. */
@@ -602,8 +589,8 @@ export class Presenter {
     }
   }
 
-  /* Малює суму (в рублях) поточною валютою зі значком.
-     whole=true — велика сума (виплата, ставка): у рублях ціле;
+  /* Малює суму в коінах зі значком.
+     whole=true — велика сума (виплата, ставка): ціле;
      whole=false — дрібна (виграш за блок): показуємо дріб. */
   /* Спільне для всіх написів HUD: розмір полотна, зсув під стрічку
      історії й форматування грошей у валюті гравця. */
@@ -613,29 +600,26 @@ export class Presenter {
       w: this.w,
       h: this.h,
       topInset: this.topInset,
-      money: (rub, x, y, font, color, align, prefix, whole) =>
-        this.drawMoney(ctx, rub, x, y, font, color, align, prefix, whole),
-      moneyStr: (rub, whole) => this.moneyStr(rub, whole),
-      currency: this.currency,
-      monoCurrency: CURRENCY_META[this.currency].mono,
+      money: (amount, x, y, font, color, align, prefix, whole) =>
+        this.drawMoney(ctx, amount, x, y, font, color, align, prefix, whole),
+      moneyStr: (amount, whole) => this.moneyStr(amount, whole),
+      currency: COIN,
+      monoCurrency: false,
     };
   }
 
   /** Сума в поточній валюті рядком, без значка (його малюють окремо). */
-  private moneyStr(rub: number, whole = false): string {
-    return whole
-      ? fmtWhole(rub, this.currency, this.rates)
-      : fmtAmount(rub, this.currency, this.rates);
+  private moneyStr(amount: number, whole = false): string {
+    return whole ? fmtWhole(amount) : fmtAmount(amount);
   }
 
   private drawMoney(
-    ctx: CanvasRenderingContext2D, rub: number, x: number, y: number,
+    ctx: CanvasRenderingContext2D, amount: number, x: number, y: number,
     font: string, color: string, align: CanvasTextAlign = 'center', prefix = '+',
     whole = false,
   ): void {
-    const meta = CURRENCY_META[this.currency];
-    Render.money(ctx, prefix + this.moneyStr(rub, whole), x, y, font, color,
-      this.currency, meta.mono, align);
+    Render.money(ctx, prefix + this.moneyStr(amount, whole), x, y, font, color,
+      COIN, false, align);
   }
 
   /** ЛИШЕ кнопка «ГРАТИ»: завжди одразу новий раунд — навіть одразу після
@@ -661,7 +645,7 @@ export class Presenter {
 
   /* Тап «ГРАТИ» при нестачі коштів — червона плашка над полем. */
   private notEnough(): void {
-    this.error = 'Недостаточно средств — пополни баланс или уменьши ставку';
+    this.error = 'Не хватает коинов — уменьши ставку или забери ежедневную награду';
     this.message = this.error;
     haptic('lose');
     this.emit();
@@ -674,7 +658,6 @@ export class Presenter {
     this.balance = p.balance;
     // баланс поповнили / прийшов новий стан — прибираємо плашку нестачі
     if (this.error && this.balance >= this.bet) this.error = null;
-    if (p.config?.rates) this.rates = p.config.rates;
     if (p.config?.bets?.length && !p.config.bets.includes(this.bet)) {
       this.bet = p.config.bets[Math.min(2, p.config.bets.length - 1)];
     }
@@ -682,11 +665,9 @@ export class Presenter {
 
   /** Перечитати стан гравця з сервера.
 
-      Потрібно після того, як гроші змінилися ПОЗА грою: адмін підтвердив
-      заявку на депозит або поповнив баланс вручну. Раніше такого шляху не
-      було взагалі — вікно депозиту поллило свій ендпоінт, а презентер про
-      зарахування не дізнавався, і гравець бачив старий баланс, доки не
-      зіграє раунд.
+      Потрібно після того, як коіни змінилися ПОЗА раундом: щоденна
+      нагорода, колесо, куплений пакет фріспінів. Інакше гравець бачив би
+      старий баланс, доки не зіграє раунд.
 
       Баланс підмінюємо тільки коли раунд не йде: під час розіграшу на
       екрані свідомо стоїть «баланс після списання», і замінювати його
@@ -700,7 +681,6 @@ export class Presenter {
     }
 
     this.player = p;
-    if (p.config?.rates) this.rates = p.config.rates;
 
     if (this.state === 'IDLE' || this.state === 'RESULT' || this.state === 'ERROR') {
       this.balance = p.balance;
@@ -726,7 +706,7 @@ export class Presenter {
     return this.round?.bet ?? this.bet;
   }
 
-  /** Ціна бонуски для кірки за поточної ставки, у рублях. */
+  /** Ціна бонуски для кірки за поточної ставки, у коінах. */
   buyPrice(tier: TierId): number {
     const k = this.player?.config?.buyPrices?.[tier] ?? CONFIG.buy.price[tier] ?? 0;
     return Math.round(this.bet * k);
@@ -791,6 +771,7 @@ export class Presenter {
     this.resultT = 0;
     this.acc = 0;
     this.scatters = 0;
+    this.scatterPop = 0;
     /* Шахта береться з setup.bonus, а не з наявності round.buy: виграна
        бонуска теж бонусна, але нічого не куплено. Помилка тут була б
        тихою — клієнт згенерував би звичайну шахту й розійшовся з
@@ -974,7 +955,6 @@ export class Presenter {
       scatters: this.scatters,
       scatterNeed: CONFIG.scatter.need,
       pendingBonus: p?.pendingBonus ?? null,
-      rates: this.rates,
       busy: this.busy,
       resultEmpty: this.resultEmpty,
       verified: this.verified,
@@ -1076,6 +1056,7 @@ export class Presenter {
            й реакція інша: не той самий попап, що на перших двох. */
         const done = e.n >= e.need;
         this.scatters = e.n;
+        this.scatterPop = SCATTER_POP_SEC;
         this.fx.burst(e.c + 0.5, e.r + 0.5, '#ff9a3c', done ? 48 : 24, done ? 2.6 : 1.4);
         this.shake = done ? 26 : 12;
         if (done) { this.flash = 0.5; this.flashColor = '#ff9a3c'; }
@@ -1200,6 +1181,7 @@ export class Presenter {
     }
 
     if (this.bonusIntro > 0) this.bonusIntro = Math.max(0, this.bonusIntro - dt);
+    if (this.scatterPop > 0) this.scatterPop = Math.max(0, this.scatterPop - dt);
 
     if (this.state === 'RUNNING' && this.run) {
       this.acc += dt;
@@ -1364,7 +1346,7 @@ export class Presenter {
     Hud.drawLiveLog(hud, this.fx.toasts, this.playing);
     Hud.drawRunningTotal(hud, this.run, this.runBet, running);
     Hud.drawMultWindow(hud, this.run, running);
-    Hud.drawScatters(hud, this.scatters, running);
+    Hud.drawScatters(hud, this.scatters, running, this.scatterPop);
     if (this.state === 'RESULT' && !this.resultEmpty) Hud.drawResult(hud, this.round, this.resultT);
     /* Заставка малюється ОСТАННЬОЮ і поверх усього: вона й має
        перекрити поле, поки бонуска ще не почалась. */
@@ -1502,7 +1484,6 @@ export class Presenter {
       ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.4));
       const font = '800 ' + Math.round(this.cell * p.size) + 'px ui-monospace, monospace';
       if (p.money != null) {
-        const meta = CURRENCY_META[this.currency];
         const str = (p.prefix ?? '+') + this.moneyStr(p.money);
         /* Растровий шрифт бере на себе ЛИШЕ те, що з нього можна
            набрати: цифри, '+', кому, 'x', '/'. Попап із кирилицею
@@ -1511,8 +1492,8 @@ export class Presenter {
         const done = Render.pixelMoney(
           ctx, str, this.sx(p.x), this.sy(p.y),
           Math.max(POPUP_PIXEL_MIN, Math.round(this.cell * p.size * 1.35)),
-          p.color, this.currency, meta.mono);
-        if (!done) {
+          p.color, COIN, false);
+        if (done < 0) {
           this.drawMoney(ctx, p.money, this.sx(p.x), this.sy(p.y), font, p.color, 'center', p.prefix ?? '+');
         }
       } else {

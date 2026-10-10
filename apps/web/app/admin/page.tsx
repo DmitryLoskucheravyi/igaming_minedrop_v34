@@ -1,12 +1,11 @@
 'use client';
 
 /* ============================================================
-   CRM /admin — вкладки: Игроки, Заявки, Депозиты, Промокоды.
+   CRM /admin — игроки и их коины.
 
-   Разделены по вопросу, на который отвечают: «кто играет», «что ждёт
-   моего решения», «как мы вообще принимаем деньги». Адреса и режим
-   наблюдателя живут в последней: порознь они бессмысленны — сеть без
-   адреса не работает, адрес без сети не слушается.
+   Платежей больше нет: игра развлекательная, коины не покупаются и не
+   выводятся. Админу остаётся видеть, кто играет, и при необходимости
+   начислить, обнулить или удалить.
 
    Доступ під адмін-логіном (колекція `admins` на сервері). Токен
    сесії лежить у localStorage, кожен запит іде з ним; 401 звідусіль
@@ -22,11 +21,7 @@ import s from './admin.module.css';
 import { api, getRefresh, getToken, setTokens, UNAUTHORIZED_EVENT, type AdminMe } from './lib';
 import { LoginForm } from './LoginForm';
 import { PlayersTab } from './PlayersTab';
-import { RequestsTab } from './RequestsTab';
-import { DepositsTab } from './DepositsTab';
-import { PromosTab } from './PromosTab';
 
-type Tab = 'players' | 'requests' | 'deposits' | 'promos';
 type Auth = 'checking' | 'in' | 'out';
 type Theme = 'dark' | 'light';
 
@@ -57,8 +52,6 @@ export default function AdminPage() {
   const [theme, toggleTheme] = useTheme();
   const [auth, setAuth] = useState<Auth>('checking');
   const [admin, setAdmin] = useState<AdminMe | null>(null);
-  const [tab, setTab] = useState<Tab>('players');
-  const [pending, setPending] = useState(0);
 
   /* Токен є — питаємо сервер, чи сесія ще жива. Сесії живуть у пам'яті
      процесу API, тому після його рестарту токен у localStorage валідним
@@ -81,21 +74,6 @@ export default function AdminPage() {
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
   }, []);
 
-  // лічильник pending-заявок для бейджа — тягнемо незалежно від вкладки
-  const pollPending = useCallback(async () => {
-    try {
-      const b = await api<{ pending: number }>('/payments');
-      setPending(b.pending);
-    } catch { /* мовчки: 401 обробить слухач вище */ }
-  }, []);
-
-  useEffect(() => {
-    if (auth !== 'in') return;
-    void pollPending();
-    const t = setInterval(() => void pollPending(), 20_000);
-    return () => clearInterval(t);
-  }, [auth, pollPending]);
-
   const logout = useCallback(async () => {
     try { await api('/logout', { method: 'POST' }); } catch { /* усе одно виходимо */ }
     setTokens(null);
@@ -114,23 +92,10 @@ export default function AdminPage() {
     return <LoginForm theme={theme} onDone={(a) => { setAdmin(a); setAuth('in'); }} />;
   }
 
-  const btn = (id: Tab) => `${s.tab} ${tab === id ? s.on : ''}`;
-
   return (
     <div className={s.shell} data-theme={theme}>
       <div className={s.tabs}>
-        <button type="button" className={btn('players')} onClick={() => setTab('players')}>
-          Игроки
-        </button>
-        <button type="button" className={btn('requests')} onClick={() => setTab('requests')}>
-          Заявки{pending > 0 && <span className={s.dot}>{pending}</span>}
-        </button>
-        <button type="button" className={btn('deposits')} onClick={() => setTab('deposits')}>
-          Депозиты
-        </button>
-        <button type="button" className={btn('promos')} onClick={() => setTab('promos')}>
-          Промокоды
-        </button>
+        <span className={`${s.tab} ${s.on}`}>Игроки</span>
 
         <div className={s.who}>
           <span className={s.dim}>{admin?.login}</span>
@@ -147,10 +112,7 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {tab === 'players' && <PlayersTab />}
-      {tab === 'requests' && <RequestsTab onPending={setPending} />}
-      {tab === 'deposits' && <DepositsTab />}
-      {tab === 'promos' && <PromosTab />}
+      <PlayersTab />
     </div>
   );
 }

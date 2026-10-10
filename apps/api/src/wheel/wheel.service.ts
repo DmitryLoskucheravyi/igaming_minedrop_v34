@@ -9,7 +9,7 @@ import {
 /* ============================================================
    КОЛЕСО ЩОДЕННОГО БОНУСУ.
 
-   Один прокрут при першому вході й далі один на добу. Гроші нараховує
+   Один прокрут при першому вході й далі один на добу. Коіни нараховує
    СЕРВЕР і тільки сервер: клієнт показує анімацію вже за готовим
    результатом, тому «прокрутити ще раз, поки не сподобається» не
    працює — приз визначено до того, як колесо почало крутитись.
@@ -89,7 +89,7 @@ export class WheelService {
       ? this.draw()
       : WHEEL_PRIZES.find((p) => p.id === WHEEL_FIRST_PRIZE)!;
 
-    /* Індекс сектора віддаємо окремо від самого призу: тих самих 25 ₽
+    /* Індекс сектора віддаємо окремо від самого призу: тих самих 250 коінів
        на колесі два сектори, і клієнт має зупинити стрілку саме на
        тому, який виграв. indexOf шукає за ПОСИЛАННЯМ (draw і find
        повертають сам елемент масиву), тому дублікати не плутаються. */
@@ -97,14 +97,12 @@ export class WheelService {
 
     rec.wheelAt = Date.now();
     if (prize.spins) rec.freeSpins = (rec.freeSpins ?? 0) + prize.spins;
-    /* Гроші — через topUp, а не rec.balance += : там і збереження, і
-       запис у лог. Нарахування балансу поза цим методом лишало б
-       безслідні надходження, а саме за ними й дивляться, коли сходиться
-       каса. */
-    if (prize.rub) this.players.topUp(rec.telegramId, prize.rub, 'колесо');
+    /* Коіни — через credit, а не rec.coins += : там і збереження, і
+       запис у лог. */
+    if (prize.coins) this.players.credit(rec.telegramId, prize.coins, 'колесо');
     else this.players.persist(rec);
 
     this.log.log(`колесо: ${rec.telegramId} -> ${prize.label}`);
-    return { prize, index, state: this.state(rec), balance: this.players.total(rec) };
+    return { prize, index, state: this.state(rec), balance: this.players.balance(rec) };
   }
 }

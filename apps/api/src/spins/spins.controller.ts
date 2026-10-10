@@ -11,7 +11,7 @@ class BuyDto {
 }
 
 /* Пакети фріспінів: один роут на список і один на покупку. Логіки тут
-   майже немає — усе, що коштує грошей, робить PlayersService: списання,
+   майже немає — усе, що коштує коінів, робить PlayersService: списання,
    видачу прокрутів і запис у лог. */
 @Controller('spins')
 @UseGuards(TelegramAuthGuard)
@@ -30,7 +30,7 @@ export class SpinsController {
       })),
       left: rec.buySpins ?? 0,
       bet: rec.buySpinBet ?? 0,
-      balance: this.players.total(rec),
+      balance: this.players.balance(rec),
     };
   }
 

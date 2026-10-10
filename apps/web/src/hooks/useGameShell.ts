@@ -3,39 +3,18 @@
 /* ============================================================
    ОБОЛОНКА ГРИ — дрібні шматки стану, які не належать розмітці.
 
-   Три окремі хуки, а не один «стан HUD»: валюта, відкрите вікно й
-   ознака живої заявки не мають нічого спільного, крім того, що всі
-   троє знадобились одному компоненту. Складати їх в одну структуру
-   означало б зробити ще один god-object, тільки в хуку.
+   Окремі хуки, а не один «стан HUD»: відкрите вікно й позначки «є що
+   забрати» не мають нічого спільного, крім того, що всі знадобились
+   одному компоненту.
    ============================================================ */
 
 import { useCallback, useEffect, useState } from 'react';
 import { Api } from '../lib/api';
-import { loadCurrency, saveCurrency, type CurrencyCode } from '../lib/currency';
-
-/* ---- валюта показу ----
-   Косметика: сервер завжди рахує в ₽, тут лише те, якими цифрами це
-   малюють. Читаємо з localStorage ПІСЛЯ монтування — інакше
-   SSR-розмітка ('RUB') не збіглась би з клієнтською. */
-export function useCurrency(onChange: (c: CurrencyCode) => void) {
-  const [currency, setCurrency] = useState<CurrencyCode>('RUB');
-
-  useEffect(() => { setCurrency(loadCurrency()); }, []);
-  useEffect(() => { onChange(currency); }, [currency, onChange]);
-
-  const change = useCallback((c: CurrencyCode) => {
-    setCurrency(c);
-    saveCurrency(c);
-  }, []);
-
-  return [currency, change] as const;
-}
 
 /* ---- яке вікно відкрите ----
-   Одне поле замість п'яти прапорців. Річ не в економії рядків:
-   п'ять незалежних булів описують і стани, яких не буває, — два
-   вікна поверх одного, — а тут вони просто невиразні. */
-export type ModalId = 'deposit' | 'withdraw' | 'payments' | 'fair' | 'buy' | 'wheel' | 'ref' | 'spins';
+   Одне поле замість купи прапорців: незалежні були описують і стани,
+   яких не буває, — два вікна поверх одного. */
+export type ModalId = 'daily' | 'fair' | 'buy' | 'wheel' | 'ref' | 'spins';
 
 export function useModal() {
   const [modal, setModal] = useState<ModalId | null>(null);
@@ -44,14 +23,8 @@ export function useModal() {
   return { modal, open, close };
 }
 
-/* ---- жива заявка на поповнення ----
-   Вона живе 30 хвилин і не показується ніде, крім свого вікна: закрив —
-   і про таймер більше ніщо не нагадує. Тому питаємо про неї на старті
-   й після кожного закриття вікна, а HUD малює крапку на кнопці «+». */
-/* Чи доступний прокрут колеса. Окремий тихий запит, як і в депозиту:
-   не вийшов — просто не світимо крапку, бо це прикраса меню, а не
-   умова гри. check() потрібен, щоб погасити її одразу після прокруту,
-   не перечитуючи весь стан. */
+/* Чи доступний прокрут колеса. Окремий тихий запит: не вийшов —
+   просто не світимо крапку, бо це прикраса меню, а не умова гри. */
 export function useWheelBadge() {
   const [ready, setReady] = useState(false);
 
@@ -64,15 +37,27 @@ export function useWheelBadge() {
   return { ready, check, setReady };
 }
 
-export function useDepositBadge() {
-  const [pending, setPending] = useState(false);
+/* Щоденна нагорода. Питаємо на старті: доступна — вікно відкривається
+   саме (onReady), і далі світиться позначка на кнопці подарунка, доки
+   нагороду не заберуть. Нагорода, про яку не сказали, — не нагорода. */
+export function useDailyBadge(onReady: () => void) {
+  const [ready, setReady] = useState(false);
+  const [day, setDay] = useState(0);
 
-  const check = useCallback(() => {
-    // тиха перевірка: не вийшло — просто не показуємо крапку
-    void Api.payments().then((r) => setPending(!!r.active)).catch(() => {});
+  useEffect(() => {
+    let alive = true;
+    Api.daily()
+      .then((d) => {
+        if (!alive) return;
+        setReady(d.ready);
+        setDay(d.day);
+        if (d.ready) onReady();
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+    // лише на старті: повторно відкривати вікно саме по собі не треба
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => { check(); }, [check]);
-
-  return { pending, check };
+  return { ready, day, setReady, setDay };
 }

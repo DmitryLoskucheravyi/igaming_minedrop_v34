@@ -540,8 +540,8 @@ export const Render = {
     ctx.fillText(s, x, y);
   },
 
-  /* Сума + іконка валюти після неї. cur — код валюти ('RUB'|'USDT'|'XTR'),
-     значок береться з Assets (мапа 'cur.<код>'); для рубля (mono) значок
+  /* Сума + іконка валюти після неї. cur — код валюти ('COIN'),
+     значок береться з Assets (мапа 'cur.<код>'); для одноколірного (mono) значок
      тонується в колір тексту, кольорові монети малюються як є. */
   money(
     ctx: Ctx, s: string, x: number, y: number, font: string, color: string,

@@ -1,15 +1,12 @@
 /* ============================================================
-   Реферальні виплати: за прихід друга і за його депозити від порога.
+   Реферальна нагорода: коіни за прихід друга.
 
-   Перевіряємо саме те, де ціна помилки — гроші: чи не платиться те
-   саме двічі, чи не платиться нижче порога, чи складаються дрібні
-   депозити й чи не нараховується виплата, коли запрошувача вже немає.
+   Перевіряємо саме те, де ціна помилки — коіни: чи не платиться те
+   саме двічі й чи не нараховується виплата, коли запрошувача вже немає.
    ============================================================ */
 
 import assert from 'node:assert/strict';
-import {
-  ReferralsService, REF_JOIN_RUB, REF_DEPOSIT_RUB, REF_DEPOSIT_MIN, REF_BONUS_WAGER_X,
-} from '../src/referrals/referrals.service';
+import { ReferralsService, REF_JOIN_COINS } from '../src/referrals/referrals.service';
 import type { PlayerRecord } from '../src/players/players.service';
 
 let failed = 0;
@@ -24,32 +21,22 @@ function test(name: string, fn: () => void): void {
 }
 
 /* Стенд повторює рівно те, чим користується сервіс: пошук гравця,
-   поповнення й збереження. Створення запису (і саму прив'язку refBy)
+   нарахування й збереження. Створення запису (і саму прив'язку refBy)
    робить PlayersService, тому тут воно імітується прямо. */
 function make() {
   const db = new Map<number, PlayerRecord>();
   let hook: ((rec: PlayerRecord) => void) | null = null;
 
-  /* Реферальні гроші приходять БОНУСОМ (баланс + замок на відіграш).
-     Стенд повторює лише видиму частину — нарахування й запис виклику;
-     арифметику замка перевіряє wager.test. */
-  const wagered: [number, number, number][] = [];
   const players = {
-    grantBonus: (id: number, rub: number, x: number) => {
-      const rec = db.get(id);
-      if (!rec) return;
-      rec.balance += rub;
-      wagered.push([id, rub, x]);
-    },
     byId: (id: number) => db.get(id),
     all: () => [...db.values()],
     persist: () => undefined,
     onCreated: (fn: (rec: PlayerRecord) => void) => { hook = fn; },
-    topUp: (id: number, amount: number) => {
+    credit: (id: number, amount: number) => {
       const rec = db.get(id);
       if (!rec) return null;
-      rec.balance += amount;
-      return rec.balance;
+      rec.coins += amount;
+      return rec.coins;
     },
   } as never;
 
@@ -59,89 +46,40 @@ function make() {
 
   const add = (telegramId: number, refBy: number | null = null): PlayerRecord => {
     const rec = {
-      telegramId, firstName: 'p' + telegramId, balance: 0,
-      refBy, refJoinPaidAt: null, refDepositPaidAt: null, refDeposited: 0,
-      createdAt: Date.now(),
-    } as PlayerRecord;
+      telegramId, firstName: 'p' + telegramId, coins: 0,
+      refBy, refJoinPaidAt: null, createdAt: Date.now(),
+    } as unknown as PlayerRecord;
     db.set(telegramId, rec);
     hook?.(rec);
     return rec;
   };
 
-  return { svc, db, add, wagered };
+  return { svc, db, add, fire: (rec: PlayerRecord) => hook?.(rec) };
 }
 
 function main(): void {
   test('друг прийшов — запрошувачу капнуло рівно раз', () => {
-    const { svc, add } = make();
+    const { add, fire } = make();
     const host = add(1);
     const friend = add(2, 1);
-    assert.equal(host.balance, REF_JOIN_RUB);
+    assert.equal(host.coins, REF_JOIN_COINS);
     assert.ok(friend.refJoinPaidAt);
-    // повторний виклик хука (перезапит /me тощо) не має платити вдруге
-    svc.onDeposit(999, REF_DEPOSIT_MIN);
-    assert.equal(host.balance, REF_JOIN_RUB);
-  });
-
-  test('депозит від порога — доплата, і теж лише раз', () => {
-    const { svc, add } = make();
-    const host = add(1);
-    add(2, 1);
-    svc.onDeposit(2, REF_DEPOSIT_MIN);
-    assert.equal(host.balance, REF_JOIN_RUB + REF_DEPOSIT_RUB);
-    svc.onDeposit(2, REF_DEPOSIT_MIN);
-    svc.onDeposit(2, 10_000);
-    assert.equal(host.balance, REF_JOIN_RUB + REF_DEPOSIT_RUB);
-  });
-
-  test('обидві виплати приходять бонусом із відіграшем x10', () => {
-    const { svc, add, wagered } = make();
-    add(1);
-    add(2, 1);                                   // прихід друга
-    svc.onDeposit(2, REF_DEPOSIT_MIN);           // і його депозит
-    assert.deepEqual(wagered, [
-      [1, REF_JOIN_RUB, REF_BONUS_WAGER_X],
-      [1, REF_DEPOSIT_RUB, REF_BONUS_WAGER_X],
-    ]);
-  });
-
-  test('депозит нижче порога — доплати немає', () => {
-    const { svc, add } = make();
-    const host = add(1);
-    add(2, 1);
-    svc.onDeposit(2, REF_DEPOSIT_MIN - 1);
-    assert.equal(host.balance, REF_JOIN_RUB, 'заплатили за депозит нижче порога');
-  });
-
-  test('дрібні депозити складаються до порога', () => {
-    const { svc, add } = make();
-    const host = add(1);
-    const friend = add(2, 1);
-    const part = Math.ceil(REF_DEPOSIT_MIN / 3);
-    svc.onDeposit(2, part);
-    svc.onDeposit(2, part);
-    assert.equal(host.balance, REF_JOIN_RUB, 'заплатили раніше, ніж набрався поріг');
-    svc.onDeposit(2, part);
-    assert.equal(host.balance, REF_JOIN_RUB + REF_DEPOSIT_RUB);
-    assert.ok(friend.refDeposited >= REF_DEPOSIT_MIN);
+    // повторний виклик хука не має платити вдруге
+    fire(friend);
+    assert.equal(host.coins, REF_JOIN_COINS);
   });
 
   test('гравець без запрошувача нікому не платить', () => {
-    const { svc, add, db } = make();
+    const { add, db } = make();
     add(1);
     add(2);
-    svc.onDeposit(2, REF_DEPOSIT_MIN);
-    assert.equal(db.get(1)!.balance, 0);
+    assert.equal(db.get(1)!.coins, 0);
   });
 
-  test('запрошувача видалили — виплати немає й ознака не ставиться', () => {
-    const { svc, add, db } = make();
-    add(1);
+  test('запрошувача немає — виплати немає й ознака не ставиться', () => {
+    const { add } = make();
     const friend = add(2, 1);
-    db.delete(1);
-    friend.refJoinPaidAt = null;
-    svc.onDeposit(2, REF_DEPOSIT_MIN);
-    assert.equal(friend.refDepositPaidAt, null);
+    assert.equal(friend.refJoinPaidAt, null);
   });
 
   test('список друзів показує, за кого скільки отримано', () => {
@@ -149,16 +87,10 @@ function main(): void {
     const host = add(1);
     add(2, 1);
     add(3, 1);
-    svc.onDeposit(3, REF_DEPOSIT_MIN);
     const st = svc.state(host);
     assert.equal(st.friends.length, 2);
-    const paid = st.friends.find((f) => f.telegramId === 3)!;
-    const notYet = st.friends.find((f) => f.telegramId === 2)!;
-    assert.equal(paid.earned, REF_JOIN_RUB + REF_DEPOSIT_RUB);
-    assert.ok(paid.depositedAt);
-    assert.equal(notYet.earned, REF_JOIN_RUB);
-    assert.equal(notYet.depositedAt, null);
-    assert.equal(st.earned, REF_JOIN_RUB * 2 + REF_DEPOSIT_RUB);
+    assert.ok(st.friends.every((f) => f.earned === REF_JOIN_COINS));
+    assert.equal(st.earned, REF_JOIN_COINS * 2);
   });
 
   test('чужий гравець у список не потрапляє', () => {
